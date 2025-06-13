@@ -1,10 +1,12 @@
 package wormhole
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net"
+	"net/http"
 
 	"github.com/hashicorp/yamux"
 )
@@ -13,22 +15,24 @@ type client struct {
 	id           string
 	wormholeAddr string
 	localAddr    string
-	remoteAddr   string
+	targetAddr   string
+	proto        string
 }
 
-func NewClient(id, wormholeAddr, localAddr, remoteAddr string) *client {
+func NewClient(id, wormholeAddr, localAddr, targetAddr, proto string) *client {
 	return &client{
 		id:           id,
 		wormholeAddr: wormholeAddr,
 		localAddr:    localAddr,
-		remoteAddr:   remoteAddr,
+		targetAddr:   targetAddr,
+		proto:        proto,
 	}
 }
 
 func (c *client) Start() error {
 	conn, err := net.Dial("tcp", c.wormholeAddr)
 	if err != nil {
-		return fmt.Errorf("%w: %v", ErrFailedToDialWormhole, err)
+		return fmt.Errorf("%w: %v", ErrFailedToDialTCP, err)
 	}
 
 	session, err := yamux.Client(conn, nil)
@@ -47,20 +51,20 @@ func (c *client) Start() error {
 	}
 
 	if msg.Status != 0 {
-		return fmt.Errorf("%w: %v", ErrHandshakeFailed, "id already used")
+		log.Println(msg.Err)
+		return fmt.Errorf("%w: %v", ErrHandshakeFailed, ErrIDAlreadyUsed)
 	}
-
-	log.Println("connection established")
 
 	for {
 		stream, err := session.Accept()
 		if err != nil {
 			log.Println(err)
+			continue
 		}
 
 		go func(s net.Conn) {
 			if err := c.handleConn(s); err != nil {
-				log.Println(err.Error())
+				log.Printf("%v\n", err)
 			}
 		}(stream)
 	}
@@ -74,7 +78,8 @@ func (c *client) handshake(stream net.Conn) (*message, error) {
 	dec := json.NewDecoder(stream)
 
 	msg := &message{
-		ID: c.id,
+		ID:    c.id,
+		Proto: c.proto,
 	}
 
 	err := enc.Encode(msg)
@@ -92,9 +97,52 @@ func (c *client) handshake(stream net.Conn) (*message, error) {
 
 func (c *client) handleConn(stream net.Conn) error {
 	defer stream.Close()
-	// for {
-	// wait for and forward request to c.remoteAddr (what proto??)
-	// write response to the server (stream)
-	// }
+
+	switch c.proto {
+	case httpProto:
+		return c.http(stream)
+	case tcpProto:
+		return c.tcp(stream)
+	default:
+		return ErrUnsupportedProtocol
+	}
+}
+
+func (c *client) http(stream net.Conn) error {
+	bufr := bufio.NewReader(stream)
+
+	req, err := http.ReadRequest(bufr)
+	if err != nil {
+		return err
+	}
+	defer req.Body.Close()
+
+	conn, err := net.Dial("tcp", c.targetAddr)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrFailedToDialTCP, err)
+	}
+
+	err = req.Write(conn)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrFailedToWriteHTTPTunnelRequest, err)
+	}
+
+	localBufr := bufio.NewReader(conn)
+
+	resp, err := http.ReadResponse(localBufr, req)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrFailedToReadTCPTunnelResponse, err)
+	}
+	defer resp.Body.Close()
+
+	err = resp.Write(stream)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrFailedToWriteHTTPTunnelResponse, err)
+	}
+
+	return nil
+}
+
+func (c *client) tcp(stream net.Conn) error {
 	return nil
 }
