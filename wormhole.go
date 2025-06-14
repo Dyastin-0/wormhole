@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"sync"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/hashicorp/yamux"
 )
 
@@ -158,7 +159,7 @@ func (w *Wormhole) http(stream net.Conn, wr http.ResponseWriter, r *http.Request
 }
 
 func (w *Wormhole) HTTP(wr http.ResponseWriter, r *http.Request) {
-	id := r.URL.Query().Get("id")
+	id := chi.URLParam(r, "id")
 
 	w.mu.Lock()
 	t, ok := w.tunnels[id]

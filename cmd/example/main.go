@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/Dyastin-0/wormhole"
+	"github.com/go-chi/chi/v5"
 )
 
 func main() {
@@ -34,10 +35,10 @@ func main() {
 		}()
 
 		// public http entrypoint
-		mux := http.NewServeMux()
-		mux.HandleFunc("/", w.HTTP)
+		router := chi.NewRouter()
+		router.Get("/{id}/*", w.HTTP)
 		log.Println("Wormhole HTTP handler listening at :3001")
-		log.Fatal(http.ListenAndServe(":3001", mux))
+		log.Fatal(http.ListenAndServe(":3001", router))
 	}()
 
 	// Start the wormhole client
@@ -62,7 +63,7 @@ func main() {
 	// wait and send test request
 	time.Sleep(3 * time.Second)
 
-	resp, err := http.Get("http://localhost:3001?id=myid")
+	resp, err := http.Get("http://localhost:3001/myid/waw")
 	if err != nil {
 		log.Fatalf("request error: %v", err)
 	}
