@@ -36,7 +36,10 @@ func main() {
 
 		// public http entrypoint
 		router := chi.NewRouter()
+
+		router.Get("/{id}", w.HTTP)
 		router.Get("/{id}/*", w.HTTP)
+
 		log.Println("Wormhole HTTP handler listening at :3001")
 		log.Fatal(http.ListenAndServe(":3001", router))
 	}()
@@ -63,7 +66,7 @@ func main() {
 	// wait and send test request
 	time.Sleep(3 * time.Second)
 
-	resp, err := http.Get("http://localhost:3001/myid/waw")
+	resp, err := http.Get("http://localhost:3001/myid")
 	if err != nil {
 		log.Fatalf("request error: %v", err)
 	}

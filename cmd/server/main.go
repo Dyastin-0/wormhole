@@ -21,6 +21,7 @@ func main() {
 
 	go func() {
 		router := chi.NewRouter()
+		router.Get("/{id}", wh.HTTP)
 		router.Get("/{id}/*", wh.HTTP)
 
 		log.Printf("HTTP server listening on %s\n", *httpAddr)
