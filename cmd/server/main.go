@@ -17,7 +17,7 @@ func main() {
 	flag.Parse()
 
 	ctx := context.Background()
-	wh := wormhole.New(*wormholeAddr, ctx)
+	wh := wormhole.New(*wormholeAddr)
 
 	go func() {
 		router := chi.NewRouter()
@@ -31,7 +31,7 @@ func main() {
 	}()
 
 	log.Printf("Wormhole server listening on %s\n", *wormholeAddr)
-	if err := wh.Start(); err != nil {
+	if err := wh.Start(ctx); err != nil {
 		log.Fatalf("Wormhole server error: %v", err)
 	}
 }
