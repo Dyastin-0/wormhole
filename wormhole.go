@@ -17,19 +17,19 @@ import (
 )
 
 type Wormhole struct {
-	addr     string
-	mu       sync.Mutex
-	tunnels  map[string]*tunnel
-	cancel   context.CancelFunc
-	ctx      context.Context
-	tunneler func(stream net.Conn, wr http.ResponseWriter, r *http.Request) error
+	addr              string
+	mu                sync.Mutex
+	tunnels           map[string]*tunnel
+	cancel            context.CancelFunc
+	ctx               context.Context
+	tunnelHTTPRequest func(stream net.Conn, wr http.ResponseWriter, r *http.Request) error
 }
 
 func New(addr string) *Wormhole {
 	return &Wormhole{
-		addr:     addr,
-		tunnels:  make(map[string]*tunnel),
-		tunneler: tunneler,
+		addr:              addr,
+		tunnels:           make(map[string]*tunnel),
+		tunnelHTTPRequest: tunnelHTTPRequest,
 	}
 }
 
@@ -162,27 +162,6 @@ func (w *Wormhole) handshake(stream net.Conn) (*message, error) {
 	return &msg, nil
 }
 
-func tunneler(stream net.Conn, wr http.ResponseWriter, r *http.Request) error {
-	err := r.Write(stream)
-	if err != nil {
-		return fmt.Errorf("%w: %v", ErrFailedToWriteHTTPTunnelRequest, err)
-	}
-
-	bufr := bufio.NewReader(stream)
-
-	resp, err := http.ReadResponse(bufr, r)
-	if err != nil {
-		return fmt.Errorf("%w: %v", ErrFailedToReadHTTPTunnelResponse, err)
-	}
-
-	defer resp.Body.Close()
-
-	copyHeader(wr.Header(), resp.Header)
-	io.Copy(wr, resp.Body)
-
-	return nil
-}
-
 func (w *Wormhole) HTTP(wr http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
@@ -203,10 +182,31 @@ func (w *Wormhole) HTTP(wr http.ResponseWriter, r *http.Request) {
 	}
 	defer stream.Close()
 
-	err = w.tunneler(stream, wr, r)
+	err = w.tunnelHTTPRequest(stream, wr, r)
 	if err != nil {
 		http.Error(wr, fmt.Sprintf("tunnel error: %s", err.Error()), http.StatusInternalServerError)
 	}
+}
+
+func tunnelHTTPRequest(stream net.Conn, wr http.ResponseWriter, r *http.Request) error {
+	err := r.Write(stream)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrFailedToWriteHTTPTunnelRequest, err)
+	}
+
+	bufr := bufio.NewReader(stream)
+
+	resp, err := http.ReadResponse(bufr, r)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrFailedToReadHTTPTunnelResponse, err)
+	}
+
+	defer resp.Body.Close()
+
+	copyHeader(wr.Header(), resp.Header)
+	io.Copy(wr, resp.Body)
+
+	return nil
 }
 
 func (w *Wormhole) tcp(stream net.Conn) error {
