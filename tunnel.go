@@ -1,8 +1,14 @@
 package wormhole
 
-import "github.com/hashicorp/yamux"
+import (
+	"net"
+)
+
+type session interface {
+	Open() (net.Conn, error)
+}
 
 type tunnel struct {
 	proto   string
-	session *yamux.Session
+	session session
 }

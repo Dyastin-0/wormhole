@@ -17,35 +17,60 @@ import (
 )
 
 type Wormhole struct {
-	addr    string
-	mu      sync.Mutex
-	ctx     context.Context
-	tunnels map[string]*tunnel
+	addr     string
+	mu       sync.Mutex
+	tunnels  map[string]*tunnel
+	cancel   context.CancelFunc
+	ctx      context.Context
+	tunneler func(stream net.Conn, wr http.ResponseWriter, r *http.Request) error
 }
 
-func New(addr string, ctx context.Context) *Wormhole {
+func New(addr string) *Wormhole {
 	return &Wormhole{
-		addr:    addr,
-		tunnels: make(map[string]*tunnel),
-		ctx:     ctx,
+		addr:     addr,
+		tunnels:  make(map[string]*tunnel),
+		tunneler: tunneler,
 	}
 }
 
-func (w *Wormhole) Start() error {
-	// maybe implement tls later on
+func (w *Wormhole) Stop() {
+	if w.cancel != nil {
+		w.cancel()
+	}
+}
+
+func (w *Wormhole) Start(ctx context.Context) error {
+	if ctx == nil {
+		return ErrNilContext
+	}
+
+	w.ctx, w.cancel = context.WithCancel(ctx)
+
 	listener, err := net.Listen("tcp", w.addr)
 	if err != nil {
-		return err
+		return fmt.Errorf("%w: %v", ErrFailedToListenToTCP, err)
 	}
+
+	go func() {
+		<-w.ctx.Done()
+		listener.Close()
+	}()
 
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
-			log.Println(ErrFailedToAcceptConn.Error())
-			continue
+			select {
+			case <-w.ctx.Done():
+				return w.ctx.Err()
+			default:
+				fmt.Printf("%s: %s", ErrFailedToAcceptConn.Error(), err)
+				continue
+			}
 		}
 
 		go func(c net.Conn) {
+			defer c.Close()
+
 			if err := w.handleConn(c); err != nil {
 				log.Printf("%v\n", err)
 			}
@@ -137,7 +162,7 @@ func (w *Wormhole) handshake(stream net.Conn) (*message, error) {
 	return &msg, nil
 }
 
-func (w *Wormhole) http(stream net.Conn, wr http.ResponseWriter, r *http.Request) error {
+func tunneler(stream net.Conn, wr http.ResponseWriter, r *http.Request) error {
 	err := r.Write(stream)
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrFailedToWriteHTTPTunnelRequest, err)
@@ -178,7 +203,7 @@ func (w *Wormhole) HTTP(wr http.ResponseWriter, r *http.Request) {
 	}
 	defer stream.Close()
 
-	err = w.http(stream, wr, r)
+	err = w.tunneler(stream, wr, r)
 	if err != nil {
 		http.Error(wr, fmt.Sprintf("tunnel error: %s", err.Error()), http.StatusInternalServerError)
 	}

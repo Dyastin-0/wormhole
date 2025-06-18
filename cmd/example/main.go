@@ -27,11 +27,11 @@ func main() {
 
 	// start the wormhole server
 	go func() {
-		w := wormhole.New(":3000", ctx)
+		w := wormhole.New(":3000")
 
 		go func() {
 			log.Println("Wormhole TCP server listening at :3000")
-			log.Fatal(w.Start())
+			log.Fatal(w.Start(ctx))
 		}()
 
 		// public http entrypoint
