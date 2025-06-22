@@ -72,7 +72,7 @@ func start(ctx context.Context, cmd *cli.Command) error {
 func httpCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "http",
-		Usage: "start an http reverse tunnel",
+		Usage: "start a wormhole http reverse tunnel client",
 		Flags: []cli.Flag{
 			&cli.StringFlag{
 				Name:    "id",
