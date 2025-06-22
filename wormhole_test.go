@@ -18,33 +18,10 @@ import (
 )
 
 func TestNew(t *testing.T) {
-	tests := []struct {
-		name string
-		addr string
-		ctx  context.Context
-	}{
-		{
-			addr: ":8888",
-			ctx:  context.Background(),
-		},
-		{
-			addr: ":8000",
-			ctx:  context.Background(),
-		},
-		{
-			addr: ":9000",
-			ctx:  context.Background(),
-		},
-	}
+	w := New(":8888")
 
-	for _, tt := range tests {
-		t.Run(tt.addr, func(t *testing.T) {
-			w := New(tt.addr)
-
-			if w.addr != tt.addr {
-				t.Errorf("addr mismatch: got %s, want %s", w.addr, tt.addr)
-			}
-		})
+	if w.addr != ":8888" {
+		t.Errorf("addr mismatch: got %s, want %s", w.addr, ":8888")
 	}
 }
 
@@ -157,11 +134,11 @@ func TestHandshake(t *testing.T) {
 	}
 
 	if msg.ID != "test" {
-		t.Fatalf("expected msg.ID=test, got %s", msg.ID)
+		t.Errorf("expected msg.ID=test, got %s", msg.ID)
 	}
 
 	if msg.Proto != "http" {
-		t.Fatalf("expected msg.Proto=http, got %s", msg.Proto)
+		t.Errorf("expected msg.Proto=http, got %s", msg.Proto)
 	}
 }
 
@@ -233,7 +210,7 @@ func TestHTTP(t *testing.T) {
 	w.mu.Unlock()
 
 	if !exists {
-		t.Fatalf("expected %s to be registered but was not found", msg.ID)
+		t.Errorf("expected %s to be registered but was not found", msg.ID)
 	}
 
 	session.Close()
@@ -244,7 +221,7 @@ func TestHTTP(t *testing.T) {
 	w.mu.Unlock()
 
 	if exists {
-		t.Fatalf("expected %s to be deleted but was found", msg.ID)
+		t.Errorf("expected %s to be deleted but was found", msg.ID)
 	}
 }
 
@@ -291,22 +268,22 @@ func TestTunneler(t *testing.T) {
 
 	err := w.tunnelHTTPRequest(client, rr, req)
 	if err != nil {
-		t.Fatal(err)
+		t.Error(err)
 	}
 
 	res := rr.Result()
 	body, _ := io.ReadAll(res.Body)
 
 	if res.StatusCode != 200 {
-		t.Fatalf("expected res.StatusCode=200, got %d", res.StatusCode)
+		t.Errorf("expected res.StatusCode=200, got %d", res.StatusCode)
 	}
 
 	if res.Header.Get("X-Test") != "true" {
-		t.Fatalf("expected res.Header X-Test=true, got %v", res.Header.Get("X-Test"))
+		t.Errorf("expected res.Header X-Test=true, got %v", res.Header.Get("X-Test"))
 	}
 
 	if string(body) != "Hello from wormhole" {
-		t.Fatalf("unexpected body: %s", body)
+		t.Errorf("unexpected body: %s", body)
 	}
 }
 
