@@ -63,6 +63,10 @@ func (w *Wormhole) Start(ctx context.Context) error {
 			case <-w.ctx.Done():
 				return w.ctx.Err()
 			default:
+				if errors.Is(err, net.ErrClosed) {
+					return nil
+				}
+
 				fmt.Printf("%s: %s", ErrFailedToAcceptConn.Error(), err)
 				continue
 			}

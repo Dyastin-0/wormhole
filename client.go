@@ -2,8 +2,11 @@ package wormhole
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -17,6 +20,8 @@ type client struct {
 	localAddr    string
 	targetAddr   string
 	proto        string
+	cancel       context.CancelFunc
+	ctx          context.Context
 }
 
 func NewClient(id, wormholeAddr, localAddr, targetAddr, proto string) *client {
@@ -29,7 +34,19 @@ func NewClient(id, wormholeAddr, localAddr, targetAddr, proto string) *client {
 	}
 }
 
-func (c *client) Start() error {
+func (c *client) Stop() {
+	if c.cancel != nil {
+		c.cancel()
+	}
+}
+
+func (c *client) Start(ctx context.Context) error {
+	if ctx == nil {
+		return ErrNilContext
+	}
+
+	c.ctx, c.cancel = context.WithCancel(ctx)
+
 	conn, err := net.Dial("tcp", c.wormholeAddr)
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrFailedToDialTCP, err)
@@ -39,6 +56,11 @@ func (c *client) Start() error {
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrFailedToCreateYamuxClient, err)
 	}
+
+	go func() {
+		<-c.ctx.Done()
+		session.Close()
+	}()
 
 	stream, err := session.Open()
 	if err != nil {
@@ -58,8 +80,17 @@ func (c *client) Start() error {
 	for {
 		stream, err := session.Accept()
 		if err != nil {
-			log.Println(err)
-			continue
+			select {
+			case <-c.ctx.Done():
+				return c.ctx.Err()
+			default:
+				if errors.Is(session.GoAway(), err) || errors.Is(err, io.EOF) {
+					return nil
+				}
+
+				fmt.Printf("%s: %s", ErrFailedToAcceptConn.Error(), err)
+				continue
+			}
 		}
 
 		go func(s net.Conn) {
