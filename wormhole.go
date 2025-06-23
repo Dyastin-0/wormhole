@@ -141,7 +141,7 @@ func (w *Wormhole) handshake(stream net.Conn) (*message, error) {
 		return nil, fmt.Errorf("%w: %v", ErrHandshakeFailed, ErrIDAlreadyUsed)
 	}
 
-	if msg.Proto != httpProto && msg.Proto != tcpProto {
+	if msg.Proto != ProtoHTTP && msg.Proto != ProtoTCP {
 		errMsg := &message{ID: msg.ID, Status: 1, Err: ErrUnsupportedProtocol.Error()}
 
 		err = enc.Encode(errMsg)

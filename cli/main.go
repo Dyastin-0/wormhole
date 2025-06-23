@@ -10,11 +10,6 @@ import (
 	"github.com/urfave/cli/v3"
 )
 
-const (
-	ProtocolHTTP = "http"
-	ProtocolTCP  = "tcp"
-)
-
 var (
 	ErrMissingID      = errors.New("missing id")
 	ErrMissingTarget  = errors.New("missing target")
@@ -119,7 +114,7 @@ func http(ctx context.Context, cmd *cli.Command) error {
 
 	wsa := cmd.String("wormhole-server-address")
 
-	c := wormhole.NewClient(id, wsa, addr, target, ProtocolHTTP)
+	c := wormhole.NewClient(id, wsa, addr, target, wormhole.ProtoHTTP)
 
 	log.Printf("wormhole http reverse tunnel client:\naddress: %s\nid: %s\nserver: %s\ntarget: %s\n", addr, id, wsa, target)
 

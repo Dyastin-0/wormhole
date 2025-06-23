@@ -28,6 +28,6 @@ var (
 )
 
 const (
-	httpProto = "http"
-	tcpProto  = "tcp"
+	ProtoHTTP = "http"
+	ProtoTCP  = "tcp"
 )
