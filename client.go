@@ -10,6 +10,8 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os"
+	"path/filepath"
 
 	"github.com/hashicorp/yamux"
 )
@@ -22,22 +24,39 @@ type client struct {
 	proto        string
 	cancel       context.CancelFunc
 	ctx          context.Context
+	logger       Logger
 }
 
 func NewClient(id, wormholeAddr, localAddr, targetAddr, proto string) *client {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		panic("could not determine home directory for logging")
+	}
+
+	name := "client"
+	logPath := filepath.Join(home, "wormhole", name, "logs", "log.txt")
+
+	logger := NewLogger()
+	logger.InitMultiWriter(name, logPath)
+
 	return &client{
 		id:           id,
 		wormholeAddr: wormholeAddr,
 		localAddr:    localAddr,
 		targetAddr:   targetAddr,
 		proto:        proto,
+		logger:       logger,
 	}
 }
 
 func (c *client) Stop() {
 	if c.cancel != nil {
 		c.cancel()
+		c.logger.Info("wormhole client stopped")
+		return
 	}
+
+	c.logger.Warn("c.Stop() is called but c.cancel is nil")
 }
 
 func (c *client) Start(ctx context.Context) error {
@@ -77,6 +96,8 @@ func (c *client) Start(ctx context.Context) error {
 		return fmt.Errorf("%w: %v", ErrHandshakeFailed, ErrIDAlreadyUsed)
 	}
 
+	c.logger.Info("service started")
+
 	for {
 		stream, err := session.Accept()
 		if err != nil {
@@ -88,14 +109,14 @@ func (c *client) Start(ctx context.Context) error {
 					return nil
 				}
 
-				fmt.Printf("%s: %s", ErrFailedToAcceptConn.Error(), err)
+				c.logger.Error(fmt.Sprintf("%s: %s", ErrFailedToAcceptConn.Error(), err))
 				continue
 			}
 		}
 
 		go func(s net.Conn) {
 			if err := c.handleConn(s); err != nil {
-				log.Printf("%v\n", err)
+				c.logger.Error(fmt.Sprintf("%v\n", err))
 			}
 		}(stream)
 	}
@@ -130,9 +151,9 @@ func (c *client) handleConn(stream net.Conn) error {
 	defer stream.Close()
 
 	switch c.proto {
-	case httpProto:
+	case ProtoHTTP:
 		return c.http(stream)
-	case tcpProto:
+	case ProtoTCP:
 		return c.tcp(stream)
 	default:
 		return ErrUnsupportedProtocol

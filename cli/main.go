@@ -54,8 +54,6 @@ func start(ctx context.Context, cmd *cli.Command) error {
 	addr := cmd.String("addr")
 	s := wormhole.New(addr)
 
-	log.Printf("wormhole server running on port%s\n", addr)
-
 	err := s.Start(ctx)
 	if err != nil {
 		return err
@@ -115,8 +113,6 @@ func http(ctx context.Context, cmd *cli.Command) error {
 	wsa := cmd.String("wormhole-server-address")
 
 	c := wormhole.NewClient(id, wsa, addr, target, wormhole.ProtoHTTP)
-
-	log.Printf("wormhole http reverse tunnel client:\naddress: %s\nid: %s\nserver: %s\ntarget: %s\n", addr, id, wsa, target)
 
 	err := c.Start(ctx)
 	if err != nil {

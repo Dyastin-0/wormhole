@@ -7,9 +7,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"net/http"
+	"os"
+	"path/filepath"
 	"sync"
 
 	"github.com/go-chi/chi/v5"
@@ -22,13 +23,26 @@ type Wormhole struct {
 	tunnels           map[string]*tunnel
 	cancel            context.CancelFunc
 	ctx               context.Context
+	logger            Logger
 	tunnelHTTPRequest func(stream net.Conn, wr http.ResponseWriter, r *http.Request) error
 }
 
 func New(addr string) *Wormhole {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		panic("could not determine home directory for logging")
+	}
+
+	name := "server"
+	logPath := filepath.Join(home, "wormhole", name, "logs", "log.txt")
+
+	logger := NewLogger()
+	logger.InitMultiWriter(name, logPath)
+
 	return &Wormhole{
 		addr:              addr,
 		tunnels:           make(map[string]*tunnel),
+		logger:            logger,
 		tunnelHTTPRequest: tunnelHTTPRequest,
 	}
 }
@@ -56,6 +70,8 @@ func (w *Wormhole) Start(ctx context.Context) error {
 		listener.Close()
 	}()
 
+	w.logger.Info("service started")
+
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
@@ -67,8 +83,9 @@ func (w *Wormhole) Start(ctx context.Context) error {
 					return nil
 				}
 
-				fmt.Printf("%s: %s", ErrFailedToAcceptConn.Error(), err)
+				w.logger.Error(fmt.Sprintf("%s: %s", ErrFailedToAcceptConn.Error(), err))
 				continue
+
 			}
 		}
 
@@ -76,7 +93,7 @@ func (w *Wormhole) Start(ctx context.Context) error {
 			defer c.Close()
 
 			if err := w.handleConn(c); err != nil {
-				log.Printf("%v\n", err)
+				w.logger.Error(fmt.Sprintf("%v\n", err))
 			}
 		}(conn)
 	}
@@ -180,7 +197,7 @@ func (w *Wormhole) HTTP(wr http.ResponseWriter, r *http.Request) {
 
 	stream, err := t.session.Open()
 	if err != nil {
-		log.Printf("%s: %s\n", id, ErrFailedToOpenStream)
+		w.logger.Error(fmt.Sprintf("%s: %s\n", id, ErrFailedToOpenStream))
 		http.Error(wr, "failed to open stream", http.StatusInternalServerError)
 		return
 	}
@@ -188,7 +205,10 @@ func (w *Wormhole) HTTP(wr http.ResponseWriter, r *http.Request) {
 
 	err = w.tunnelHTTPRequest(stream, wr, r)
 	if err != nil {
-		http.Error(wr, fmt.Sprintf("tunnel error: %s", err.Error()), http.StatusInternalServerError)
+		errf := fmt.Sprintf("tunnel error: %s", err.Error())
+
+		w.logger.Error(errf)
+		http.Error(wr, errf, http.StatusInternalServerError)
 	}
 }
 
