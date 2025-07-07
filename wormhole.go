@@ -7,27 +7,30 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/hashicorp/yamux"
 )
 
 type Wormhole struct {
 	addr              string
+	httpAddr          string
 	mu                sync.Mutex
 	tunnels           map[string]*tunnel
+	manager           *Manager
 	cancel            context.CancelFunc
 	ctx               context.Context
 	logger            Logger
 	tunnelHTTPRequest func(stream net.Conn, wr http.ResponseWriter, r *http.Request) error
 }
 
-func New(addr string) *Wormhole {
+func New(addr, httpAddr, zone string) *Wormhole {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		panic("could not determine home directory for logging")
@@ -39,9 +42,13 @@ func New(addr string) *Wormhole {
 	logger := NewLogger()
 	logger.InitMultiWriter(name, logPath)
 
+	manager := NewCloudflareManager(zone)
+
 	return &Wormhole{
 		addr:              addr,
+		httpAddr:          httpAddr,
 		tunnels:           make(map[string]*tunnel),
+		manager:           manager,
 		logger:            logger,
 		tunnelHTTPRequest: tunnelHTTPRequest,
 	}
@@ -58,8 +65,45 @@ func (w *Wormhole) Start(ctx context.Context) error {
 		return ErrNilContext
 	}
 
-	w.ctx, w.cancel = context.WithCancel(ctx)
+	parentCtx, cancel := context.WithCancel(ctx)
+	w.ctx = parentCtx
+	w.cancel = cancel
 
+	errch := make(chan error, 2)
+
+	go func() {
+		err := w.start()
+		if err != nil && !errors.Is(err, context.Canceled) {
+			w.logger.Error("TCP server exited: " + err.Error())
+			cancel()
+			errch <- err
+		} else {
+			errch <- nil
+		}
+	}()
+
+	go func() {
+		err := w.StartHTTP()
+		if err != nil && !errors.Is(err, context.Canceled) {
+			w.logger.Error("HTTP server exited: " + err.Error())
+			cancel()
+			errch <- err
+		} else {
+			errch <- nil
+		}
+	}()
+
+	var finalErr error
+	for i := 0; i < 2; i++ {
+		if err := <-errch; err != nil && finalErr == nil {
+			finalErr = err
+		}
+	}
+
+	return finalErr
+}
+
+func (w *Wormhole) start() error {
 	listener, err := net.Listen("tcp", w.addr)
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrFailedToListenToTCP, err)
@@ -67,6 +111,7 @@ func (w *Wormhole) Start(ctx context.Context) error {
 
 	go func() {
 		<-w.ctx.Done()
+		w.logger.Info("context cancelled, closing tcp listener")
 		listener.Close()
 	}()
 
@@ -117,9 +162,24 @@ func (w *Wormhole) handleConn(conn net.Conn) error {
 		return err
 	}
 
+	// include in Wormhole{} later
+	id := fmt.Sprintf("%s.dyastin.tech", msg.ID)
+
 	w.mu.Lock()
-	w.tunnels[msg.ID] = &tunnel{proto: msg.Proto, session: session}
+	w.tunnels[id] = &tunnel{proto: msg.Proto, session: session}
 	w.mu.Unlock()
+
+	// maybe also include this in Wormhole{}
+	localIPv4 := getOutboundIP()
+
+	record := &Record{
+		Name:    id,
+		Content: localIPv4.String(),
+		Type:    "A",
+		TTL:     720,
+		Proxied: false,
+	}
+	w.manager.API.CreateDNSRecord(w.ctx, time.Minute*30, *record)
 
 	<-session.CloseChan()
 
@@ -184,7 +244,7 @@ func (w *Wormhole) handshake(stream net.Conn) (*message, error) {
 }
 
 func (w *Wormhole) HTTP(wr http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+	id := r.Header.Get("Host")
 
 	w.mu.Lock()
 	t, ok := w.tunnels[id]
@@ -210,6 +270,33 @@ func (w *Wormhole) HTTP(wr http.ResponseWriter, r *http.Request) {
 		w.logger.Error(errf)
 		http.Error(wr, errf, http.StatusInternalServerError)
 	}
+}
+
+func (w *Wormhole) StartHTTP() error {
+	server := &http.Server{
+		Addr:    w.httpAddr,
+		Handler: http.HandlerFunc(w.HTTP),
+	}
+
+	go func() {
+		<-w.ctx.Done()
+
+		w.logger.Info("context cancelled, shutting down http server")
+
+		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+		defer cancel()
+
+		if err := server.Shutdown(ctx); err != nil {
+			w.logger.Error(fmt.Sprintf("%w: %v", fmt.Errorf("http server shutdown failed"), err))
+		}
+	}()
+
+	err := server.ListenAndServe()
+	if err != nil && err != http.ErrServerClosed {
+		return fmt.Errorf("%w: %v", fmt.Errorf("http server stopped"), err)
+	}
+
+	return nil
 }
 
 func tunnelHTTPRequest(stream net.Conn, wr http.ResponseWriter, r *http.Request) error {
@@ -243,4 +330,16 @@ func copyHeader(dst, src http.Header) {
 			dst.Add(k, v)
 		}
 	}
+}
+
+func getOutboundIP() net.IP {
+	conn, err := net.Dial("udp", "8.8.8.8:80")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer conn.Close()
+
+	localAddr := conn.LocalAddr().(*net.UDPAddr)
+
+	return localAddr.IP
 }

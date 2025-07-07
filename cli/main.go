@@ -3,10 +3,12 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"os"
 
 	"github.com/Dyastin-0/wormhole"
+	"github.com/common-nighthawk/go-figure"
 	"github.com/urfave/cli/v3"
 )
 
@@ -26,13 +28,28 @@ func main() {
 
 func New() *cli.Command {
 	return &cli.Command{
-		Name:  "wormhole-cli",
-		Usage: "simple tcp reverse tunnel",
+		Name:   "wormhole-cli",
+		Usage:  "simple tcp reverse tunnel",
+		Action: wormholeCommand,
 		Commands: []*cli.Command{
 			startCommand(),
 			httpCommand(),
 		},
 	}
+}
+
+func wormholeCommand(ctx context.Context, cmd *cli.Command) error {
+	figure := figure.NewFigure("wormhole-cli", "", true)
+	figure.Print()
+
+	fmt.Println()
+
+	err := cli.ShowAppHelp(cmd)
+	if err != nil {
+		panic(err)
+	}
+
+	return nil
 }
 
 func startCommand() *cli.Command {
@@ -45,6 +62,16 @@ func startCommand() *cli.Command {
 				Aliases: []string{"a", "addr"},
 				Usage:   "set the address where wormhole server will run",
 			},
+			&cli.StringFlag{
+				Name:    "httpAdress",
+				Aliases: []string{"ha", "httpAddr"},
+				Usage:   "set the address where wormhole http handler will run",
+			},
+			&cli.StringFlag{
+				Name:    "zone",
+				Aliases: []string{"z"},
+				Usage:   "set cloudflare zone",
+			},
 		},
 		Action: start,
 	}
@@ -52,7 +79,10 @@ func startCommand() *cli.Command {
 
 func start(ctx context.Context, cmd *cli.Command) error {
 	addr := cmd.String("addr")
-	s := wormhole.New(addr)
+	httpAddr := cmd.String("httpAddr")
+	zone := cmd.String("zone")
+
+	s := wormhole.New(addr, httpAddr, zone)
 
 	err := s.Start(ctx)
 	if err != nil {
