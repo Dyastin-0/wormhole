@@ -78,6 +78,7 @@ func (c *client) Start(ctx context.Context) error {
 
 	go func() {
 		<-c.ctx.Done()
+		c.logger.Info("session closed")
 		session.Close()
 	}()
 

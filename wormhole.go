@@ -22,7 +22,7 @@ type Wormhole struct {
 	httpAddr          string
 	mu                sync.Mutex
 	tunnels           map[string]*tunnel
-	manager           *Manager
+	Manager           *Manager
 	cancel            context.CancelFunc
 	ctx               context.Context
 	logger            Logger
@@ -165,7 +165,7 @@ func (w *Wormhole) handleConn(conn net.Conn) error {
 		Proxied: false,
 	}
 
-	_, err = w.manager.API.CreateDNSRecord(w.ctx, time.Minute*30, record)
+	_, err = w.Manager.API.CreateDNSRecord(w.ctx, time.Minute*30, record)
 	if err != nil {
 		w.logger.Error(err.Error())
 		session.Close()

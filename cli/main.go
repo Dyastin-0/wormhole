@@ -92,6 +92,13 @@ func start(ctx context.Context, cmd *cli.Command) error {
 		return err
 	}
 
+	manager, err := wormhole.NewCloudflareManager(api, zone)
+	if err != nil {
+		return err
+	}
+
+	w.Manager = manager
+
 	err = w.Start(ctx)
 	if err != nil {
 		return err
@@ -154,6 +161,7 @@ func http(ctx context.Context, cmd *cli.Command) error {
 
 	err := c.Start(ctx)
 	if err != nil {
+		fmt.Println(err)
 		return err
 	}
 

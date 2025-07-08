@@ -183,7 +183,7 @@ func TestHTTP(t *testing.T) {
 		tunnels: make(map[string]*tunnel),
 	}
 
-	w.manager = &Manager{
+	w.Manager = &Manager{
 		API: &MockDNSAPI{},
 	}
 
