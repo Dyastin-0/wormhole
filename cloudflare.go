@@ -25,7 +25,7 @@ func NewCloudflareAPI(apiToken, zoneID string) (DNSAPI, error) {
 	}, nil
 }
 
-func (d *DNSManager) CreateDNSRecord(ctx context.Context, expires time.Duration, record Record) (*DNSRecord, error) {
+func (d *DNSManager) CreateDNSRecord(ctx context.Context, expires time.Duration, record *Record) (*DNSRecord, error) {
 	r := cloudflare.CreateDNSRecordParams{
 		Type:    string(record.Type),
 		Name:    string(record.Name),

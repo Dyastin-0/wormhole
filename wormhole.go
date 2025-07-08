@@ -10,6 +10,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -32,16 +33,10 @@ func New(addr, httpAddr, zone, api string) (*Wormhole, error) {
 	logger := NewLogger()
 	logger.InitMultiWriter("log", "./logs")
 
-	manager, err := NewCloudflareManager(api, zone)
-	if err != nil {
-		return nil, fmt.Errorf("%w: %v", "failed to initialize wormhole", err)
-	}
-
 	return &Wormhole{
 		addr:              addr,
 		httpAddr:          httpAddr,
 		tunnels:           make(map[string]*tunnel),
-		manager:           manager,
 		logger:            logger,
 		tunnelHTTPRequest: tunnelHTTPRequest,
 	}, nil
@@ -155,28 +150,25 @@ func (w *Wormhole) handleConn(conn net.Conn) error {
 		return err
 	}
 
-	// include in Wormhole{} later
-	id := fmt.Sprintf("%s.dyastin.tech", msg.ID)
-
 	w.mu.Lock()
-	w.tunnels[id] = &tunnel{proto: msg.Proto, session: session}
+	w.tunnels[msg.ID] = &tunnel{proto: msg.Proto, session: session}
 	w.mu.Unlock()
 
 	// maybe also include this in Wormhole{}
 	localIPv4 := getOutboundIP()
 
 	record := &Record{
-		Name:    id,
+		Name:    fmt.Sprintf("%s.dyastin.tech", msg.ID),
 		Content: localIPv4.String(),
 		Type:    "A",
 		TTL:     720,
 		Proxied: false,
 	}
-	dnsRecord, err := w.manager.API.CreateDNSRecord(w.ctx, time.Minute*30, *record)
+
+	_, err = w.manager.API.CreateDNSRecord(w.ctx, time.Minute*30, record)
 	if err != nil {
 		w.logger.Error(err.Error())
 		session.Close()
-		w.logger.Info(dnsRecord.Meta.Content)
 	}
 
 	<-session.CloseChan()
@@ -245,7 +237,7 @@ func (w *Wormhole) HTTP(wr http.ResponseWriter, r *http.Request) {
 	id := r.Header.Get("Host")
 
 	w.mu.Lock()
-	t, ok := w.tunnels[id]
+	t, ok := w.tunnels[strings.Replace(id, ".dyastin.tech", "", 1)]
 	w.mu.Unlock()
 
 	if !ok {
@@ -285,7 +277,7 @@ func (w *Wormhole) StartHTTP() error {
 		defer cancel()
 
 		if err := server.Shutdown(ctx); err != nil {
-			w.logger.Error(fmt.Sprintf("%w: %v", fmt.Errorf("http server shutdown failed"), err))
+			w.logger.Error(fmt.Sprintf("%s: %v", fmt.Errorf("http server shutdown failed"), err))
 		}
 	}()
 

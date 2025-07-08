@@ -11,7 +11,7 @@ type Record struct {
 }
 
 type DNSRecord struct {
-	Meta    Record
+	Meta    *Record
 	ID      string
 	Expires time.Duration
 }

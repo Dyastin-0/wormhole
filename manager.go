@@ -7,7 +7,7 @@ import (
 )
 
 type DNSAPI interface {
-	CreateDNSRecord(context context.Context, expires time.Duration, record Record) (*DNSRecord, error)
+	CreateDNSRecord(context context.Context, expires time.Duration, record *Record) (*DNSRecord, error)
 	DeleteDNSRecord(context context.Context, id string) error
 }
 
@@ -18,7 +18,7 @@ type Manager struct {
 func NewCloudflareManager(apiToken, zone string) (*Manager, error) {
 	api, err := NewCloudflareAPI(apiToken, zone)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", "failed to initialize cloudflare manager", err)
+		return nil, fmt.Errorf("%s: %v", "failed to initialize cloudflare manager", err)
 	}
 
 	manager := &Manager{

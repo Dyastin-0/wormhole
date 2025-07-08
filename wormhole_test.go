@@ -13,39 +13,51 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/hashicorp/yamux"
 )
 
 func TestNew(t *testing.T) {
-	w := New(":8888")
+	w, err := New(":8888", ":9999", "", "")
+	if err != nil {
+		t.Errorf("failed to initialize wormhole: %v", err)
+	}
 
 	if w.addr != ":8888" {
 		t.Errorf("addr mismatch: got %s, want %s", w.addr, ":8888")
+	}
+
+	if w.httpAddr != ":9999" {
+		t.Errorf("httpAddr mismatch: got %s, want %s", w.httpAddr, ":9999")
 	}
 }
 
 func TestStart(t *testing.T) {
 	tests := []struct {
-		name    string
-		addr    string
-		wantErr bool
+		name     string
+		addr     string
+		httpAddr string
+		wantErr  bool
 	}{
 		{
-			name:    "invalid address",
-			addr:    "8000",
-			wantErr: true,
+			name:     "invalid address",
+			addr:     "8000",
+			httpAddr: "2000",
+			wantErr:  true,
 		},
 		{
-			name:    "valid address",
-			addr:    ":8001",
-			wantErr: false,
+			name:     "valid address",
+			addr:     ":8001",
+			httpAddr: ":8002",
+			wantErr:  false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			w := New(tt.addr)
+			w, err := New(tt.addr, tt.httpAddr, "", "")
+			if err != nil {
+				t.Errorf("failed to initialize wormhole: %v", err)
+			}
 
 			errChan := make(chan error, 1)
 
@@ -70,7 +82,10 @@ func TestStart(t *testing.T) {
 }
 
 func TestStop(t *testing.T) {
-	w := New(":8083")
+	w, err := New(":8083", ":8010", "", "")
+	if err != nil {
+		t.Errorf("failed to initialize wormhole: %v", err)
+	}
 
 	done := make(chan error, 1)
 
@@ -85,7 +100,7 @@ func TestStop(t *testing.T) {
 
 	select {
 	case err := <-done:
-		if !errors.Is(err, context.Canceled) {
+		if err != nil && !errors.Is(err, context.Canceled) {
 			t.Errorf("Start() returned error after Stop(): %v", err)
 		}
 	case <-time.After(1 * time.Second):
@@ -142,6 +157,20 @@ func TestHandshake(t *testing.T) {
 	}
 }
 
+type MockDNSAPI struct{}
+
+func (m *MockDNSAPI) CreateDNSRecord(context context.Context, expires time.Duration, record *Record) (*DNSRecord, error) {
+	return &DNSRecord{
+		Meta: &Record{
+			Content: "localhost",
+		},
+	}, nil
+}
+
+func (m *MockDNSAPI) DeleteDNSRecord(context context.Context, id string) error {
+	return nil
+}
+
 func TestHTTP(t *testing.T) {
 	ln, err := net.Listen("tcp", ":0")
 	if err != nil {
@@ -152,6 +181,10 @@ func TestHTTP(t *testing.T) {
 
 	w := &Wormhole{
 		tunnels: make(map[string]*tunnel),
+	}
+
+	w.manager = &Manager{
+		API: &MockDNSAPI{},
 	}
 
 	go func() {
@@ -296,7 +329,7 @@ func TestWormhole_HTTP(t *testing.T) {
 
 	w := &Wormhole{
 		tunnels: map[string]*tunnel{
-			"abc": {
+			"test": {
 				proto:   "http",
 				session: mock,
 			},
@@ -308,14 +341,9 @@ func TestWormhole_HTTP(t *testing.T) {
 		},
 	}
 
-	req := httptest.NewRequest("GET", "/tunnel/abc", nil)
-	ctx := context.WithValue(req.Context(), chi.RouteCtxKey, &chi.Context{
-		URLParams: chi.RouteParams{
-			Keys:   []string{"id"},
-			Values: []string{"abc"},
-		},
-	})
-	req = req.WithContext(ctx)
+	req := httptest.NewRequest("GET", "/", nil)
+	req.Header.Set("Host", "test.dyastin.tech")
+
 	rr := httptest.NewRecorder()
 
 	w.HTTP(rr, req)
