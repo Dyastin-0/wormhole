@@ -182,7 +182,12 @@ func (w *Wormhole) handleConn(conn net.Conn) error {
 		TTL:     720,
 		Proxied: false,
 	}
-	w.manager.API.CreateDNSRecord(w.ctx, time.Minute*30, *record)
+	dnsRecord, err := w.manager.API.CreateDNSRecord(w.ctx, time.Minute*30, *record)
+	if err != nil {
+		w.logger.Error(err.Error())
+		session.Close()
+		w.logger.Info(dnsRecord.Meta.Content)
+	}
 
 	<-session.CloseChan()
 
