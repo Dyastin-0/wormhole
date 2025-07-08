@@ -87,10 +87,7 @@ func start(ctx context.Context, cmd *cli.Command) error {
 	zone := cmd.String("zone")
 	api := cmd.String("api")
 
-	w, err := wormhole.New(addr, httpAddr, zone, api)
-	if err != nil {
-		return err
-	}
+	w := wormhole.New(addr, httpAddr)
 
 	manager, err := wormhole.NewCloudflareManager(api, zone)
 	if err != nil {

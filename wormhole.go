@@ -29,7 +29,7 @@ type Wormhole struct {
 	tunnelHTTPRequest func(stream net.Conn, wr http.ResponseWriter, r *http.Request) error
 }
 
-func New(addr, httpAddr, zone, api string) (*Wormhole, error) {
+func New(addr, httpAddr string) *Wormhole {
 	logger := NewLogger()
 	logger.InitMultiWriter("log", "/var/log/wormhole")
 
@@ -39,7 +39,7 @@ func New(addr, httpAddr, zone, api string) (*Wormhole, error) {
 		tunnels:           make(map[string]*tunnel),
 		logger:            logger,
 		tunnelHTTPRequest: tunnelHTTPRequest,
-	}, nil
+	}
 }
 
 func (w *Wormhole) Stop() {
