@@ -10,8 +10,6 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"os"
-	"path/filepath"
 	"sync"
 	"time"
 
@@ -31,16 +29,8 @@ type Wormhole struct {
 }
 
 func New(addr, httpAddr, zone, api string) (*Wormhole, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		panic("could not determine home directory for logging")
-	}
-
-	name := "server"
-	logPath := filepath.Join(home, "wormhole", name, "logs", "log.txt")
-
 	logger := NewLogger()
-	logger.InitMultiWriter(name, logPath)
+	logger.InitMultiWriter("log", "./logs")
 
 	manager, err := NewCloudflareManager(api, zone)
 	if err != nil {
