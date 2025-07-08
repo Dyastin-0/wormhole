@@ -31,7 +31,7 @@ type Wormhole struct {
 
 func New(addr, httpAddr, zone, api string) (*Wormhole, error) {
 	logger := NewLogger()
-	logger.InitMultiWriter("log", "./logs")
+	logger.InitMultiWriter("log", "/var/log/wormhole")
 
 	return &Wormhole{
 		addr:              addr,
