@@ -1,6 +1,6 @@
 module github.com/Dyastin-0/wormhole
 
-go 1.24.1
+go 1.24.4
 
 require (
 	github.com/cloudflare/cloudflare-go v0.115.0
