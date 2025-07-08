@@ -72,6 +72,10 @@ func startCommand() *cli.Command {
 				Aliases: []string{"z"},
 				Usage:   "set cloudflare zone",
 			},
+			&cli.StringFlag{
+				Name:  "api",
+				Usage: "set cloudflare api",
+			},
 		},
 		Action: start,
 	}
@@ -81,10 +85,14 @@ func start(ctx context.Context, cmd *cli.Command) error {
 	addr := cmd.String("addr")
 	httpAddr := cmd.String("httpAddr")
 	zone := cmd.String("zone")
+	api := cmd.String("api")
 
-	s := wormhole.New(addr, httpAddr, zone)
+	w, err := wormhole.New(addr, httpAddr, zone, api)
+	if err != nil {
+		return err
+	}
 
-	err := s.Start(ctx)
+	err = w.Start(ctx)
 	if err != nil {
 		return err
 	}

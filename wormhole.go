@@ -30,7 +30,7 @@ type Wormhole struct {
 	tunnelHTTPRequest func(stream net.Conn, wr http.ResponseWriter, r *http.Request) error
 }
 
-func New(addr, httpAddr, zone string) *Wormhole {
+func New(addr, httpAddr, zone, api string) (*Wormhole, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		panic("could not determine home directory for logging")
@@ -42,7 +42,10 @@ func New(addr, httpAddr, zone string) *Wormhole {
 	logger := NewLogger()
 	logger.InitMultiWriter(name, logPath)
 
-	manager := NewCloudflareManager(zone)
+	manager, err := NewCloudflareManager(api, zone)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", "failed to initialize wormhole", err)
+	}
 
 	return &Wormhole{
 		addr:              addr,
@@ -51,7 +54,7 @@ func New(addr, httpAddr, zone string) *Wormhole {
 		manager:           manager,
 		logger:            logger,
 		tunnelHTTPRequest: tunnelHTTPRequest,
-	}
+	}, nil
 }
 
 func (w *Wormhole) Stop() {

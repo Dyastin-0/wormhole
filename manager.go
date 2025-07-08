@@ -2,30 +2,30 @@ package wormhole
 
 import (
 	"context"
+	"fmt"
 	"time"
-
-	cloudflare_option "github.com/cloudflare/cloudflare-go/v4/option"
 )
 
 type DNSAPI interface {
 	CreateDNSRecord(context context.Context, expires time.Duration, record Record) (*DNSRecord, error)
-	DeleteDNSRecord(context context.Context, tid string) error
+	DeleteDNSRecord(context context.Context, id string) error
 }
 
 type Manager struct {
 	API DNSAPI
 }
 
-func NewCloudflareManager(zone string) *Manager {
-	return &Manager{
-		API: NewCloudflareAPI(zone),
+func NewCloudflareManager(apiToken, zone string) (*Manager, error) {
+	api, err := NewCloudflareAPI(apiToken, zone)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", "failed to initialize cloudflare manager", err)
 	}
-}
 
-func NewCloudflareManagerWithOpts(zone string, opts ...cloudflare_option.RequestOption) *Manager {
-	return &Manager{
-		API: NewCloudflareAPIWithOpts(zone, opts...),
+	manager := &Manager{
+		API: api,
 	}
+
+	return manager, nil
 }
 
 func (m *Manager) WatchExpiration() {}
