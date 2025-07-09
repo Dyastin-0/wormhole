@@ -237,6 +237,8 @@ func (w *Wormhole) handshake(stream net.Conn) (*message, error) {
 func (w *Wormhole) HTTP(wr http.ResponseWriter, r *http.Request) {
 	id := r.Header.Get("Host")
 
+	w.logger.Debug("host: " + id)
+
 	w.mu.Lock()
 	t, ok := w.tunnels[strings.Replace(id, fmt.Sprintf(".%s", w.Manager.API.BaseDNS()), "", 1)]
 	w.mu.Unlock()
