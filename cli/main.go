@@ -85,6 +85,10 @@ func startCommand() *cli.Command {
 				Usage:    "set base dns for tunnels",
 				Required: true,
 			},
+			&cli.StringFlag{
+				Name:  "ipv4",
+				Usage: "set ipv4 target for dns",
+			},
 		},
 		Action: start,
 	}
