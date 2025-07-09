@@ -162,6 +162,9 @@ func (m *MockDNSAPI) DeleteDNSRecord(context context.Context, id string) error {
 	return nil
 }
 
+func (m *MockDNSAPI) IPV4() string    { return "" }
+func (m *MockDNSAPI) BaseDNS() string { return "" }
+
 func TestHTTP(t *testing.T) {
 	ln, err := net.Listen("tcp", ":0")
 	if err != nil {

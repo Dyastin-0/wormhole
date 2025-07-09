@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"net/http"
 	"strings"
@@ -154,24 +153,26 @@ func (w *Wormhole) handleConn(conn net.Conn) error {
 	w.tunnels[msg.ID] = &tunnel{proto: msg.Proto, session: session}
 	w.mu.Unlock()
 
-	// maybe also include this in Wormhole{}
-	localIPv4 := getOutboundIP()
-
 	record := &Record{
-		Name:    fmt.Sprintf("%s.wormhole.dyastin.tech", msg.ID),
-		Content: localIPv4.String(),
+		Name:    fmt.Sprintf("%s.%s", msg.ID, w.Manager.API.BaseDNS()),
+		Content: w.Manager.API.IPV4(),
 		Type:    "A",
 		TTL:     720,
 		Proxied: false,
 	}
 
-	_, err = w.Manager.API.CreateDNSRecord(w.ctx, time.Minute*30, record)
+	dnsRecord, err := w.Manager.API.CreateDNSRecord(w.ctx, time.Minute*30, record)
 	if err != nil {
 		w.logger.Error(err.Error())
 		session.Close()
 	}
 
 	<-session.CloseChan()
+
+	err = w.Manager.API.DeleteDNSRecord(w.ctx, dnsRecord.ID)
+	if err != nil {
+		w.logger.Error(err.Error())
+	}
 
 	w.mu.Lock()
 	delete(w.tunnels, msg.ID)
@@ -237,7 +238,7 @@ func (w *Wormhole) HTTP(wr http.ResponseWriter, r *http.Request) {
 	id := r.Header.Get("Host")
 
 	w.mu.Lock()
-	t, ok := w.tunnels[strings.Replace(id, ".dyastin.tech", "", 1)]
+	t, ok := w.tunnels[strings.Replace(id, fmt.Sprintf(".%s", w.Manager.API.BaseDNS()), "", 1)]
 	w.mu.Unlock()
 
 	if !ok {
@@ -320,16 +321,4 @@ func copyHeader(dst, src http.Header) {
 			dst.Add(k, v)
 		}
 	}
-}
-
-func getOutboundIP() net.IP {
-	conn, err := net.Dial("udp", "8.8.8.8:80")
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer conn.Close()
-
-	localAddr := conn.LocalAddr().(*net.UDPAddr)
-
-	return localAddr.IP
 }

@@ -60,21 +60,30 @@ func startCommand() *cli.Command {
 			&cli.StringFlag{
 				Name:    "address",
 				Aliases: []string{"a", "addr"},
+				Value:   ":8888",
 				Usage:   "set the address where wormhole server will run",
 			},
 			&cli.StringFlag{
 				Name:    "httpAdress",
 				Aliases: []string{"ha", "httpAddr"},
+				Value:   ":8889",
 				Usage:   "set the address where wormhole http handler will run",
 			},
 			&cli.StringFlag{
-				Name:    "zone",
-				Aliases: []string{"z"},
-				Usage:   "set cloudflare zone",
+				Name:     "zone",
+				Aliases:  []string{"z"},
+				Usage:    "set cloudflare zone",
+				Required: true,
 			},
 			&cli.StringFlag{
-				Name:  "api",
-				Usage: "set cloudflare api",
+				Name:     "api",
+				Usage:    "set cloudflare api",
+				Required: true,
+			},
+			&cli.StringFlag{
+				Name:     "dns",
+				Usage:    "set base dns for tunnels",
+				Required: true,
 			},
 		},
 		Action: start,
@@ -86,10 +95,12 @@ func start(ctx context.Context, cmd *cli.Command) error {
 	httpAddr := cmd.String("httpAddr")
 	zone := cmd.String("zone")
 	api := cmd.String("api")
+	baseDNS := cmd.String("dns")
+	ipv4 := cmd.String("ipv4")
 
 	w := wormhole.New(addr, httpAddr)
 
-	manager, err := wormhole.NewCloudflareManager(api, zone)
+	manager, err := wormhole.NewCloudflareManager(api, zone, baseDNS, ipv4)
 	if err != nil {
 		return err
 	}
@@ -110,20 +121,22 @@ func httpCommand() *cli.Command {
 		Usage: "start a wormhole http reverse tunnel client",
 		Flags: []cli.Flag{
 			&cli.StringFlag{
-				Name:    "id",
-				Aliases: []string{"i"},
-				Usage:   "set the wormhole client's endpoint (https://wormhole.dyastin.tech/{id})",
+				Name:     "id",
+				Aliases:  []string{"i"},
+				Usage:    "set the wormhole client's endpoint (https://wormhole.dyastin.tech/{id})",
+				Required: true,
 			},
 			&cli.StringFlag{
 				Name:    "address",
 				Aliases: []string{"a", "addr"},
-				Value:   ":8888",
+				Value:   ":8899",
 				Usage:   "set the address where the wormhole client will run, default is :8888",
 			},
 			&cli.StringFlag{
-				Name:    "target",
-				Aliases: []string{"t"},
-				Usage:   "set the address where the request will be tunneled to (:3000)",
+				Name:     "target",
+				Aliases:  []string{"t"},
+				Usage:    "set the address where the request will be tunneled to (:3000)",
+				Required: true,
 			},
 			&cli.StringFlag{
 				Name:    "wormhole-server-address",
@@ -138,20 +151,8 @@ func httpCommand() *cli.Command {
 
 func http(ctx context.Context, cmd *cli.Command) error {
 	id := cmd.String("id")
-	if id == "" {
-		return ErrMissingID
-	}
-
 	addr := cmd.String("addr")
-	if addr == "" {
-		return ErrMissingAddress
-	}
-
 	target := cmd.String("target")
-	if target == "" {
-		return ErrMissingTarget
-	}
-
 	wsa := cmd.String("wormhole-server-address")
 
 	c := wormhole.NewClient(id, wsa, addr, target, wormhole.ProtoHTTP)
