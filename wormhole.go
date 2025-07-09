@@ -158,7 +158,7 @@ func (w *Wormhole) handleConn(conn net.Conn) error {
 	localIPv4 := getOutboundIP()
 
 	record := &Record{
-		Name:    fmt.Sprintf("%s.dyastin.tech", msg.ID),
+		Name:    fmt.Sprintf("%s.wormhole.dyastin.tech", msg.ID),
 		Content: localIPv4.String(),
 		Type:    "A",
 		TTL:     720,

@@ -17,10 +17,7 @@ import (
 )
 
 func TestNew(t *testing.T) {
-	w, err := New(":8888", ":9999", "", "")
-	if err != nil {
-		t.Errorf("failed to initialize wormhole: %v", err)
-	}
+	w := New(":8888", ":9999")
 
 	if w.addr != ":8888" {
 		t.Errorf("addr mismatch: got %s, want %s", w.addr, ":8888")
@@ -54,10 +51,7 @@ func TestStart(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			w, err := New(tt.addr, tt.httpAddr, "", "")
-			if err != nil {
-				t.Errorf("failed to initialize wormhole: %v", err)
-			}
+			w := New(tt.addr, tt.httpAddr)
 
 			errChan := make(chan error, 1)
 
@@ -82,10 +76,7 @@ func TestStart(t *testing.T) {
 }
 
 func TestStop(t *testing.T) {
-	w, err := New(":8083", ":8010", "", "")
-	if err != nil {
-		t.Errorf("failed to initialize wormhole: %v", err)
-	}
+	w := New(":8083", ":8010")
 
 	done := make(chan error, 1)
 
