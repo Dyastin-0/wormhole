@@ -127,7 +127,7 @@ func httpCommand() *cli.Command {
 			&cli.StringFlag{
 				Name:     "id",
 				Aliases:  []string{"i"},
-				Usage:    "set the wormhole client's endpoint (https://wormhole.dyastin.tech/{id})",
+				Usage:    "set the wormhole client's endpoint (https://{id}.wormhole.dyastin.tech)",
 				Required: true,
 			},
 			&cli.StringFlag{
@@ -146,7 +146,7 @@ func httpCommand() *cli.Command {
 				Name:    "wormhole-server-address",
 				Aliases: []string{"s", "ws", "wsa", "server"},
 				Usage:   "set the wormhole server address",
-				Value:   "wormhole.dyastin.tech:8888",
+				Value:   "wormhole.dyastin.tech:8443",
 			},
 		},
 		Action: http,

@@ -3,6 +3,7 @@ package wormhole
 import (
 	"bufio"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -66,7 +67,9 @@ func (c *client) Start(ctx context.Context) error {
 
 	c.ctx, c.cancel = context.WithCancel(ctx)
 
-	conn, err := net.Dial("tcp", c.wormholeAddr)
+	conn, err := tls.Dial("tcp", c.wormholeAddr, &tls.Config{
+		ServerName: "wormhole.dyastin.tech",
+	})
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrFailedToDialTCP, err)
 	}
