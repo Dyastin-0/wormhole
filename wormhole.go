@@ -30,7 +30,7 @@ type Wormhole struct {
 
 func New(addr, httpAddr string) *Wormhole {
 	logger := NewLogger()
-	logger.InitMultiWriter("log", "/var/log/wormhole")
+	logger.InitMultiWriter("wormhole", "/var/log/wormhole/wormhole.log")
 
 	return &Wormhole{
 		addr:              addr,
@@ -61,7 +61,7 @@ func (w *Wormhole) Start(ctx context.Context) error {
 	go func() {
 		err := w.start()
 		if err != nil && !errors.Is(err, context.Canceled) {
-			w.logger.Error("TCP server exited: " + err.Error())
+			w.logger.Error("tcp server exited: " + err.Error())
 			cancel()
 			errch <- err
 		} else {
@@ -72,7 +72,7 @@ func (w *Wormhole) Start(ctx context.Context) error {
 	go func() {
 		err := w.StartHTTP()
 		if err != nil && !errors.Is(err, context.Canceled) {
-			w.logger.Error("HTTP server exited: " + err.Error())
+			w.logger.Error("http server exited: " + err.Error())
 			cancel()
 			errch <- err
 		} else {

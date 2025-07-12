@@ -11,8 +11,6 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"os"
-	"path/filepath"
 
 	"github.com/hashicorp/yamux"
 )
@@ -29,16 +27,8 @@ type client struct {
 }
 
 func NewClient(id, wormholeAddr, localAddr, targetAddr, proto string) *client {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		panic("could not determine home directory for logging")
-	}
-
-	name := "client"
-	logPath := filepath.Join(home, "wormhole", name, "logs", "log.txt")
-
 	logger := NewLogger()
-	logger.InitMultiWriter(name, logPath)
+	logger.InitMultiWriter("wormhole-client", "/var/log/wormhole-client/wormhole-client.log")
 
 	return &client{
 		id:           id,
@@ -73,6 +63,13 @@ func (c *client) Start(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrFailedToDialTCP, err)
 	}
+
+	// mrps handshake to route tcp to a path
+	path := "/"
+	pathlen := byte(len(path))
+
+	conn.Write([]byte{pathlen})
+	conn.Write([]byte(path))
 
 	session, err := yamux.Client(conn, nil)
 	if err != nil {
