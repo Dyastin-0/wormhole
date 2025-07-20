@@ -1,6 +1,10 @@
-package wormhole
+package dnsmanager
 
 import "time"
+
+const (
+	RecordTypeA = "A"
+)
 
 type Record struct {
 	Type    string

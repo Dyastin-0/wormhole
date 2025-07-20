@@ -9,6 +9,8 @@ type session interface {
 }
 
 type tunnel struct {
+	id      string
+	userID  string
 	proto   string
 	session session
 }

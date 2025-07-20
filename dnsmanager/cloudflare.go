@@ -1,11 +1,18 @@
-package wormhole
+package dnsmanager
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/cloudflare/cloudflare-go"
+)
+
+var (
+	ErrFailedToCreateNewDNSRecord         = errors.New("failed to create new dns record")
+	ErrFailedToDeleteDNSRecord            = errors.New("failed to delete dns record")
+	ErrFailedToInitializeCloudflareClient = errors.New("failed to initialize cloudflare client")
 )
 
 type CloudflareDNSManager struct {
@@ -18,7 +25,7 @@ type CloudflareDNSManager struct {
 func NewCloudflareAPI(apiToken, zoneID, baseDNS, ipv4 string) (DNSAPI, error) {
 	api, err := cloudflare.NewWithAPIToken(apiToken)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create Cloudflare API client: %w", err)
+		return nil, fmt.Errorf("%v: %w", ErrFailedToInitializeCloudflareClient, err)
 	}
 
 	return &CloudflareDNSManager{
@@ -39,7 +46,7 @@ func (d *CloudflareDNSManager) CreateDNSRecord(ctx context.Context, expires time
 
 	resp, err := d.api.CreateDNSRecord(ctx, cloudflare.ZoneIdentifier(d.zoneID), r)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create DNS record: %w", err)
+		return nil, fmt.Errorf("%v: %w", ErrFailedToCreateNewDNSRecord, err)
 	}
 
 	dnsRecord := &DNSRecord{
@@ -53,7 +60,7 @@ func (d *CloudflareDNSManager) CreateDNSRecord(ctx context.Context, expires time
 func (d *CloudflareDNSManager) DeleteDNSRecord(ctx context.Context, recordID string) error {
 	err := d.api.DeleteDNSRecord(ctx, cloudflare.ZoneIdentifier(d.zoneID), recordID)
 	if err != nil {
-		return fmt.Errorf("failed to delete DNS record: %w", err)
+		return fmt.Errorf("%v: %w", ErrFailedToDeleteDNSRecord, err)
 	}
 
 	return nil

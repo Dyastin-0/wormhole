@@ -1,3 +1,4 @@
+// Package wormhole
 package wormhole
 
 import (
@@ -13,29 +14,33 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Dyastin-0/wormhole/api/store"
+	"github.com/Dyastin-0/wormhole/dnsmanager"
+	"github.com/Dyastin-0/wormhole/logger"
 	"github.com/hashicorp/yamux"
 )
 
 type Wormhole struct {
-	addr              string
-	httpAddr          string
-	mu                sync.Mutex
-	tunnels           map[string]*tunnel
-	Manager           *Manager
+	addr     string
+	httpAddr string
+
+	tunnels sync.Map            // stores k=string;v=*tunnel
+	store   *store.Store        // api store
+	Manager *dnsmanager.Manager // dns manager
+
 	cancel            context.CancelFunc
 	ctx               context.Context
-	logger            Logger
+	logger            logger.Logger
 	tunnelHTTPRequest func(stream net.Conn, wr http.ResponseWriter, r *http.Request) error
 }
 
 func New(addr, httpAddr string) *Wormhole {
-	logger := NewLogger()
+	logger := logger.New()
 	logger.InitMultiWriter("wormhole", "/var/log/wormhole/wormhole.log")
 
 	return &Wormhole{
 		addr:              addr,
 		httpAddr:          httpAddr,
-		tunnels:           make(map[string]*tunnel),
 		logger:            logger,
 		tunnelHTTPRequest: tunnelHTTPRequest,
 	}
@@ -93,7 +98,7 @@ func (w *Wormhole) Start(ctx context.Context) error {
 func (w *Wormhole) start() error {
 	listener, err := net.Listen("tcp", w.addr)
 	if err != nil {
-		return fmt.Errorf("%w: %v", ErrFailedToListenToTCP, err)
+		return fmt.Errorf("%v: %w", ErrFailedToListenToTCP, err)
 	}
 
 	go func() {
@@ -136,12 +141,12 @@ func (w *Wormhole) handleConn(conn net.Conn) error {
 
 	session, err := yamux.Server(conn, nil)
 	if err != nil {
-		return fmt.Errorf("%w: %v", ErrFailedToCreateYamuxServer, err)
+		return fmt.Errorf("%v: %w", ErrFailedToCreateYamuxServer, err)
 	}
 
 	stream, err := session.Accept()
 	if err != nil {
-		return fmt.Errorf("%w: %v", ErrFailedToAcceptConn, err)
+		return fmt.Errorf("%v: %w", ErrFailedToAcceptConn, err)
 	}
 
 	msg, err := w.handshake(stream)
@@ -149,14 +154,12 @@ func (w *Wormhole) handleConn(conn net.Conn) error {
 		return err
 	}
 
-	w.mu.Lock()
-	w.tunnels[msg.ID] = &tunnel{proto: msg.Proto, session: session}
-	w.mu.Unlock()
+	w.tunnels.Store(msg.ID, &tunnel{proto: msg.Proto, session: session})
 
-	record := &Record{
+	record := &dnsmanager.Record{
 		Name:    fmt.Sprintf("%s.%s", msg.ID, w.Manager.API.BaseDNS()),
 		Content: w.Manager.API.IPV4(),
-		Type:    "A",
+		Type:    dnsmanager.RecordTypeA,
 		TTL:     720,
 		Proxied: false,
 	}
@@ -164,7 +167,6 @@ func (w *Wormhole) handleConn(conn net.Conn) error {
 	dnsRecord, err := w.Manager.API.CreateDNSRecord(w.ctx, time.Minute*30, record)
 	if err != nil {
 		w.logger.Error(err.Error())
-		session.Close()
 	}
 
 	<-session.CloseChan()
@@ -174,9 +176,7 @@ func (w *Wormhole) handleConn(conn net.Conn) error {
 		w.logger.Error(err.Error())
 	}
 
-	w.mu.Lock()
-	delete(w.tunnels, msg.ID)
-	w.mu.Unlock()
+	w.tunnels.Delete(msg.ID)
 
 	return nil
 }
@@ -192,31 +192,32 @@ func (w *Wormhole) handshake(stream net.Conn) (*message, error) {
 
 	err := dec.Decode(&msg)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrFailedToDecodeMessage, err)
+		return nil, fmt.Errorf("%v: %w", ErrFailedToDecodeMessage, err)
 	}
 
-	if _, exists := w.tunnels[msg.ID]; exists {
+	if _, exists := w.tunnels.Load(msg.ID); exists {
 		errMsg := &message{ID: msg.ID, Status: 1, Err: ErrIDAlreadyUsed.Error()}
 
 		err = enc.Encode(errMsg)
 		if err != nil {
 			return nil, errors.Join(
-				fmt.Errorf("%w: %v", ErrHandshakeFailed, ErrIDAlreadyUsed),
-				fmt.Errorf("%w: %v", ErrFailedToEncodeMessage, err),
+				fmt.Errorf("%v: %w", ErrHandshakeFailed, ErrIDAlreadyUsed),
+				fmt.Errorf("%v: %w", ErrFailedToEncodeMessage, err),
 			)
 		}
 
-		return nil, fmt.Errorf("%w: %v", ErrHandshakeFailed, ErrIDAlreadyUsed)
+		return nil, fmt.Errorf("%v: %w", ErrHandshakeFailed, ErrIDAlreadyUsed)
 	}
 
 	if msg.Proto != ProtoHTTP && msg.Proto != ProtoTCP {
 		errMsg := &message{ID: msg.ID, Status: 1, Err: ErrUnsupportedProtocol.Error()}
 
+		// encode error to conn and close
 		err = enc.Encode(errMsg)
 		if err != nil {
 			return nil, errors.Join(
-				fmt.Errorf("%w: %v", ErrHandshakeFailed, ErrUnsupportedProtocol),
-				fmt.Errorf("%w: %v", ErrFailedToEncodeMessage, err),
+				fmt.Errorf("%v: %w", ErrHandshakeFailed, ErrUnsupportedProtocol),
+				fmt.Errorf("%v: %w", ErrFailedToEncodeMessage, err),
 			)
 		}
 
@@ -228,7 +229,7 @@ func (w *Wormhole) handshake(stream net.Conn) (*message, error) {
 		Status: 0,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrHandshakeFailed, err)
+		return nil, fmt.Errorf("%v: %w", ErrHandshakeFailed, err)
 	}
 
 	return &msg, nil
@@ -241,18 +242,16 @@ func (w *Wormhole) HTTP(wr http.ResponseWriter, r *http.Request) {
 		id = r.Header.Get("Host")
 	}
 
-	w.logger.Debug("host: " + id)
+	key := strings.Replace(id, fmt.Sprintf(".%s", w.Manager.API.BaseDNS()), "", 1)
 
-	w.mu.Lock()
-	t, ok := w.tunnels[strings.Replace(id, fmt.Sprintf(".%s", w.Manager.API.BaseDNS()), "", 1)]
-	w.mu.Unlock()
+	t, ok := w.tunnels.Load(key)
 
 	if !ok {
 		http.Error(wr, "tunnel not found", http.StatusNotFound)
 		return
 	}
 
-	stream, err := t.session.Open()
+	stream, err := t.(*tunnel).session.Open()
 	if err != nil {
 		w.logger.Error(fmt.Sprintf("%s: %s\n", id, ErrFailedToOpenStream))
 		http.Error(wr, "failed to open stream", http.StatusInternalServerError)
@@ -290,7 +289,7 @@ func (w *Wormhole) StartHTTP() error {
 
 	err := server.ListenAndServe()
 	if err != nil && err != http.ErrServerClosed {
-		return fmt.Errorf("%w: %v", fmt.Errorf("http server stopped"), err)
+		return fmt.Errorf("%v: %w", fmt.Errorf("http server stopped"), err)
 	}
 
 	return nil
@@ -299,14 +298,14 @@ func (w *Wormhole) StartHTTP() error {
 func tunnelHTTPRequest(stream net.Conn, wr http.ResponseWriter, r *http.Request) error {
 	err := r.Write(stream)
 	if err != nil {
-		return fmt.Errorf("%w: %v", ErrFailedToWriteHTTPTunnelRequest, err)
+		return fmt.Errorf("%v: %w", ErrFailedToWriteHTTPTunnelRequest, err)
 	}
 
 	bufr := bufio.NewReader(stream)
 
 	resp, err := http.ReadResponse(bufr, r)
 	if err != nil {
-		return fmt.Errorf("%w: %v", ErrFailedToReadHTTPTunnelResponse, err)
+		return fmt.Errorf("%v: %w", ErrFailedToReadHTTPTunnelResponse, err)
 	}
 
 	defer resp.Body.Close()

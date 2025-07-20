@@ -2,12 +2,14 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"log"
 	"os"
 
 	"github.com/Dyastin-0/wormhole"
+	"github.com/Dyastin-0/wormhole/dnsmanager"
 	"github.com/common-nighthawk/go-figure"
 	"github.com/urfave/cli/v3"
 )
@@ -104,7 +106,7 @@ func start(ctx context.Context, cmd *cli.Command) error {
 
 	w := wormhole.New(addr, httpAddr)
 
-	manager, err := wormhole.NewCloudflareManager(api, zone, baseDNS, ipv4)
+	manager, err := dnsmanager.NewCloudflareManager(api, zone, baseDNS, ipv4)
 	if err != nil {
 		return err
 	}
@@ -131,12 +133,6 @@ func httpCommand() *cli.Command {
 				Required: true,
 			},
 			&cli.StringFlag{
-				Name:    "address",
-				Aliases: []string{"a", "addr"},
-				Value:   ":8899",
-				Usage:   "set the address where the wormhole client will run, default is :8888",
-			},
-			&cli.StringFlag{
 				Name:     "target",
 				Aliases:  []string{"t"},
 				Usage:    "set the address where the request will be tunneled to (:3000)",
@@ -155,11 +151,14 @@ func httpCommand() *cli.Command {
 
 func http(ctx context.Context, cmd *cli.Command) error {
 	id := cmd.String("id")
-	addr := cmd.String("addr")
 	target := cmd.String("target")
 	wsa := cmd.String("wormhole-server-address")
 
-	c := wormhole.NewClient(id, wsa, addr, target, wormhole.ProtoHTTP)
+	tlsconfig := &tls.Config{
+		ServerName: "wormhole.dyastin.tech",
+	}
+
+	c := wormhole.NewClient(id, wsa, target, wormhole.ProtoHTTP, tlsconfig)
 
 	err := c.Start(ctx)
 	if err != nil {

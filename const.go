@@ -25,10 +25,7 @@ var (
 	ErrFailedToWriteTCPTunnelResponse  = errors.New("failed to write tcp tunnel response")
 	ErrContextCancelled                = errors.New("context canceled")
 	ErrNilContext                      = errors.New("nil context")
-
-	// DNS Manager
-	ErrFailedToCreateNewDNSRecord = errors.New("failed to create new dns record")
-	ErrFailedToDeleteDNSRecord    = errors.New("failed to delete dns record")
+	ErrNilTLSConfig                    = errors.New("nil tls config")
 )
 
 const (

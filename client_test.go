@@ -3,9 +3,17 @@ package wormhole
 import (
 	"bufio"
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"io"
+	"math/big"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -17,15 +25,50 @@ import (
 )
 
 func TestNewClient(t *testing.T) {
-	c := NewClient("test", "localhost:9999", "localhost:3000", "localhost:8000", "http")
+	c := NewClient("test", "localhost:9999", "localhost:8000", "http", nil)
 
-	if c.id != "test" || c.wormholeAddr != "localhost:9999" || c.localAddr != "localhost:3000" || c.targetAddr != "localhost:8000" || c.proto != "http" {
+	if c.id != "test" || c.wormholeAddr != "localhost:9999" || c.targetAddr != "localhost:8000" || c.proto != "http" {
 		t.Errorf("mismatch in client fields")
 	}
 }
 
+func generateSelfSignedCert() (tls.Certificate, error) {
+	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+
+	template := x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject:      pkix.Name{CommonName: "localhost"},
+		NotBefore:    time.Now(),
+		NotAfter:     time.Now().Add(24 * time.Hour),
+		KeyUsage:     x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		DNSNames:     []string{"localhost"},
+	}
+
+	certDER, _ := x509.CreateCertificate(rand.Reader, &template, &template, &priv.PublicKey, priv)
+	keyDER, _ := x509.MarshalECPrivateKey(priv)
+
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER})
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER})
+
+	return tls.X509KeyPair(certPEM, keyPEM)
+}
+
 func TestClientStart(t *testing.T) {
-	ln, err := net.Listen("tcp", ":0")
+	cert, err := generateSelfSignedCert()
+	if err != nil {
+		panic(err)
+	}
+
+	tlsConfig := &tls.Config{
+		Certificates: []tls.Certificate{cert},
+		ClientAuth:   tls.NoClientCert,
+	}
+
+	ln, err := tls.Listen("tcp", ":0", tlsConfig)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -37,19 +80,26 @@ func TestClientStart(t *testing.T) {
 			t.Error(err)
 			return
 		}
+
 		sess, _ := yamux.Server(conn, nil)
 		stream, _ := sess.Accept()
+
 		dec := json.NewDecoder(stream)
 		enc := json.NewEncoder(stream)
+
 		var msg message
 		_ = dec.Decode(&msg)
+
 		msg.Status = 0
+
 		_ = enc.Encode(&msg)
+
 		time.Sleep(200 * time.Millisecond)
+
 		sess.Close()
 	}()
 
-	c := NewClient("test", ln.Addr().String(), ":0", ":0", "http")
+	c := NewClient("test", ln.Addr().String(), ":0", "http", InsecureTLSConfig())
 	errCh := make(chan error, 1)
 	go func() { errCh <- c.Start(context.Background()) }()
 	time.Sleep(300 * time.Millisecond)
@@ -66,7 +116,7 @@ func TestClientStart(t *testing.T) {
 }
 
 func TestClientStopWithoutStart(t *testing.T) {
-	c := NewClient("id", "", "", "", "http")
+	c := NewClient("id", "", "", "http", nil)
 	c.Stop()
 }
 
@@ -75,7 +125,7 @@ func TestClientHandshake(t *testing.T) {
 	defer client.Close()
 	defer server.Close()
 
-	c := NewClient("abc", "", "", "", "http")
+	c := NewClient("abc", "", "", "http", nil)
 
 	go func() {
 		dec := json.NewDecoder(client)
@@ -104,8 +154,7 @@ func TestClientHTTP(t *testing.T) {
 	defer ts.Close()
 
 	addr := strings.TrimPrefix(ts.URL, "http://")
-	c := NewClient("id", "", "", addr, "http")
-	c.targetAddr = addr
+	c := NewClient("id", "", addr, "http", nil)
 
 	client, server := net.Pipe()
 	defer client.Close()
@@ -137,7 +186,7 @@ func TestClientHTTP(t *testing.T) {
 }
 
 func TestClientHandleConnUnsupported(t *testing.T) {
-	c := NewClient("id", "", "", "", "invalid")
+	c := NewClient("id", "", "", "invalid", nil)
 	client, server := net.Pipe()
 	defer client.Close()
 	defer server.Close()

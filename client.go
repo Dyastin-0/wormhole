@@ -12,31 +12,38 @@ import (
 	"net"
 	"net/http"
 
+	"github.com/Dyastin-0/wormhole/logger"
 	"github.com/hashicorp/yamux"
 )
 
 type client struct {
 	id           string
 	wormholeAddr string
-	localAddr    string
 	targetAddr   string
 	proto        string
 	cancel       context.CancelFunc
 	ctx          context.Context
-	logger       Logger
+	logger       logger.Logger
+	tlsconfig    *tls.Config
 }
 
-func NewClient(id, wormholeAddr, localAddr, targetAddr, proto string) *client {
-	logger := NewLogger()
+var InsecureTLSConfig = func() *tls.Config {
+	return &tls.Config{
+		InsecureSkipVerify: true,
+	}
+}
+
+func NewClient(id, wormholeAddr, targetAddr, proto string, tlsconfig *tls.Config) *client {
+	logger := logger.New()
 	logger.InitMultiWriter("wormhole-client", "/var/log/wormhole-client/wormhole-client.log")
 
 	return &client{
 		id:           id,
 		wormholeAddr: wormholeAddr,
-		localAddr:    localAddr,
 		targetAddr:   targetAddr,
 		proto:        proto,
 		logger:       logger,
+		tlsconfig:    tlsconfig,
 	}
 }
 
@@ -51,29 +58,24 @@ func (c *client) Stop() {
 }
 
 func (c *client) Start(ctx context.Context) error {
+	if c.tlsconfig == nil {
+		return ErrNilTLSConfig
+	}
+
 	if ctx == nil {
 		return ErrNilContext
 	}
 
 	c.ctx, c.cancel = context.WithCancel(ctx)
 
-	conn, err := tls.Dial("tcp", c.wormholeAddr, &tls.Config{
-		ServerName: "wormhole.dyastin.tech",
-	})
+	conn, err := tls.Dial("tcp", c.wormholeAddr, c.tlsconfig)
 	if err != nil {
-		return fmt.Errorf("%w: %v", ErrFailedToDialTCP, err)
+		return fmt.Errorf("%v: %w", ErrFailedToDialTCP, err)
 	}
-
-	// mrps handshake to route tcp to a path
-	path := "/"
-	pathlen := byte(len(path))
-
-	conn.Write([]byte{pathlen})
-	conn.Write([]byte(path))
 
 	session, err := yamux.Client(conn, nil)
 	if err != nil {
-		return fmt.Errorf("%w: %v", ErrFailedToCreateYamuxClient, err)
+		return fmt.Errorf("%v: %w", ErrFailedToCreateYamuxClient, err)
 	}
 
 	go func() {
@@ -84,17 +86,17 @@ func (c *client) Start(ctx context.Context) error {
 
 	stream, err := session.Open()
 	if err != nil {
-		return fmt.Errorf("%w: %v", ErrFailedToOpenStream, err)
+		return fmt.Errorf("%v: %w", ErrFailedToOpenStream, err)
 	}
 
 	msg, err := c.handshake(stream)
 	if err != nil {
-		return fmt.Errorf("%w: %v", ErrHandshakeFailed, err)
+		return fmt.Errorf("%v: %w", ErrHandshakeFailed, err)
 	}
 
 	if msg.Status != 0 {
 		log.Println(msg.Err)
-		return fmt.Errorf("%w: %v", ErrHandshakeFailed, ErrIDAlreadyUsed)
+		return fmt.Errorf("%v: %w", ErrHandshakeFailed, ErrIDAlreadyUsed)
 	}
 
 	c.logger.Info("service started")
@@ -137,12 +139,12 @@ func (c *client) handshake(stream net.Conn) (*message, error) {
 
 	err := enc.Encode(msg)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrFailedToEncodeMessage, err)
+		return nil, fmt.Errorf("%v: %w", ErrFailedToEncodeMessage, err)
 	}
 
 	err = dec.Decode(&msg)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrFailedToDecodeMessage, err)
+		return nil, fmt.Errorf("%v: %w", ErrFailedToDecodeMessage, err)
 	}
 
 	return msg, nil
@@ -172,25 +174,25 @@ func (c *client) http(stream net.Conn) error {
 
 	conn, err := net.Dial("tcp", c.targetAddr)
 	if err != nil {
-		return fmt.Errorf("%w: %v", ErrFailedToDialTCP, err)
+		return fmt.Errorf("%v: %w", ErrFailedToDialTCP, err)
 	}
 
 	err = req.Write(conn)
 	if err != nil {
-		return fmt.Errorf("%w: %v", ErrFailedToWriteHTTPTunnelRequest, err)
+		return fmt.Errorf("%v: %w", ErrFailedToWriteHTTPTunnelRequest, err)
 	}
 
 	localBufr := bufio.NewReader(conn)
 
 	resp, err := http.ReadResponse(localBufr, req)
 	if err != nil {
-		return fmt.Errorf("%w: %v", ErrFailedToReadTCPTunnelResponse, err)
+		return fmt.Errorf("%v: %w", ErrFailedToReadTCPTunnelResponse, err)
 	}
 	defer resp.Body.Close()
 
 	err = resp.Write(stream)
 	if err != nil {
-		return fmt.Errorf("%w: %v", ErrFailedToWriteHTTPTunnelResponse, err)
+		return fmt.Errorf("%v: %w", ErrFailedToWriteHTTPTunnelResponse, err)
 	}
 
 	return nil

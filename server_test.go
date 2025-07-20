@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Dyastin-0/wormhole/dnsmanager"
 	"github.com/hashicorp/yamux"
 )
 
@@ -104,9 +105,7 @@ func TestHandshake(t *testing.T) {
 	defer client.Close()
 	defer server.Close()
 
-	w := &Wormhole{
-		tunnels: make(map[string]*tunnel),
-	}
+	w := &Wormhole{}
 
 	go func() {
 		msg := message{
@@ -148,23 +147,6 @@ func TestHandshake(t *testing.T) {
 	}
 }
 
-type MockDNSAPI struct{}
-
-func (m *MockDNSAPI) CreateDNSRecord(context context.Context, expires time.Duration, record *Record) (*DNSRecord, error) {
-	return &DNSRecord{
-		Meta: &Record{
-			Content: "localhost",
-		},
-	}, nil
-}
-
-func (m *MockDNSAPI) DeleteDNSRecord(context context.Context, id string) error {
-	return nil
-}
-
-func (m *MockDNSAPI) IPV4() string    { return "" }
-func (m *MockDNSAPI) BaseDNS() string { return "" }
-
 func TestHTTP(t *testing.T) {
 	ln, err := net.Listen("tcp", ":0")
 	if err != nil {
@@ -174,11 +156,9 @@ func TestHTTP(t *testing.T) {
 	defer ln.Close()
 
 	w := &Wormhole{
-		tunnels: make(map[string]*tunnel),
-	}
-
-	w.Manager = &Manager{
-		API: &MockDNSAPI{},
+		Manager: &dnsmanager.Manager{
+			API: newMockDNSAPI("wormhole.dyastin.tech", "127.0.0.1"),
+		},
 	}
 
 	go func() {
@@ -232,9 +212,7 @@ func TestHTTP(t *testing.T) {
 
 	time.Sleep(200 * time.Millisecond)
 
-	w.mu.Lock()
-	_, exists := w.tunnels[msg.ID]
-	w.mu.Unlock()
+	_, exists := w.tunnels.Load(msg.ID)
 
 	if !exists {
 		t.Errorf("expected %s to be registered but was not found", msg.ID)
@@ -243,9 +221,7 @@ func TestHTTP(t *testing.T) {
 	session.Close()
 	time.Sleep(100 * time.Millisecond)
 
-	w.mu.Lock()
-	_, exists = w.tunnels[msg.ID]
-	w.mu.Unlock()
+	_, exists = w.tunnels.Load(msg.ID)
 
 	if exists {
 		t.Errorf("expected %s to be deleted but was found", msg.ID)
@@ -321,19 +297,25 @@ func TestWormhole_HTTP(t *testing.T) {
 
 	mock := &mockSession{conn: clientConn}
 
+	dnsManager := &dnsmanager.Manager{
+		API: newMockDNSAPI("dyastin.tech", "127.0.0.1"),
+	}
+
 	w := &Wormhole{
-		tunnels: map[string]*tunnel{
-			"test": {
-				proto:   "http",
-				session: mock,
-			},
-		},
+		Manager: dnsManager,
 		tunnelHTTPRequest: func(stream net.Conn, wr http.ResponseWriter, r *http.Request) error {
 			wr.WriteHeader(http.StatusTeapot)
 			wr.Write([]byte("tunneled!"))
 			return nil
 		},
 	}
+
+	newTunnel := &tunnel{
+		proto:   "http",
+		session: mock,
+	}
+
+	w.tunnels.Store("test", newTunnel)
 
 	req := httptest.NewRequest("GET", "/", nil)
 	req.Header.Set("Host", "test.dyastin.tech")

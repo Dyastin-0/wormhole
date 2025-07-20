@@ -1,0 +1,63 @@
+syntax = "proto3";
+
+package auth;
+
+import "google/api/annotations.proto";
+
+option go_package = "github.com/Dyastin-0/wormhole/api/proto/auth;auth";
+
+service AuthService {
+  rpc Register(RegisterRequest) returns (AuthResponse) {
+    option (google.api.http) = {
+      post: "/auth/register"
+      body: "*"
+    };
+  }
+
+  rpc Login(LoginRequest) returns (AuthResponse) {
+    option (google.api.http) = {
+      post: "/auth/login"
+      body: "*"
+    };
+  }
+
+  rpc Logout(LogoutRequest) returns (LogoutResponse) {
+    option (google.api.http) = {
+      post: "/auth/logout"
+    };
+  }
+
+  rpc Refresh(RefreshRequest) returns (AuthResponse) {
+    option (google.api.http) = {
+      post: "/auth/refresh"
+    };
+  }
+}
+
+message RegisterRequest {
+  string email = 1;
+  string username = 2;
+  string name = 3;
+  string password = 4;
+}
+
+message LoginRequest {
+  string email = 1;
+  string password = 2;
+}
+
+message AuthResponse {
+  string access_token = 1;
+  User user = 2;
+}
+
+message User {
+  string id = 1;
+  string email = 2;
+  string name = 3;
+  string username = 4;
+}
+
+message RefreshRequest {}
+message LogoutRequest {}
+message LogoutResponse {}

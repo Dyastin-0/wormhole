@@ -1,7 +1,9 @@
-package wormhole
+// Package logger
+package logger
 
 import (
 	"io"
+	"maps"
 	"os"
 
 	"github.com/rs/zerolog"
@@ -32,7 +34,7 @@ type logger struct {
 	path    string
 }
 
-func NewLogger() Logger {
+func New() Logger {
 	return &logger{
 		path: "./logs/log.txt",
 	}
@@ -129,10 +131,8 @@ func (l *logger) WithAny(key string, value any) Logger {
 }
 
 func (l *logger) withField(key string, value any) Logger {
-	newCtx := make(map[string]interface{}, len(l.context)+1)
-	for k, v := range l.context {
-		newCtx[k] = v
-	}
+	newCtx := make(map[string]any, len(l.context)+1)
+	maps.Copy(newCtx, l.context)
 	newCtx[key] = value
 
 	return &logger{

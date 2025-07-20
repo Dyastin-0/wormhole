@@ -1,0 +1,12 @@
+version: "2"
+sql:
+- schema: "migrations/schema.sql"
+  queries:
+    - "sql/user.sql"
+    - "sql/tunnel.sql"
+    - "sql/auth.sql"
+  engine: "sqlite"
+  gen:
+    go:
+      package: "db"
+      out: "db"

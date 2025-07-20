@@ -1,4 +1,5 @@
-package wormhole
+// Package dnsmanager
+package dnsmanager
 
 import (
 	"context"
