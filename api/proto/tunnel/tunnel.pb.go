@@ -353,6 +353,7 @@ func (x *UpdateTunnelRequest) GetIpv4() string {
 type DeleteTunnelRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	UserId        string                 `protobuf:"bytes,2,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -390,6 +391,13 @@ func (*DeleteTunnelRequest) Descriptor() ([]byte, []int) {
 func (x *DeleteTunnelRequest) GetId() string {
 	if x != nil {
 		return x.Id
+	}
+	return ""
+}
+
+func (x *DeleteTunnelRequest) GetUserId() string {
+	if x != nil {
+		return x.UserId
 	}
 	return ""
 }
@@ -563,9 +571,10 @@ const file_proto_tunnel_tunnel_proto_rawDesc = "" +
 	"\x06domain\x18\x03 \x01(\tR\x06domain\x12\x16\n" +
 	"\x06target\x18\x04 \x01(\tR\x06target\x12\x1a\n" +
 	"\bprotocol\x18\x05 \x01(\tR\bprotocol\x12\x12\n" +
-	"\x04ipv4\x18\x06 \x01(\tR\x04ipv4\"%\n" +
+	"\x04ipv4\x18\x06 \x01(\tR\x04ipv4\">\n" +
 	"\x13DeleteTunnelRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"V\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x17\n" +
+	"\auser_id\x18\x02 \x01(\tR\x06userId\"V\n" +
 	"\x11GetTunnelsRequest\x12\x17\n" +
 	"\auser_id\x18\x01 \x01(\tR\x06userId\x12\x12\n" +
 	"\x04page\x18\x02 \x01(\x03R\x04page\x12\x14\n" +
