@@ -3,10 +3,8 @@ package wormhole
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"sync"
@@ -162,10 +160,7 @@ func (w *Wormhole) handleConn(conn net.Conn) error {
 		return errf
 	}
 
-	enc := json.NewEncoder(stream)
-	dec := json.NewDecoder(io.LimitReader(stream, MaxJSONSize))
-
-	msg, payload, err := w.handshake(enc, dec)
+	msg, payload, err := w.handshake(stream)
 	if err != nil {
 		w.Logger.Error(err.Error())
 		return err
@@ -212,17 +207,6 @@ func (w *Wormhole) handleConn(conn net.Conn) error {
 	}
 
 	w.tunnels.Store(domain, &tunnel{proto: msg.TunnelProto, session: session})
-
-	// send ok after all are ok
-	err = enc.Encode(&message{
-		Status: StatusOK,
-	})
-	if err != nil {
-		return ErrFailedToEncodeMessage
-	}
-
-	// close stream after sending ok
-	stream.Close()
 
 	var once sync.Once
 

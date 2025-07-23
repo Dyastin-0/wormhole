@@ -141,6 +141,7 @@ func TestHandshake(t *testing.T) {
 		var resp message
 
 		if err := dec.Decode(&resp); err != nil {
+			fmt.Println(err)
 			t.Error(err)
 			return
 		}

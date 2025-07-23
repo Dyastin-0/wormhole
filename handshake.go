@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net"
 
 	"github.com/golang-jwt/jwt/v5"
 )
@@ -17,7 +19,12 @@ const (
 	MaxJSONSize = 2048
 )
 
-func (w *Wormhole) handshake(enc *json.Encoder, dec *json.Decoder) (*message, *jwt.MapClaims, error) {
+func (w *Wormhole) handshake(stream net.Conn) (*message, *jwt.MapClaims, error) {
+	defer stream.Close()
+
+	dec := json.NewDecoder(io.LimitReader(stream, MaxJSONSize))
+	enc := json.NewEncoder(stream)
+
 	dec.DisallowUnknownFields()
 
 	var msg message
@@ -74,6 +81,16 @@ func (w *Wormhole) handshake(enc *json.Encoder, dec *json.Decoder) (*message, *j
 		}
 
 		return nil, nil, ErrUnsupportedProtocol
+	}
+
+	domain := fmt.Sprintf("%s.%s", msg.TunnelName, w.DNSManager.API.BaseDNS())
+
+	err = enc.Encode(&message{
+		Status:       StatusOK,
+		TunnelDomain: domain,
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("%v: %w", ErrHandshakeFailed, err)
 	}
 
 	return &msg, payload, nil
