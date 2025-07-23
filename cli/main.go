@@ -36,8 +36,8 @@ func main() {
 
 func New() *cli.Command {
 	return &cli.Command{
-		Name:   "wormhole-cli",
-		Usage:  "simple tcp reverse tunnel",
+		Name:   "wormhole",
+		Usage:  "a simple tcp-based reverse tunnel",
 		Action: wormholeCommand,
 		Commands: []*cli.Command{
 			startCommand(),
