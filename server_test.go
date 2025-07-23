@@ -150,7 +150,10 @@ func TestHandshake(t *testing.T) {
 		}
 	}()
 
-	msg, _, err := w.handshake(server)
+	enc := json.NewEncoder(server)
+	dec := json.NewDecoder(server)
+
+	msg, _, err := w.handshake(enc, dec)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"sync"
@@ -161,13 +162,14 @@ func (w *Wormhole) handleConn(conn net.Conn) error {
 		return errf
 	}
 
-	msg, payload, err := w.handshake(stream)
+	enc := json.NewEncoder(stream)
+	dec := json.NewDecoder(io.LimitReader(stream, MaxJSONSize))
+
+	msg, payload, err := w.handshake(enc, dec)
 	if err != nil {
 		w.Logger.Error(err.Error())
 		return err
 	}
-
-	enc := json.NewEncoder(stream)
 
 	var domain, ipv4 string
 	var ttl time.Duration
@@ -213,12 +215,14 @@ func (w *Wormhole) handleConn(conn net.Conn) error {
 
 	// send ok after all are ok
 	err = enc.Encode(&message{
-		Status:       StatusOK,
-		TunnelDomain: domain,
+		Status: StatusOK,
 	})
 	if err != nil {
 		return ErrFailedToEncodeMessage
 	}
+
+	// close stream after sending ok
+	stream.Close()
 
 	var once sync.Once
 

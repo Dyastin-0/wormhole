@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"net"
 
 	"github.com/golang-jwt/jwt/v5"
 )
@@ -19,12 +17,7 @@ const (
 	MaxJSONSize = 2048
 )
 
-func (w *Wormhole) handshake(stream net.Conn) (*message, *jwt.MapClaims, error) {
-	defer stream.Close()
-
-	dec := json.NewDecoder(io.LimitReader(stream, MaxJSONSize))
-	enc := json.NewEncoder(stream)
-
+func (w *Wormhole) handshake(enc *json.Encoder, dec *json.Decoder) (*message, *jwt.MapClaims, error) {
 	dec.DisallowUnknownFields()
 
 	var msg message
