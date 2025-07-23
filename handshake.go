@@ -36,7 +36,7 @@ func (w *Wormhole) handshake(stream net.Conn) (*message, *jwt.MapClaims, error) 
 
 	// validate api key if there is
 	payload := &jwt.MapClaims{}
-	// will decide how i will issue api tokens
+	// will decide how will i issue api tokens
 	// if msg.APIKey != "" {
 	// 	payload, err = w.Issuer.ParseAPIToken(msg.APIKey)
 	// 	if err != nil {
@@ -83,11 +83,9 @@ func (w *Wormhole) handshake(stream net.Conn) (*message, *jwt.MapClaims, error) 
 		return nil, nil, ErrUnsupportedProtocol
 	}
 
-	domain := fmt.Sprintf("%s.%s", msg.TunnelName, w.DNSManager.API.BaseDNS())
-
 	err = enc.Encode(&message{
-		Status:       StatusOK,
-		TunnelDomain: domain,
+		TunnelID: msg.TunnelID,
+		Status:   StatusOK,
 	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("%v: %w", ErrHandshakeFailed, err)

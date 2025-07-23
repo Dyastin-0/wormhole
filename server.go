@@ -3,6 +3,7 @@ package wormhole
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -166,6 +167,8 @@ func (w *Wormhole) handleConn(conn net.Conn) error {
 		return err
 	}
 
+	enc := json.NewEncoder(stream)
+
 	var domain, ipv4 string
 	var ttl time.Duration
 
@@ -207,6 +210,15 @@ func (w *Wormhole) handleConn(conn net.Conn) error {
 	}
 
 	w.tunnels.Store(domain, &tunnel{proto: msg.TunnelProto, session: session})
+
+	// send ok after all are ok
+	err = enc.Encode(&message{
+		Status:       StatusOK,
+		TunnelDomain: domain,
+	})
+	if err != nil {
+		return ErrFailedToEncodeMessage
+	}
 
 	var once sync.Once
 
