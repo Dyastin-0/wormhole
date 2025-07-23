@@ -3,12 +3,15 @@ package main
 import (
 	"context"
 	"crypto/tls"
+	dbsql "database/sql"
 	"errors"
 	"fmt"
 	"log"
 	"os"
 
 	"github.com/Dyastin-0/wormhole"
+	"github.com/Dyastin-0/wormhole/api/db"
+	"github.com/Dyastin-0/wormhole/api/store"
 	"github.com/Dyastin-0/wormhole/dnsmanager"
 	"github.com/Dyastin-0/wormhole/logger"
 	"github.com/Dyastin-0/wormhole/token"
@@ -108,6 +111,14 @@ func start(ctx context.Context, cmd *cli.Command) error {
 
 	w := wormhole.New(addr, httpAddr)
 
+	conn, err := dbsql.Open("sqlite3", "file:dev.db?_foreign_keys=on&_journal_mode=WAL&_cache=shared&_busy_timeout=5000")
+	if err != nil {
+		log.Fatalf("failed to connect to db: %v", err)
+	}
+
+	queries := db.New(conn)
+	newStore := store.New(queries)
+
 	newLogger := logger.New()
 	newLogger.InitMultiWriter("wormhole", "/var/log/wormhole/wormhole.log")
 
@@ -118,6 +129,7 @@ func start(ctx context.Context, cmd *cli.Command) error {
 		return err
 	}
 
+	w.Store = newStore
 	w.Logger = newLogger
 	w.Issuer = issuer
 	w.DNSManager = manager
