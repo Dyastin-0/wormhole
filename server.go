@@ -24,9 +24,9 @@ type Wormhole struct {
 	addr     string
 	httpAddr string
 
-	tunnels sync.Map            // stores k=string;v=*tunnel
-	store   *store.Store        // api store
-	Manager *dnsmanager.Manager // dns manager
+	tunnels    sync.Map            // stores k=string;v=*tunnel
+	Store      *store.Store        // api store
+	DNSManager *dnsmanager.Manager // dns manager
 
 	cancel            context.CancelFunc
 	ctx               context.Context
@@ -55,6 +55,14 @@ func (w *Wormhole) Stop() {
 func (w *Wormhole) Start(ctx context.Context) error {
 	if ctx == nil {
 		return ErrNilContext
+	}
+
+	if w.DNSManager == nil {
+		return ErrNilDNSManager
+	}
+
+	if w.Store == nil {
+		return ErrNilStore
 	}
 
 	parentCtx, cancel := context.WithCancel(ctx)
@@ -157,21 +165,21 @@ func (w *Wormhole) handleConn(conn net.Conn) error {
 	w.tunnels.Store(msg.ID, &tunnel{proto: msg.Proto, session: session})
 
 	record := &dnsmanager.Record{
-		Name:    fmt.Sprintf("%s.%s", msg.ID, w.Manager.API.BaseDNS()),
-		Content: w.Manager.API.IPV4(),
+		Name:    fmt.Sprintf("%s.%s", msg.ID, w.DNSManager.API.BaseDNS()),
+		Content: w.DNSManager.API.IPV4(),
 		Type:    dnsmanager.RecordTypeA,
 		TTL:     720,
 		Proxied: false,
 	}
 
-	dnsRecord, err := w.Manager.API.CreateDNSRecord(w.ctx, time.Minute*30, record)
+	dnsRecord, err := w.DNSManager.API.CreateDNSRecord(w.ctx, time.Minute*30, record)
 	if err != nil {
 		w.logger.Error(err.Error())
 	}
 
 	<-session.CloseChan()
 
-	err = w.Manager.API.DeleteDNSRecord(w.ctx, dnsRecord.ID)
+	err = w.DNSManager.API.DeleteDNSRecord(w.ctx, dnsRecord.ID)
 	if err != nil {
 		w.logger.Error(err.Error())
 	}
@@ -242,7 +250,7 @@ func (w *Wormhole) HTTP(wr http.ResponseWriter, r *http.Request) {
 		id = r.Header.Get("Host")
 	}
 
-	key := strings.Replace(id, fmt.Sprintf(".%s", w.Manager.API.BaseDNS()), "", 1)
+	key := strings.Replace(id, fmt.Sprintf(".%s", w.DNSManager.API.BaseDNS()), "", 1)
 
 	t, ok := w.tunnels.Load(key)
 

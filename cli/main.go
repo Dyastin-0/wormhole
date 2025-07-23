@@ -111,7 +111,7 @@ func start(ctx context.Context, cmd *cli.Command) error {
 		return err
 	}
 
-	w.Manager = manager
+	w.DNSManager = manager
 
 	err = w.Start(ctx)
 	if err != nil {

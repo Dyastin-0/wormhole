@@ -17,7 +17,7 @@ import (
 	"github.com/Dyastin-0/wormhole/api/proto/user"
 	"github.com/Dyastin-0/wormhole/api/server"
 	"github.com/Dyastin-0/wormhole/api/store"
-	"github.com/Dyastin-0/wormhole/api/token"
+	"github.com/Dyastin-0/wormhole/token"
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"github.com/joho/godotenv"
 	_ "github.com/mattn/go-sqlite3"

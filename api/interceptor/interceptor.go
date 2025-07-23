@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/Dyastin-0/wormhole/api/header"
-	"github.com/Dyastin-0/wormhole/api/token"
+	"github.com/Dyastin-0/wormhole/token"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"

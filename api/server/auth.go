@@ -9,11 +9,11 @@ import (
 	"time"
 
 	"github.com/Dyastin-0/wormhole/api/db"
-	"github.com/Dyastin-0/wormhole/api/hash"
 	"github.com/Dyastin-0/wormhole/api/header"
 	authpb "github.com/Dyastin-0/wormhole/api/proto/auth"
 	"github.com/Dyastin-0/wormhole/api/store"
-	"github.com/Dyastin-0/wormhole/api/token"
+	"github.com/Dyastin-0/wormhole/hash"
+	"github.com/Dyastin-0/wormhole/token"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"

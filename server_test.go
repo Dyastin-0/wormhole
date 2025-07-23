@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Dyastin-0/wormhole/api/store"
 	"github.com/Dyastin-0/wormhole/dnsmanager"
 	"github.com/hashicorp/yamux"
 )
@@ -53,6 +54,13 @@ func TestStart(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			w := New(tt.addr, tt.httpAddr)
+			dbStore := store.New(nil)
+			dnsManager := &dnsmanager.Manager{
+				API: newMockDNSAPI("dyastin.tech", "127.0.0.1"),
+			}
+
+			w.Store = dbStore
+			w.DNSManager = dnsManager
 
 			errChan := make(chan error, 1)
 
@@ -78,6 +86,14 @@ func TestStart(t *testing.T) {
 
 func TestStop(t *testing.T) {
 	w := New(":8083", ":8010")
+
+	store := store.New(nil)
+	dnsManager := &dnsmanager.Manager{
+		API: newMockDNSAPI("dyastin.tech", "127.0.0.1"),
+	}
+
+	w.Store = store
+	w.DNSManager = dnsManager
 
 	done := make(chan error, 1)
 
@@ -156,7 +172,7 @@ func TestHTTP(t *testing.T) {
 	defer ln.Close()
 
 	w := &Wormhole{
-		Manager: &dnsmanager.Manager{
+		DNSManager: &dnsmanager.Manager{
 			API: newMockDNSAPI("wormhole.dyastin.tech", "127.0.0.1"),
 		},
 	}
@@ -302,7 +318,7 @@ func TestWormhole_HTTP(t *testing.T) {
 	}
 
 	w := &Wormhole{
-		Manager: dnsManager,
+		DNSManager: dnsManager,
 		tunnelHTTPRequest: func(stream net.Conn, wr http.ResponseWriter, r *http.Request) error {
 			wr.WriteHeader(http.StatusTeapot)
 			wr.Write([]byte("tunneled!"))

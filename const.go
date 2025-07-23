@@ -26,6 +26,8 @@ var (
 	ErrContextCancelled                = errors.New("context canceled")
 	ErrNilContext                      = errors.New("nil context")
 	ErrNilTLSConfig                    = errors.New("nil tls config")
+	ErrNilDNSManager                   = errors.New("nil dns manager")
+	ErrNilStore                        = errors.New("nil store")
 )
 
 const (

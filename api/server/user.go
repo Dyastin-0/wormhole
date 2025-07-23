@@ -6,9 +6,9 @@ import (
 	"errors"
 
 	"github.com/Dyastin-0/wormhole/api/db"
-	"github.com/Dyastin-0/wormhole/api/hash"
 	userpb "github.com/Dyastin-0/wormhole/api/proto/user"
 	"github.com/Dyastin-0/wormhole/api/store"
+	"github.com/Dyastin-0/wormhole/hash"
 	"github.com/google/uuid"
 	"github.com/mattn/go-sqlite3"
 	"google.golang.org/grpc/codes"
