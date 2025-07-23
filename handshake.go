@@ -6,7 +6,10 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"time"
 
+	"github.com/Dyastin-0/wormhole/api/db"
+	"github.com/Dyastin-0/wormhole/token"
 	"github.com/golang-jwt/jwt/v5"
 )
 
@@ -19,7 +22,7 @@ const (
 	MaxJSONSize = 2048
 )
 
-func (w *Wormhole) handshake(stream net.Conn) (*message, *jwt.MapClaims, error) {
+func (w *Wormhole) handshake(stream net.Conn) (string, string, string, time.Duration, error) {
 	dec := json.NewDecoder(io.LimitReader(stream, MaxJSONSize))
 	enc := json.NewEncoder(stream)
 
@@ -29,7 +32,7 @@ func (w *Wormhole) handshake(stream net.Conn) (*message, *jwt.MapClaims, error) 
 
 	err := dec.Decode(&msg)
 	if err != nil {
-		return nil, nil, fmt.Errorf("%v: %w", ErrFailedToDecodeMessage, err)
+		return "", "", "", 0, fmt.Errorf("%v: %w", ErrFailedToDecodeMessage, err)
 	}
 
 	// validate api key if there is
@@ -58,13 +61,13 @@ func (w *Wormhole) handshake(stream net.Conn) (*message, *jwt.MapClaims, error) 
 
 		err = enc.Encode(errMsg)
 		if err != nil {
-			return nil, nil, errors.Join(
+			return "", "", "", 0, errors.Join(
 				fmt.Errorf("%v: %w", ErrHandshakeFailed, ErrTunnelNameAlreadyUsed),
 				fmt.Errorf("%v: %w", ErrFailedToEncodeMessage, err),
 			)
 		}
 
-		return nil, nil, fmt.Errorf("%v: %w", ErrHandshakeFailed, ErrTunnelNameAlreadyUsed)
+		return "", "", "", 0, fmt.Errorf("%v: %w", ErrHandshakeFailed, ErrTunnelNameAlreadyUsed)
 	}
 
 	if msg.TunnelProto != ProtoHTTP && msg.TunnelProto != ProtoTCP {
@@ -72,22 +75,50 @@ func (w *Wormhole) handshake(stream net.Conn) (*message, *jwt.MapClaims, error) 
 
 		err = enc.Encode(errMsg)
 		if err != nil {
-			return nil, nil, errors.Join(
+			return "", "", "", 0, errors.Join(
 				fmt.Errorf("%v: %w", ErrHandshakeFailed, ErrUnsupportedProtocol),
 				fmt.Errorf("%v: %w", ErrFailedToEncodeMessage, err),
 			)
 		}
 
-		return nil, nil, ErrUnsupportedProtocol
+		return "", "", "", 0, ErrUnsupportedProtocol
+	}
+
+	var ipv4, domain, proto string
+	var ttl time.Duration
+
+	if payload != nil && msg.TunnelID != "" {
+		userID := (*payload)[token.PayloadID].(string)
+
+		param := &db.GetTunnelParams{
+			ID:     msg.TunnelID,
+			UserID: userID,
+		}
+
+		res, err := w.Store.Tunnel.Get(w.ctx, param)
+		if err != nil {
+			w.Logger.Error(err.Error())
+			return "", "", "", 0, err
+		}
+
+		domain = res.Domain
+		ipv4 = res.Ipv4
+		ttl = 24 * time.Hour
+		proto = res.Protocol
+	} else {
+		domain = fmt.Sprintf("%s.%s", msg.TunnelName, w.DNSManager.API.BaseDNS())
+		ipv4 = w.DNSManager.API.IPV4()
+		ttl = 1 * time.Hour
+		proto = msg.TunnelProto
 	}
 
 	err = enc.Encode(&message{
 		Status:       StatusOK,
-		TunnelDomain: fmt.Sprintf("%s.%s", msg.TunnelName, w.DNSManager.API.BaseDNS()),
+		TunnelDomain: domain,
 	})
 	if err != nil {
-		return nil, nil, fmt.Errorf("%v: %w", ErrHandshakeFailed, err)
+		return "", "", "", 0, fmt.Errorf("%v: %w", ErrHandshakeFailed, err)
 	}
 
-	return &msg, payload, nil
+	return domain, proto, ipv4, ttl, nil
 }

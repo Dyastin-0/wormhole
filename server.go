@@ -10,7 +10,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Dyastin-0/wormhole/api/db"
 	"github.com/Dyastin-0/wormhole/api/store"
 	"github.com/Dyastin-0/wormhole/dnsmanager"
 	"github.com/Dyastin-0/wormhole/logger"
@@ -159,36 +158,10 @@ func (w *Wormhole) handleConn(conn net.Conn) error {
 		return errf
 	}
 
-	msg, payload, err := w.handshake(stream)
+	domain, proto, ipv4, ttl, err := w.handshake(stream)
 	if err != nil {
 		w.Logger.Error(err.Error())
 		return err
-	}
-
-	var domain, ipv4 string
-	var ttl time.Duration
-
-	if payload != nil && msg.TunnelID != "" {
-		userID := (*payload)[token.PayloadID].(string)
-
-		param := &db.GetTunnelParams{
-			ID:     msg.TunnelID,
-			UserID: userID,
-		}
-
-		res, err := w.Store.Tunnel.Get(w.ctx, param)
-		if err != nil {
-			w.Logger.Error(err.Error())
-			return err
-		}
-
-		domain = res.Domain
-		ipv4 = res.Ipv4
-		ttl = 24 * time.Hour
-	} else {
-		domain = fmt.Sprintf("%s.%s", msg.TunnelName, w.DNSManager.API.BaseDNS())
-		ipv4 = w.DNSManager.API.IPV4()
-		ttl = 1 * time.Hour
 	}
 
 	record := &dnsmanager.Record{
@@ -205,7 +178,7 @@ func (w *Wormhole) handleConn(conn net.Conn) error {
 		return err
 	}
 
-	w.tunnels.Store(domain, &tunnel{proto: msg.TunnelProto, session: session})
+	w.tunnels.Store(domain, &tunnel{proto: proto, session: session})
 
 	var once sync.Once
 
