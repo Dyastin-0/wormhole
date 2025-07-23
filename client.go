@@ -104,7 +104,7 @@ func (c *client) Start(ctx context.Context, tlsConfig *tls.Config) error {
 	}
 
 	c.Logger.Info("tunnel started")
-	fmt.Printf("domain: %s", msg.TunnelDomain)
+	fmt.Printf("domain: https://%s", msg.TunnelDomain)
 
 	for {
 		stream, err := session.Accept()

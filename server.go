@@ -3,7 +3,6 @@ package wormhole
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -145,14 +144,13 @@ func (w *Wormhole) start() error {
 }
 
 func (w *Wormhole) handleConn(conn net.Conn) error {
-	defer conn.Close()
-
 	session, err := yamux.Server(conn, nil)
 	if err != nil {
 		errf := fmt.Errorf("%v: %w", ErrFailedToCreateYamuxServer, err)
 		w.Logger.Error(errf.Error())
 		return errf
 	}
+	defer session.Close()
 
 	stream, err := session.Accept()
 	if err != nil {
@@ -166,8 +164,6 @@ func (w *Wormhole) handleConn(conn net.Conn) error {
 		w.Logger.Error(err.Error())
 		return err
 	}
-
-	enc := json.NewEncoder(stream)
 
 	var domain, ipv4 string
 	var ttl time.Duration
@@ -210,15 +206,6 @@ func (w *Wormhole) handleConn(conn net.Conn) error {
 	}
 
 	w.tunnels.Store(domain, &tunnel{proto: msg.TunnelProto, session: session})
-
-	// send ok after all are ok
-	err = enc.Encode(&message{
-		Status:       StatusOK,
-		TunnelDomain: domain,
-	})
-	if err != nil {
-		return ErrFailedToEncodeMessage
-	}
 
 	var once sync.Once
 

@@ -20,8 +20,6 @@ const (
 )
 
 func (w *Wormhole) handshake(stream net.Conn) (*message, *jwt.MapClaims, error) {
-	defer stream.Close()
-
 	dec := json.NewDecoder(io.LimitReader(stream, MaxJSONSize))
 	enc := json.NewEncoder(stream)
 
@@ -84,8 +82,8 @@ func (w *Wormhole) handshake(stream net.Conn) (*message, *jwt.MapClaims, error) 
 	}
 
 	err = enc.Encode(&message{
-		TunnelID: msg.TunnelID,
-		Status:   StatusOK,
+		Status:       StatusOK,
+		TunnelDomain: fmt.Sprintf("%s.%s", msg.TunnelName, w.DNSManager.API.BaseDNS()),
 	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("%v: %w", ErrHandshakeFailed, err)
