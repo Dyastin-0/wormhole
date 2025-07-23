@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"net/http"
 
@@ -99,12 +98,13 @@ func (c *client) Start(ctx context.Context, tlsConfig *tls.Config) error {
 		return fmt.Errorf("%v: %w", ErrHandshakeFailed, err)
 	}
 
-	if msg.Status != 0 {
-		log.Println(msg.Err)
+	if msg.Status != StatusOK {
+		c.Logger.Error(msg.Err)
 		return fmt.Errorf("%v: %w", ErrHandshakeFailed, ErrTunnelNameAlreadyUsed)
 	}
 
-	c.Logger.Info("service started")
+	c.Logger.Info("tunnel started")
+	fmt.Printf("domain: %s", msg.TunnelDomain)
 
 	for {
 		stream, err := session.Accept()

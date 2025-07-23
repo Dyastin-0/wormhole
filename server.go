@@ -3,6 +3,7 @@ package wormhole
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -166,6 +167,8 @@ func (w *Wormhole) handleConn(conn net.Conn) error {
 		return err
 	}
 
+	enc := json.NewEncoder(stream)
+
 	var domain, ipv4 string
 	var ttl time.Duration
 
@@ -208,20 +211,28 @@ func (w *Wormhole) handleConn(conn net.Conn) error {
 
 	w.tunnels.Store(domain, &tunnel{proto: msg.TunnelProto, session: session})
 
+	// send ok after all are ok
+	err = enc.Encode(&message{
+		Status:       StatusOK,
+		TunnelDomain: domain,
+	})
+	if err != nil {
+		return ErrFailedToEncodeMessage
+	}
+
 	var once sync.Once
 
 	// start a ttl watcher, if ttl is done delete record and close the session
 	go func() {
-		select {
-		case <-time.After(ttl):
-			once.Do(func() {
-				err := w.DNSManager.API.DeleteDNSRecord(w.ctx, dnsRecord.ID)
-				if err != nil {
-					w.Logger.Error(err.Error())
-				}
-				session.Close()
-			})
-		}
+		<-time.After(ttl)
+
+		once.Do(func() {
+			err := w.DNSManager.API.DeleteDNSRecord(w.ctx, dnsRecord.ID)
+			if err != nil {
+				w.Logger.Error(err.Error())
+			}
+			session.Close()
+		})
 	}()
 
 	<-session.CloseChan()

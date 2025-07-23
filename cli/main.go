@@ -196,9 +196,10 @@ func http(ctx context.Context, cmd *cli.Command) error {
 	logger := logger.New()
 	logger.InitMultiWriter("wormhole-client", "/var/log/wormhole-client/wormhole-client.log")
 
+	c.Logger = logger
+
 	err := c.Start(ctx, tlsconfig)
 	if err != nil {
-		fmt.Println(err)
 		return err
 	}
 

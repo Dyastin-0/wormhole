@@ -83,13 +83,5 @@ func (w *Wormhole) handshake(stream net.Conn) (*message, *jwt.MapClaims, error) 
 		return nil, nil, ErrUnsupportedProtocol
 	}
 
-	err = enc.Encode(&message{
-		TunnelID: msg.TunnelID,
-		Status:   StatusOK,
-	})
-	if err != nil {
-		return nil, nil, fmt.Errorf("%v: %w", ErrHandshakeFailed, err)
-	}
-
 	return &msg, payload, nil
 }
