@@ -16,6 +16,7 @@ import (
 	"github.com/Dyastin-0/wormhole/logger"
 	"github.com/Dyastin-0/wormhole/token"
 	"github.com/common-nighthawk/go-figure"
+	_ "github.com/mattn/go-sqlite3"
 	"github.com/urfave/cli/v3"
 )
 
