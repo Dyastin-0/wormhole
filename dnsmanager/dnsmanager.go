@@ -10,8 +10,8 @@ import (
 type DNSAPI interface {
 	BaseDNS() string
 	IPV4() string
-	CreateDNSRecord(context context.Context, expires time.Duration, record *Record) (*DNSRecord, error)
-	DeleteDNSRecord(context context.Context, id string) error
+	CreateDNSRecord(ctx context.Context, ttl time.Duration, record *Record) (*DNSRecord, error)
+	DeleteDNSRecord(ctx context.Context, id string) error
 }
 
 type Manager struct {

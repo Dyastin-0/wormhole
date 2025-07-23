@@ -10,6 +10,8 @@ import (
 
 	"github.com/Dyastin-0/wormhole"
 	"github.com/Dyastin-0/wormhole/dnsmanager"
+	"github.com/Dyastin-0/wormhole/logger"
+	"github.com/Dyastin-0/wormhole/token"
 	"github.com/common-nighthawk/go-figure"
 	"github.com/urfave/cli/v3"
 )
@@ -106,11 +108,18 @@ func start(ctx context.Context, cmd *cli.Command) error {
 
 	w := wormhole.New(addr, httpAddr)
 
+	newLogger := logger.New()
+	newLogger.InitMultiWriter("wormhole", "/var/log/wormhole/wormhole.log")
+
+	issuer := token.DefaultIssuer()
+
 	manager, err := dnsmanager.NewCloudflareManager(api, zone, baseDNS, ipv4)
 	if err != nil {
 		return err
 	}
 
+	w.Logger = newLogger
+	w.Issuer = issuer
 	w.DNSManager = manager
 
 	err = w.Start(ctx)
@@ -127,9 +136,14 @@ func httpCommand() *cli.Command {
 		Usage: "start a wormhole http reverse tunnel client",
 		Flags: []cli.Flag{
 			&cli.StringFlag{
-				Name:     "id",
-				Aliases:  []string{"i"},
-				Usage:    "set the wormhole client's endpoint (https://{id}.wormhole.dyastin.tech)",
+				Name:    "id",
+				Aliases: []string{"i"},
+				Usage:   "set the tunnel id which wormhole client will use",
+			},
+			&cli.StringFlag{
+				Name:     "name",
+				Aliases:  []string{"n"},
+				Usage:    "set your wormhole tunnel's domain (https://{name}.wormhole.dyastin.tech)",
 				Required: true,
 			},
 			&cli.StringFlag{
@@ -144,12 +158,18 @@ func httpCommand() *cli.Command {
 				Usage:   "set the wormhole server address",
 				Value:   "wormhole.dyastin.tech:8443",
 			},
+			&cli.StringFlag{
+				Name:  "api",
+				Usage: "set the wormhole api key",
+			},
 		},
 		Action: http,
 	}
 }
 
 func http(ctx context.Context, cmd *cli.Command) error {
+	api := cmd.String("api")
+	name := cmd.String("name")
 	id := cmd.String("id")
 	target := cmd.String("target")
 	wsa := cmd.String("wormhole-server-address")
@@ -158,9 +178,12 @@ func http(ctx context.Context, cmd *cli.Command) error {
 		ServerName: "wormhole.dyastin.tech",
 	}
 
-	c := wormhole.NewClient(id, wsa, target, wormhole.ProtoHTTP, tlsconfig)
+	c := wormhole.NewClient(api, id, name, wsa, target, wormhole.ProtoHTTP)
 
-	err := c.Start(ctx)
+	logger := logger.New()
+	logger.InitMultiWriter("wormhole-client", "/var/log/wormhole-client/wormhole-client.log")
+
+	err := c.Start(ctx, tlsconfig)
 	if err != nil {
 		fmt.Println(err)
 		return err

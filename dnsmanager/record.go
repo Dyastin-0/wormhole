@@ -15,7 +15,7 @@ type Record struct {
 }
 
 type DNSRecord struct {
-	Meta    *Record
-	ID      string
-	Expires time.Duration
+	Meta *Record
+	ID   string
+	TTL  time.Duration // defines how long the tunnel will live
 }

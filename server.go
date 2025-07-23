@@ -2,21 +2,19 @@
 package wormhole
 
 import (
-	"bufio"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
-	"strings"
 	"sync"
 	"time"
 
+	"github.com/Dyastin-0/wormhole/api/db"
 	"github.com/Dyastin-0/wormhole/api/store"
 	"github.com/Dyastin-0/wormhole/dnsmanager"
 	"github.com/Dyastin-0/wormhole/logger"
+	"github.com/Dyastin-0/wormhole/token"
 	"github.com/hashicorp/yamux"
 )
 
@@ -27,21 +25,18 @@ type Wormhole struct {
 	tunnels    sync.Map            // stores k=string;v=*tunnel
 	Store      *store.Store        // api store
 	DNSManager *dnsmanager.Manager // dns manager
+	Issuer     *token.Issuer       // api token issuer
+	Logger     logger.Logger
 
 	cancel            context.CancelFunc
 	ctx               context.Context
-	logger            logger.Logger
 	tunnelHTTPRequest func(stream net.Conn, wr http.ResponseWriter, r *http.Request) error
 }
 
 func New(addr, httpAddr string) *Wormhole {
-	logger := logger.New()
-	logger.InitMultiWriter("wormhole", "/var/log/wormhole/wormhole.log")
-
 	return &Wormhole{
 		addr:              addr,
 		httpAddr:          httpAddr,
-		logger:            logger,
 		tunnelHTTPRequest: tunnelHTTPRequest,
 	}
 }
@@ -65,6 +60,10 @@ func (w *Wormhole) Start(ctx context.Context) error {
 		return ErrNilStore
 	}
 
+	if w.Logger == nil {
+		w.Logger = &logger.NoopLogger{}
+	}
+
 	parentCtx, cancel := context.WithCancel(ctx)
 	w.ctx = parentCtx
 	w.cancel = cancel
@@ -74,7 +73,7 @@ func (w *Wormhole) Start(ctx context.Context) error {
 	go func() {
 		err := w.start()
 		if err != nil && !errors.Is(err, context.Canceled) {
-			w.logger.Error("tcp server exited: " + err.Error())
+			w.Logger.Error("tcp server exited: " + err.Error())
 			cancel()
 			errch <- err
 		} else {
@@ -85,7 +84,7 @@ func (w *Wormhole) Start(ctx context.Context) error {
 	go func() {
 		err := w.StartHTTP()
 		if err != nil && !errors.Is(err, context.Canceled) {
-			w.logger.Error("http server exited: " + err.Error())
+			w.Logger.Error("http server exited: " + err.Error())
 			cancel()
 			errch <- err
 		} else {
@@ -111,11 +110,11 @@ func (w *Wormhole) start() error {
 
 	go func() {
 		<-w.ctx.Done()
-		w.logger.Info("context cancelled, closing tcp listener")
+		w.Logger.Info("context cancelled, closing tcp listener")
 		listener.Close()
 	}()
 
-	w.logger.Info("service started")
+	w.Logger.Info("service started")
 
 	for {
 		conn, err := listener.Accept()
@@ -128,7 +127,7 @@ func (w *Wormhole) start() error {
 					return nil
 				}
 
-				w.logger.Error(fmt.Sprintf("%s: %s", ErrFailedToAcceptConn.Error(), err))
+				w.Logger.Error(fmt.Sprintf("%s: %s", ErrFailedToAcceptConn.Error(), err))
 				continue
 
 			}
@@ -138,7 +137,7 @@ func (w *Wormhole) start() error {
 			defer c.Close()
 
 			if err := w.handleConn(c); err != nil {
-				w.logger.Error(fmt.Sprintf("%v\n", err))
+				w.Logger.Error(fmt.Sprintf("%v\n", err))
 			}
 		}(conn)
 	}
@@ -149,189 +148,94 @@ func (w *Wormhole) handleConn(conn net.Conn) error {
 
 	session, err := yamux.Server(conn, nil)
 	if err != nil {
-		return fmt.Errorf("%v: %w", ErrFailedToCreateYamuxServer, err)
+		errf := fmt.Errorf("%v: %w", ErrFailedToCreateYamuxServer, err)
+		w.Logger.Error(errf.Error())
+		return errf
 	}
 
 	stream, err := session.Accept()
 	if err != nil {
-		return fmt.Errorf("%v: %w", ErrFailedToAcceptConn, err)
+		errf := fmt.Errorf("%v: %w", ErrFailedToAcceptConn, err)
+		w.Logger.Error(errf.Error())
+		return errf
 	}
 
-	msg, err := w.handshake(stream)
+	msg, payload, err := w.handshake(stream)
 	if err != nil {
+		w.Logger.Error(err.Error())
 		return err
 	}
 
-	w.tunnels.Store(msg.ID, &tunnel{proto: msg.Proto, session: session})
+	var domain, ipv4 string
+	var ttl time.Duration
+
+	if payload != nil && msg.TunnelID != "" {
+		userID := (*payload)[token.PayloadID].(string)
+
+		param := &db.GetTunnelParams{
+			ID:     msg.TunnelID,
+			UserID: userID,
+		}
+
+		res, err := w.Store.Tunnel.Get(w.ctx, param)
+		if err != nil {
+			w.Logger.Error(err.Error())
+			return err
+		}
+
+		domain = res.Domain
+		ipv4 = res.Ipv4
+		ttl = 24 * time.Hour
+	} else {
+		domain = fmt.Sprintf("%s.%s", msg.TunnelName, w.DNSManager.API.BaseDNS())
+		ipv4 = w.DNSManager.API.IPV4()
+		ttl = 1 * time.Hour
+	}
 
 	record := &dnsmanager.Record{
-		Name:    fmt.Sprintf("%s.%s", msg.ID, w.DNSManager.API.BaseDNS()),
-		Content: w.DNSManager.API.IPV4(),
+		Name:    domain,
+		Content: ipv4,
 		Type:    dnsmanager.RecordTypeA,
 		TTL:     720,
 		Proxied: false,
 	}
 
-	dnsRecord, err := w.DNSManager.API.CreateDNSRecord(w.ctx, time.Minute*30, record)
+	dnsRecord, err := w.DNSManager.API.CreateDNSRecord(w.ctx, ttl, record)
 	if err != nil {
-		w.logger.Error(err.Error())
+		w.Logger.Error(err.Error())
+		return err
 	}
 
-	<-session.CloseChan()
+	w.tunnels.Store(domain, &tunnel{proto: msg.TunnelProto, session: session})
 
-	err = w.DNSManager.API.DeleteDNSRecord(w.ctx, dnsRecord.ID)
-	if err != nil {
-		w.logger.Error(err.Error())
-	}
+	var once sync.Once
 
-	w.tunnels.Delete(msg.ID)
-
-	return nil
-}
-
-// implements simple handshake
-func (w *Wormhole) handshake(stream net.Conn) (*message, error) {
-	defer stream.Close()
-
-	dec := json.NewDecoder(stream)
-	enc := json.NewEncoder(stream)
-
-	var msg message
-
-	err := dec.Decode(&msg)
-	if err != nil {
-		return nil, fmt.Errorf("%v: %w", ErrFailedToDecodeMessage, err)
-	}
-
-	if _, exists := w.tunnels.Load(msg.ID); exists {
-		errMsg := &message{ID: msg.ID, Status: 1, Err: ErrIDAlreadyUsed.Error()}
-
-		err = enc.Encode(errMsg)
-		if err != nil {
-			return nil, errors.Join(
-				fmt.Errorf("%v: %w", ErrHandshakeFailed, ErrIDAlreadyUsed),
-				fmt.Errorf("%v: %w", ErrFailedToEncodeMessage, err),
-			)
-		}
-
-		return nil, fmt.Errorf("%v: %w", ErrHandshakeFailed, ErrIDAlreadyUsed)
-	}
-
-	if msg.Proto != ProtoHTTP && msg.Proto != ProtoTCP {
-		errMsg := &message{ID: msg.ID, Status: 1, Err: ErrUnsupportedProtocol.Error()}
-
-		// encode error to conn and close
-		err = enc.Encode(errMsg)
-		if err != nil {
-			return nil, errors.Join(
-				fmt.Errorf("%v: %w", ErrHandshakeFailed, ErrUnsupportedProtocol),
-				fmt.Errorf("%v: %w", ErrFailedToEncodeMessage, err),
-			)
-		}
-
-		return nil, ErrUnsupportedProtocol
-	}
-
-	err = enc.Encode(&message{
-		ID:     msg.ID,
-		Status: 0,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("%v: %w", ErrHandshakeFailed, err)
-	}
-
-	return &msg, nil
-}
-
-func (w *Wormhole) HTTP(wr http.ResponseWriter, r *http.Request) {
-	id := r.Header.Get("X-Forwarded-Host")
-
-	if id == "" {
-		id = r.Header.Get("Host")
-	}
-
-	key := strings.Replace(id, fmt.Sprintf(".%s", w.DNSManager.API.BaseDNS()), "", 1)
-
-	t, ok := w.tunnels.Load(key)
-
-	if !ok {
-		http.Error(wr, "tunnel not found", http.StatusNotFound)
-		return
-	}
-
-	stream, err := t.(*tunnel).session.Open()
-	if err != nil {
-		w.logger.Error(fmt.Sprintf("%s: %s\n", id, ErrFailedToOpenStream))
-		http.Error(wr, "failed to open stream", http.StatusInternalServerError)
-		return
-	}
-	defer stream.Close()
-
-	err = w.tunnelHTTPRequest(stream, wr, r)
-	if err != nil {
-		errf := fmt.Sprintf("tunnel error: %s", err.Error())
-
-		w.logger.Error(errf)
-		http.Error(wr, errf, http.StatusInternalServerError)
-	}
-}
-
-func (w *Wormhole) StartHTTP() error {
-	server := &http.Server{
-		Addr:    w.httpAddr,
-		Handler: http.HandlerFunc(w.HTTP),
-	}
-
+	// start a ttl watcher, if ttl is done delete record and close the session
 	go func() {
-		<-w.ctx.Done()
-
-		w.logger.Info("context cancelled, shutting down http server")
-
-		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-		defer cancel()
-
-		if err := server.Shutdown(ctx); err != nil {
-			w.logger.Error(fmt.Sprintf("%s: %v", fmt.Errorf("http server shutdown failed"), err))
+		select {
+		case <-time.After(ttl):
+			once.Do(func() {
+				err := w.DNSManager.API.DeleteDNSRecord(w.ctx, dnsRecord.ID)
+				if err != nil {
+					w.Logger.Error(err.Error())
+				}
+				session.Close()
+			})
 		}
 	}()
 
-	err := server.ListenAndServe()
-	if err != nil && err != http.ErrServerClosed {
-		return fmt.Errorf("%v: %w", fmt.Errorf("http server stopped"), err)
-	}
+	<-session.CloseChan()
 
-	return nil
-}
-
-func tunnelHTTPRequest(stream net.Conn, wr http.ResponseWriter, r *http.Request) error {
-	err := r.Write(stream)
-	if err != nil {
-		return fmt.Errorf("%v: %w", ErrFailedToWriteHTTPTunnelRequest, err)
-	}
-
-	bufr := bufio.NewReader(stream)
-
-	resp, err := http.ReadResponse(bufr, r)
-	if err != nil {
-		return fmt.Errorf("%v: %w", ErrFailedToReadHTTPTunnelResponse, err)
-	}
-
-	defer resp.Body.Close()
-
-	copyHeader(wr.Header(), resp.Header)
-	io.Copy(wr, resp.Body)
-
-	return nil
-}
-
-func (w *Wormhole) tcp(stream net.Conn) error {
-	return nil
-}
-
-func copyHeader(dst, src http.Header) {
-	for k, vv := range src {
-		for _, v := range vv {
-			dst.Add(k, v)
+	// forcibly delete dns if session is closed
+	once.Do(func() {
+		err := w.DNSManager.API.DeleteDNSRecord(w.ctx, dnsRecord.ID)
+		if err != nil {
+			w.Logger.Error(err.Error())
 		}
-	}
+		session.Close()
+	})
+
+	w.tunnels.Delete(domain)
+
+	return nil
 }

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -125,8 +126,8 @@ func TestHandshake(t *testing.T) {
 
 	go func() {
 		msg := message{
-			ID:    "test",
-			Proto: "http",
+			TunnelName:  "test",
+			TunnelProto: "http",
 		}
 
 		enc := json.NewEncoder(client)
@@ -149,17 +150,17 @@ func TestHandshake(t *testing.T) {
 		}
 	}()
 
-	msg, err := w.handshake(server)
+	msg, _, err := w.handshake(server)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if msg.ID != "test" {
-		t.Errorf("expected msg.ID=test, got %s", msg.ID)
+	if msg.TunnelName != "test" {
+		t.Errorf("expected msg.ID=test, got %s", msg.TunnelName)
 	}
 
-	if msg.Proto != "http" {
-		t.Errorf("expected msg.Proto=http, got %s", msg.Proto)
+	if msg.TunnelProto != "http" {
+		t.Errorf("expected msg.Proto=http, got %s", msg.TunnelProto)
 	}
 }
 
@@ -205,8 +206,8 @@ func TestHTTP(t *testing.T) {
 	}
 
 	msg := &message{
-		ID:    "foo",
-		Proto: "http",
+		TunnelName:  "foo",
+		TunnelProto: "http",
 	}
 
 	enc := json.NewEncoder(stream)
@@ -228,19 +229,20 @@ func TestHTTP(t *testing.T) {
 
 	time.Sleep(200 * time.Millisecond)
 
-	_, exists := w.tunnels.Load(msg.ID)
+	domain := fmt.Sprintf("%s.%s", msg.TunnelName, w.DNSManager.API.BaseDNS())
 
+	_, exists := w.tunnels.Load(domain)
 	if !exists {
-		t.Errorf("expected %s to be registered but was not found", msg.ID)
+		t.Errorf("expected %s to be registered but was not found", domain)
 	}
 
 	session.Close()
 	time.Sleep(100 * time.Millisecond)
 
-	_, exists = w.tunnels.Load(msg.ID)
+	_, exists = w.tunnels.Load(domain)
 
 	if exists {
-		t.Errorf("expected %s to be deleted but was found", msg.ID)
+		t.Errorf("expected %s to be deleted but was found", domain)
 	}
 }
 
@@ -331,7 +333,7 @@ func TestWormhole_HTTP(t *testing.T) {
 		session: mock,
 	}
 
-	w.tunnels.Store("test", newTunnel)
+	w.tunnels.Store("test.dyastin.tech", newTunnel)
 
 	req := httptest.NewRequest("GET", "/", nil)
 	req.Header.Set("Host", "test.dyastin.tech")

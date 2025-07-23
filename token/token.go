@@ -14,6 +14,7 @@ import (
 type Issuer struct {
 	accessSecret  string
 	refreshSecret string
+	apiSecret     string
 }
 
 const (

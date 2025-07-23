@@ -1,9 +1,11 @@
 package wormhole
 
 type message struct {
-	ID     string `json:"id"`
-	Action string `json:"action"`
-	Status int    `json:"status"`
-	Err    string `json:"err"`
-	Proto  string `json:"proto"`
+	Action      string `json:"action"`
+	Status      int    `json:"status"`
+	Err         string `json:"err"`
+	APIKey      string `json:"api_key"`
+	TunnelProto string `json:"proto"`
+	TunnelName  string `json:"name"`
+	TunnelID    string `json:"tunnel_id"`
 }

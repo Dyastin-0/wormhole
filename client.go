@@ -17,14 +17,15 @@ import (
 )
 
 type client struct {
-	id           string
+	apiKey       string
+	name         string
+	tunnelID     string
 	wormholeAddr string
 	targetAddr   string
 	proto        string
 	cancel       context.CancelFunc
 	ctx          context.Context
-	logger       logger.Logger
-	tlsconfig    *tls.Config
+	Logger       logger.Logger
 }
 
 var InsecureTLSConfig = func() *tls.Config {
@@ -33,32 +34,32 @@ var InsecureTLSConfig = func() *tls.Config {
 	}
 }
 
-func NewClient(id, wormholeAddr, targetAddr, proto string, tlsconfig *tls.Config) *client {
-	logger := logger.New()
-	logger.InitMultiWriter("wormhole-client", "/var/log/wormhole-client/wormhole-client.log")
-
+func NewClient(api, id, name, wormholeAddr, targetAddr, proto string) *client {
 	return &client{
-		id:           id,
+		name:         name,
+		tunnelID:     id,
 		wormholeAddr: wormholeAddr,
 		targetAddr:   targetAddr,
 		proto:        proto,
-		logger:       logger,
-		tlsconfig:    tlsconfig,
 	}
 }
 
 func (c *client) Stop() {
+	if c.Logger == nil {
+		c.Logger = &logger.NoopLogger{}
+	}
+
 	if c.cancel != nil {
 		c.cancel()
-		c.logger.Info("wormhole client stopped")
+		c.Logger.Info("wormhole client stopped")
 		return
 	}
 
-	c.logger.Warn("c.Stop() is called but c.cancel is nil")
+	c.Logger.Warn("c.Stop() is called but c.cancel is nil")
 }
 
-func (c *client) Start(ctx context.Context) error {
-	if c.tlsconfig == nil {
+func (c *client) Start(ctx context.Context, tlsConfig *tls.Config) error {
+	if tlsConfig == nil {
 		return ErrNilTLSConfig
 	}
 
@@ -66,9 +67,13 @@ func (c *client) Start(ctx context.Context) error {
 		return ErrNilContext
 	}
 
+	if c.Logger == nil {
+		c.Logger = &logger.NoopLogger{}
+	}
+
 	c.ctx, c.cancel = context.WithCancel(ctx)
 
-	conn, err := tls.Dial("tcp", c.wormholeAddr, c.tlsconfig)
+	conn, err := tls.Dial("tcp", c.wormholeAddr, tlsConfig)
 	if err != nil {
 		return fmt.Errorf("%v: %w", ErrFailedToDialTCP, err)
 	}
@@ -80,7 +85,7 @@ func (c *client) Start(ctx context.Context) error {
 
 	go func() {
 		<-c.ctx.Done()
-		c.logger.Info("session closed")
+		c.Logger.Info("session closed")
 		session.Close()
 	}()
 
@@ -96,10 +101,10 @@ func (c *client) Start(ctx context.Context) error {
 
 	if msg.Status != 0 {
 		log.Println(msg.Err)
-		return fmt.Errorf("%v: %w", ErrHandshakeFailed, ErrIDAlreadyUsed)
+		return fmt.Errorf("%v: %w", ErrHandshakeFailed, ErrTunnelNameAlreadyUsed)
 	}
 
-	c.logger.Info("service started")
+	c.Logger.Info("service started")
 
 	for {
 		stream, err := session.Accept()
@@ -112,14 +117,14 @@ func (c *client) Start(ctx context.Context) error {
 					return nil
 				}
 
-				c.logger.Error(fmt.Sprintf("%s: %s", ErrFailedToAcceptConn.Error(), err))
+				c.Logger.Error(fmt.Sprintf("%s: %s", ErrFailedToAcceptConn.Error(), err))
 				continue
 			}
 		}
 
 		go func(s net.Conn) {
 			if err := c.handleConn(s); err != nil {
-				c.logger.Error(fmt.Sprintf("%v\n", err))
+				c.Logger.Error(fmt.Sprintf("%v\n", err))
 			}
 		}(stream)
 	}
@@ -133,8 +138,10 @@ func (c *client) handshake(stream net.Conn) (*message, error) {
 	dec := json.NewDecoder(stream)
 
 	msg := &message{
-		ID:    c.id,
-		Proto: c.proto,
+		APIKey:      c.apiKey,
+		TunnelProto: c.proto,
+		TunnelID:    c.tunnelID,
+		TunnelName:  c.name,
 	}
 
 	err := enc.Encode(msg)

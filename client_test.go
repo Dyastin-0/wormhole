@@ -25,9 +25,9 @@ import (
 )
 
 func TestNewClient(t *testing.T) {
-	c := NewClient("test", "localhost:9999", "localhost:8000", "http", nil)
+	c := NewClient("", "", "test", "localhost:9999", "localhost:8000", "http")
 
-	if c.id != "test" || c.wormholeAddr != "localhost:9999" || c.targetAddr != "localhost:8000" || c.proto != "http" {
+	if c.name != "test" || c.wormholeAddr != "localhost:9999" || c.targetAddr != "localhost:8000" || c.proto != "http" {
 		t.Errorf("mismatch in client fields")
 	}
 }
@@ -99,9 +99,9 @@ func TestClientStart(t *testing.T) {
 		sess.Close()
 	}()
 
-	c := NewClient("test", ln.Addr().String(), ":0", "http", InsecureTLSConfig())
+	c := NewClient("", "", "test", ln.Addr().String(), ":0", "http")
 	errCh := make(chan error, 1)
-	go func() { errCh <- c.Start(context.Background()) }()
+	go func() { errCh <- c.Start(context.Background(), InsecureTLSConfig()) }()
 	time.Sleep(300 * time.Millisecond)
 	c.Stop()
 
@@ -116,7 +116,7 @@ func TestClientStart(t *testing.T) {
 }
 
 func TestClientStopWithoutStart(t *testing.T) {
-	c := NewClient("id", "", "", "http", nil)
+	c := NewClient("", "", "id", "", "", "http")
 	c.Stop()
 }
 
@@ -125,7 +125,7 @@ func TestClientHandshake(t *testing.T) {
 	defer client.Close()
 	defer server.Close()
 
-	c := NewClient("abc", "", "", "http", nil)
+	c := NewClient("", "", "abc", "", "", "http")
 
 	go func() {
 		dec := json.NewDecoder(client)
@@ -140,7 +140,7 @@ func TestClientHandshake(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if msg.ID != "abc" || msg.Proto != "http" {
+	if msg.TunnelName != "abc" || msg.TunnelProto != "http" {
 		t.Errorf("invalid handshake response: %+v", msg)
 	}
 }
@@ -154,7 +154,7 @@ func TestClientHTTP(t *testing.T) {
 	defer ts.Close()
 
 	addr := strings.TrimPrefix(ts.URL, "http://")
-	c := NewClient("id", "", addr, "http", nil)
+	c := NewClient("", "", "id", "", addr, "http")
 
 	client, server := net.Pipe()
 	defer client.Close()
@@ -186,7 +186,7 @@ func TestClientHTTP(t *testing.T) {
 }
 
 func TestClientHandleConnUnsupported(t *testing.T) {
-	c := NewClient("id", "", "", "invalid", nil)
+	c := NewClient("", "", "name", "", "", "invalid")
 	client, server := net.Pipe()
 	defer client.Close()
 	defer server.Close()
