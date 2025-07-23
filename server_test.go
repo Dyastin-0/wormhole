@@ -122,7 +122,11 @@ func TestHandshake(t *testing.T) {
 	defer client.Close()
 	defer server.Close()
 
-	w := &Wormhole{}
+	w := &Wormhole{
+		DNSManager: &dnsmanager.Manager{
+			API: newMockDNSAPI("dyastin.tech", "127.0.0.1"),
+		},
+	}
 
 	go func() {
 		msg := message{
@@ -141,7 +145,6 @@ func TestHandshake(t *testing.T) {
 		var resp message
 
 		if err := dec.Decode(&resp); err != nil {
-			fmt.Println(err)
 			t.Error(err)
 			return
 		}
@@ -151,10 +154,7 @@ func TestHandshake(t *testing.T) {
 		}
 	}()
 
-	enc := json.NewEncoder(server)
-	dec := json.NewDecoder(server)
-
-	msg, _, err := w.handshake(enc, dec)
+	msg, _, err := w.handshake(server)
 	if err != nil {
 		t.Fatal(err)
 	}

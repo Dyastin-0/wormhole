@@ -17,7 +17,9 @@ func (w *Wormhole) HTTP(wr http.ResponseWriter, r *http.Request) {
 		id = r.Header.Get("Host")
 	}
 
-	t, ok := w.tunnels.Load(id)
+	key := fmt.Sprintf("%s.%s", id, w.DNSManager.API.BaseDNS())
+
+	t, ok := w.tunnels.Load(key)
 	if !ok {
 		http.Error(wr, "tunnel not found", http.StatusNotFound)
 		return
