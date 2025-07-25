@@ -104,6 +104,8 @@ func (c *CloudflareDNSAPI) DeleteDNSRecord(ctx context.Context, recordID string)
 		return err
 	}
 
+	fmt.Println("debug : reguest made")
+
 	req.Header.Set("Authorization", "Bearer "+c.apiToken)
 	req.Header.Set("Content-Type", "application/json")
 
@@ -112,6 +114,8 @@ func (c *CloudflareDNSAPI) DeleteDNSRecord(ctx context.Context, recordID string)
 		return fmt.Errorf("%w: %s", ErrFailedToDeleteDNSRecord, err)
 	}
 	defer resp.Body.Close()
+
+	fmt.Println("debug : got response")
 
 	data, readErr := io.ReadAll(resp.Body)
 	if readErr != nil {
