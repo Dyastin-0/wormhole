@@ -215,8 +215,10 @@ func (w *Wormhole) handleConn(conn net.Conn) error {
 
 	w.Logger.Debug("handleConn: cleanup trigger reached")
 
-	cleanupCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+
+	donech := make(chan bool)
 
 	once.Do(func() {
 		w.Logger.Debug("HIT - deleting DNS record")
@@ -226,7 +228,14 @@ func (w *Wormhole) handleConn(conn net.Conn) error {
 		} else {
 			w.Logger.Info("DNS record deleted")
 		}
+
+		donech <- true
 	})
+
+	select {
+	case <-donech:
+	case <-cleanupCtx.Done():
+	}
 
 	w.tunnels.Delete(domain)
 
