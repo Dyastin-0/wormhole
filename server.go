@@ -202,11 +202,12 @@ func (w *Wormhole) handleConn(conn net.Conn) error {
 		w.Logger.Info("context canceled")
 	}
 
+	cleanupCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
 	// forcibly delete dns if session is closed
 	once.Do(func() {
-		cleanupCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		defer cancel()
-
+		w.Logger.Debug("HIT")
 		err := w.DNSManager.API.DeleteDNSRecord(cleanupCtx, dnsRecord.ID)
 		if err != nil {
 			w.Logger.Error(err.Error())
