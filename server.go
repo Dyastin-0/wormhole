@@ -98,6 +98,10 @@ func (w *Wormhole) Start(ctx context.Context) error {
 		}
 	}
 
+	w.Logger.Info("waiting for cleanup...")
+	time.Sleep(5 * time.Second)
+	w.Logger.Info("clean up done!")
+
 	return finalErr
 }
 
