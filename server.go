@@ -169,7 +169,7 @@ func (w *Wormhole) handleConn(conn net.Conn) error {
 		Content: ipv4,
 		Type:    dnsmanager.RecordTypeA,
 		TTL:     1,
-		Proxied: true,
+		Proxied: false,
 	}
 
 	dnsRecord, err := w.DNSManager.API.CreateDNSRecord(w.ctx, ttl, record)
