@@ -99,7 +99,7 @@ func (w *Wormhole) Start(ctx context.Context) error {
 	}
 
 	w.Logger.Info("waiting for cleanup...")
-	time.Sleep(5 * time.Second)
+	time.Sleep(2 * time.Second)
 	w.Logger.Info("clean up done!")
 
 	return finalErr
@@ -202,7 +202,7 @@ func (w *Wormhole) handleConn(conn net.Conn) error {
 		w.Logger.Debug("context canceled")
 	}
 
-	cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	cleanupCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 
 	once.Do(func() {
 		err := w.DNSManager.API.DeleteDNSRecord(cleanupCtx, dnsRecord.ID)
