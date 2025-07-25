@@ -39,6 +39,7 @@ type cloudflareDNSCreateRequest struct {
 	Content string `json:"content"`
 	TTL     int    `json:"ttl"`
 	Proxied bool   `json:"proxied"`
+	Comment string `json:"comment"`
 }
 
 type cloudflareDNSCreateResponse struct {
@@ -53,11 +54,12 @@ type cloudflareDNSCreateResponse struct {
 
 func (c *CloudflareDNSAPI) CreateDNSRecord(ctx context.Context, ttl time.Duration, record *Record) (*DNSRecord, error) {
 	body := cloudflareDNSCreateRequest{
-		Type:    string(record.Type),
-		Name:    string(record.Name),
-		Content: string(record.Content),
+		Type:    record.Type,
+		Name:    record.Name,
+		Content: record.Content,
 		TTL:     record.TTL,
 		Proxied: record.Proxied,
+		Comment: "created via wormhole",
 	}
 
 	jsonBody, _ := json.Marshal(body)
