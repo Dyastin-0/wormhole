@@ -195,7 +195,10 @@ func (w *Wormhole) handleConn(conn net.Conn) error {
 		})
 	}()
 
-	<-session.CloseChan()
+	select {
+	case <-session.CloseChan():
+	case <-w.ctx.Done():
+	}
 
 	// forcibly delete dns if session is closed
 	once.Do(func() {

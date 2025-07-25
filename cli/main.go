@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/Dyastin-0/wormhole"
 	"github.com/Dyastin-0/wormhole/api/db"
@@ -29,7 +31,17 @@ var (
 func main() {
 	w := New()
 
-	if err := w.Run(context.Background(), os.Args); err != nil {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go func() {
+		sigCh := make(chan os.Signal, 1)
+		signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+		<-sigCh
+		cancel()
+	}()
+
+	if err := w.Run(ctx, os.Args); err != nil {
 		log.Fatal(err)
 	}
 }
