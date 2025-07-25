@@ -3,7 +3,6 @@ package dnsmanager
 
 import (
 	"context"
-	"fmt"
 	"time"
 )
 
@@ -18,17 +17,13 @@ type Manager struct {
 	API DNSAPI
 }
 
-func NewCloudflareManager(apiToken, zone, baseDNS, ipv4 string) (*Manager, error) {
-	api, err := NewCloudflareAPI(apiToken, zone, baseDNS, ipv4)
-	if err != nil {
-		return nil, fmt.Errorf("%s: %v", "failed to initialize cloudflare manager", err)
-	}
-
+func NewCloudflareManager(apiToken, zone, baseDNS, ipv4 string) *Manager {
+	api := NewCloudflareAPI(apiToken, zone, baseDNS, ipv4)
 	manager := &Manager{
 		API: api,
 	}
 
-	return manager, nil
+	return manager
 }
 
 func (m *Manager) WatchExpiration() {}
