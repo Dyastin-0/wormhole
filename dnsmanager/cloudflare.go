@@ -38,11 +38,12 @@ func NewCloudflareAPI(apiToken, zoneID, baseDNS, ipv4 string) (DNSAPI, error) {
 
 func (d *CloudflareDNSManager) CreateDNSRecord(ctx context.Context, ttl time.Duration, record *Record) (*DNSRecord, error) {
 	r := cloudflare.CreateDNSRecordParams{
-		Type:    string(record.Type),
-		Name:    string(record.Name),
-		Content: string(record.Content),
-		TTL:     int(record.TTL),
-		Proxied: &record.Proxied,
+		Type:      record.Type,
+		Name:      record.Name,
+		Content:   record.Content,
+		TTL:       record.TTL,
+		Proxied:   &record.Proxied,
+		CreatedOn: time.Now(),
 	}
 
 	resp, err := d.api.CreateDNSRecord(ctx, cloudflare.ZoneIdentifier(d.zoneID), r)
