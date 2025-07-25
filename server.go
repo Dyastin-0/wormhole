@@ -215,7 +215,7 @@ func (w *Wormhole) handleConn(conn net.Conn) error {
 
 	w.Logger.Debug("handleConn: cleanup trigger reached")
 
-	cleanupCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	once.Do(func() {
