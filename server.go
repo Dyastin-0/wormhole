@@ -222,7 +222,7 @@ func (w *Wormhole) handleConn(conn net.Conn) error {
 		w.Logger.Debug("HIT - deleting DNS record")
 		err := w.DNSManager.API.DeleteDNSRecord(cleanupCtx, dnsRecord.ID)
 		if err != nil {
-			w.Logger.Error(err.Error())
+			w.Logger.Debug("failed to delete")
 		} else {
 			w.Logger.Info("DNS record deleted")
 		}
