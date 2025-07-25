@@ -133,8 +133,6 @@ func (w *Wormhole) start() error {
 		}
 
 		go func(c net.Conn) {
-			defer c.Close()
-
 			if err := w.handleConn(c); err != nil {
 				w.Logger.Error(fmt.Sprintf("%v\n", err))
 			}
@@ -143,8 +141,6 @@ func (w *Wormhole) start() error {
 }
 
 func (w *Wormhole) handleConn(conn net.Conn) error {
-	w.Logger.Debug("handleConn: start")
-
 	session, err := yamux.Server(conn, nil)
 	if err != nil {
 		errf := fmt.Errorf("%v: %w", ErrFailedToCreateYamuxServer, err)
@@ -153,8 +149,6 @@ func (w *Wormhole) handleConn(conn net.Conn) error {
 	}
 	defer session.Close()
 
-	w.Logger.Debug("handleConn: yamux.Server created")
-
 	stream, err := session.Accept()
 	if err != nil {
 		errf := fmt.Errorf("%v: %w", ErrFailedToAcceptConn, err)
@@ -162,15 +156,11 @@ func (w *Wormhole) handleConn(conn net.Conn) error {
 		return errf
 	}
 
-	w.Logger.Debug("handleConn: session.Accept() succeeded")
-
 	domain, proto, ipv4, ttl, err := w.handshake(stream)
 	if err != nil {
 		w.Logger.Error(err.Error())
 		return err
 	}
-
-	w.Logger.Debug("handleConn: handshake complete")
 
 	record := &dnsmanager.Record{
 		Name:    domain,
@@ -186,8 +176,6 @@ func (w *Wormhole) handleConn(conn net.Conn) error {
 		return err
 	}
 
-	w.Logger.Debug("handleConn: DNS record created")
-
 	w.tunnels.Store(domain, &tunnel{proto: proto, session: session})
 
 	var once sync.Once
@@ -195,7 +183,6 @@ func (w *Wormhole) handleConn(conn net.Conn) error {
 	go func() {
 		<-time.After(ttl)
 		once.Do(func() {
-			w.Logger.Debug("TTL expired, cleaning up DNS")
 			err := w.DNSManager.API.DeleteDNSRecord(w.ctx, dnsRecord.ID)
 			if err != nil {
 				w.Logger.Error(err.Error())
@@ -204,8 +191,6 @@ func (w *Wormhole) handleConn(conn net.Conn) error {
 		})
 	}()
 
-	w.Logger.Debug("handleConn: waiting for session close or context cancel")
-
 	select {
 	case <-session.CloseChan():
 		w.Logger.Debug("session closed")
@@ -213,32 +198,19 @@ func (w *Wormhole) handleConn(conn net.Conn) error {
 		w.Logger.Debug("context canceled")
 	}
 
-	w.Logger.Debug("handleConn: cleanup trigger reached")
-
 	cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	donech := make(chan bool)
 
 	once.Do(func() {
-		w.Logger.Debug("HIT - deleting DNS record")
 		err := w.DNSManager.API.DeleteDNSRecord(cleanupCtx, dnsRecord.ID)
 		if err != nil {
-			w.Logger.Debug("failed to delete")
-		} else {
-			w.Logger.Info("DNS record deleted")
+			w.Logger.Error(err.Error())
 		}
 
-		donech <- true
+		cancel()
 	})
 
-	select {
-	case <-donech:
-	case <-cleanupCtx.Done():
-	}
+	<-cleanupCtx.Done()
 
 	w.tunnels.Delete(domain)
-
-	w.Logger.Debug("handleConn: exit")
 	return nil
 }
