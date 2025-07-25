@@ -125,10 +125,7 @@ func start(ctx context.Context, cmd *cli.Command) error {
 
 	issuer := token.DefaultIssuer()
 
-	manager, err := dnsmanager.NewCloudflareManager(api, zone, baseDNS, ipv4)
-	if err != nil {
-		return err
-	}
+	manager := dnsmanager.NewCloudflareManager(api, zone, baseDNS, ipv4)
 
 	w.Store = newStore
 	w.Logger = newLogger
