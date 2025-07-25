@@ -42,6 +42,7 @@ func (d *CloudflareDNSManager) CreateDNSRecord(ctx context.Context, ttl time.Dur
 		Name:    string(record.Name),
 		Content: string(record.Content),
 		TTL:     int(record.TTL),
+		Proxied: &record.Proxied,
 	}
 
 	resp, err := d.api.CreateDNSRecord(ctx, cloudflare.ZoneIdentifier(d.zoneID), r)
