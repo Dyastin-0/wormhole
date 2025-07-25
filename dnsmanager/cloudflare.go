@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/cloudflare/cloudflare-go"
+	"github.com/cloudflare/cloudflare-go/v3"
+	"github.com/cloudflare/cloudflare-go/v3/dns"
+	"github.com/cloudflare/cloudflare-go/v3/option"
 )
 
 var (
@@ -16,17 +18,16 @@ var (
 )
 
 type CloudflareDNSManager struct {
-	api     *cloudflare.API
+	api     *cloudflare.Client
 	baseDNS string
 	ipV4    string
 	zoneID  string
 }
 
 func NewCloudflareAPI(apiToken, zoneID, baseDNS, ipv4 string) (DNSAPI, error) {
-	api, err := cloudflare.NewWithAPIToken(apiToken)
-	if err != nil {
-		return nil, fmt.Errorf("%v: %w", ErrFailedToInitializeCloudflareClient, err)
-	}
+	api := cloudflare.NewClient(
+		option.WithAPIKey(apiToken),
+	)
 
 	return &CloudflareDNSManager{
 		api:     api,
@@ -37,18 +38,20 @@ func NewCloudflareAPI(apiToken, zoneID, baseDNS, ipv4 string) (DNSAPI, error) {
 }
 
 func (d *CloudflareDNSManager) CreateDNSRecord(ctx context.Context, ttl time.Duration, record *Record) (*DNSRecord, error) {
-	r := cloudflare.CreateDNSRecordParams{
-		Type:      record.Type,
-		Name:      record.Name,
-		Content:   record.Content,
-		TTL:       record.TTL,
-		Proxied:   &record.Proxied,
-		CreatedOn: time.Now(),
-	}
-
-	resp, err := d.api.CreateDNSRecord(ctx, cloudflare.ZoneIdentifier(d.zoneID), r)
+	resp, err := d.api.DNS.Records.New(ctx, dns.RecordNewParams{
+		ZoneID: cloudflare.F(d.zoneID),
+		Record: dns.RecordParam{
+			Name:    cloudflare.F(record.Name),
+			TTL:     cloudflare.F(dns.TTL(record.TTL)),
+			Proxied: cloudflare.F(true),
+			Settings: cloudflare.F(any(map[string]any{
+				"type":    record.Type,
+				"content": record.Content,
+			})),
+		},
+	})
 	if err != nil {
-		return nil, fmt.Errorf("%v: %w", ErrFailedToCreateNewDNSRecord, err)
+		return nil, ErrFailedToCreateNewDNSRecord
 	}
 
 	dnsRecord := &DNSRecord{
@@ -61,7 +64,11 @@ func (d *CloudflareDNSManager) CreateDNSRecord(ctx context.Context, ttl time.Dur
 }
 
 func (d *CloudflareDNSManager) DeleteDNSRecord(ctx context.Context, recordID string) error {
-	err := d.api.DeleteDNSRecord(ctx, cloudflare.ZoneIdentifier(d.zoneID), recordID)
+	_, err := d.api.DNS.Records.Delete(
+		ctx,
+		recordID,
+		dns.RecordDeleteParams{},
+	)
 	if err != nil {
 		return fmt.Errorf("%v: %w", ErrFailedToDeleteDNSRecord, err)
 	}

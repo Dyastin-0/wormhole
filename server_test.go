@@ -16,6 +16,7 @@ import (
 
 	"github.com/Dyastin-0/wormhole/api/store"
 	"github.com/Dyastin-0/wormhole/dnsmanager"
+	"github.com/Dyastin-0/wormhole/logger"
 	"github.com/hashicorp/yamux"
 )
 
@@ -154,17 +155,17 @@ func TestHandshake(t *testing.T) {
 		}
 	}()
 
-	msg, _, err := w.handshake(server)
+	domain, proto, _, _, err := w.handshake(server)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if msg.TunnelName != "test" {
-		t.Errorf("expected msg.ID=test, got %s", msg.TunnelName)
+	if domain != "test.dyastin.tech" {
+		t.Errorf("expected domain=test.dyastin.tech, got %s", domain)
 	}
 
-	if msg.TunnelProto != "http" {
-		t.Errorf("expected msg.Proto=http, got %s", msg.TunnelProto)
+	if proto != "http" {
+		t.Errorf("expected proto=http, got %s", proto)
 	}
 }
 
@@ -330,6 +331,7 @@ func TestWormhole_HTTP(t *testing.T) {
 			wr.Write([]byte("tunneled!"))
 			return nil
 		},
+		Logger: &logger.NoopLogger{},
 	}
 
 	newTunnel := &tunnel{
