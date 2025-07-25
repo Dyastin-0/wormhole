@@ -81,6 +81,7 @@ func (c *client) Start(ctx context.Context, tlsConfig *tls.Config) error {
 	if err != nil {
 		return fmt.Errorf("%v: %w", ErrFailedToCreateYamuxClient, err)
 	}
+	defer session.Close()
 
 	go func() {
 		<-c.ctx.Done()
@@ -114,6 +115,11 @@ func (c *client) Start(ctx context.Context, tlsConfig *tls.Config) error {
 				return c.ctx.Err()
 			default:
 				if errors.Is(session.GoAway(), err) || errors.Is(err, io.EOF) {
+					return nil
+				}
+
+				if session.GoAway() != nil {
+					c.Logger.Info("wormhole server connection closed")
 					return nil
 				}
 

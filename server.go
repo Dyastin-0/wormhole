@@ -203,7 +203,6 @@ func (w *Wormhole) handleConn(conn net.Conn) error {
 		if err != nil {
 			w.Logger.Error(err.Error())
 		}
-		session.Close()
 	})
 
 	w.tunnels.Delete(domain)
