@@ -113,7 +113,10 @@ func (c *CloudflareDNSAPI) DeleteDNSRecord(ctx context.Context, recordID string)
 	}
 	defer resp.Body.Close()
 
-	data, _ := io.ReadAll(resp.Body)
+	data, readErr := io.ReadAll(resp.Body)
+	if readErr != nil {
+		return fmt.Errorf("%w: failed to read response body: %v", ErrFailedToDeleteDNSRecord, readErr)
+	}
 
 	if resp.StatusCode >= 400 {
 		return fmt.Errorf("%w: %s", ErrFailedToDeleteDNSRecord, string(data))
