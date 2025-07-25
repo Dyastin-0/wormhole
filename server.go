@@ -168,7 +168,7 @@ func (w *Wormhole) handleConn(conn net.Conn) error {
 		Name:    domain,
 		Content: ipv4,
 		Type:    dnsmanager.RecordTypeA,
-		TTL:     0,
+		TTL:     1,
 		Proxied: true,
 	}
 
