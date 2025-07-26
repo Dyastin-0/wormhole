@@ -108,7 +108,7 @@ func (w *Wormhole) handshake(stream net.Conn) (string, string, string, time.Dura
 	} else {
 		domain = fmt.Sprintf("%s.%s", msg.TunnelName, w.DNSManager.API.BaseDNS())
 		ipv4 = w.DNSManager.API.IPV4()
-		ttl = 1 * time.Hour
+		ttl = 1 * time.Minute
 		proto = msg.TunnelProto
 	}
 
