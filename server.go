@@ -29,6 +29,7 @@ type Wormhole struct {
 	Issuer     *token.Issuer
 	Logger     logger.Logger
 
+	donech            chan bool
 	cancel            context.CancelFunc
 	ctx               context.Context
 	tunnelHTTPRequest func(stream net.Conn, wr http.ResponseWriter, r *http.Request) error
@@ -39,13 +40,13 @@ func New(addr, httpAddr string) *Wormhole {
 		addr:              addr,
 		httpAddr:          httpAddr,
 		tunnelHTTPRequest: tunnelHTTPRequest,
+		Logger:            &logger.NoopLogger{},
+		donech:            make(chan bool, 1),
 	}
 }
 
 func (w *Wormhole) Stop() {
-	if w.cancel != nil {
-		w.cancel()
-	}
+	w.donech <- true
 }
 
 func (w *Wormhole) Start(ctx context.Context) error {
@@ -61,13 +62,13 @@ func (w *Wormhole) Start(ctx context.Context) error {
 		return ErrNilStore
 	}
 
-	if w.Logger == nil {
-		w.Logger = &logger.NoopLogger{}
-	}
+	w.ctx, w.cancel = context.WithCancel(ctx)
 
-	parentCtx, cancel := context.WithCancel(ctx)
-	w.ctx = parentCtx
-	w.cancel = cancel
+	// run donech listener
+	go func() {
+		<-w.donech
+		w.cancel()
+	}()
 
 	errch := make(chan error, 2)
 
@@ -75,7 +76,7 @@ func (w *Wormhole) Start(ctx context.Context) error {
 		err := w.start()
 		if err != nil && !errors.Is(err, context.Canceled) {
 			w.Logger.Error("tcp server exited: " + err.Error())
-			cancel()
+			w.cancel()
 			errch <- err
 		} else {
 			errch <- nil
@@ -86,7 +87,7 @@ func (w *Wormhole) Start(ctx context.Context) error {
 		err := w.StartHTTP()
 		if err != nil && !errors.Is(err, context.Canceled) {
 			w.Logger.Error("http server exited: " + err.Error())
-			cancel()
+			w.cancel()
 			errch <- err
 		} else {
 			errch <- nil

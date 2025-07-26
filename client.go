@@ -40,14 +40,11 @@ func NewClient(api, id, name, wormholeAddr, targetAddr, proto string) *client {
 		wormholeAddr: wormholeAddr,
 		targetAddr:   targetAddr,
 		proto:        proto,
+		Logger:       &logger.NoopLogger{},
 	}
 }
 
 func (c *client) Stop() {
-	if c.Logger == nil {
-		c.Logger = &logger.NoopLogger{}
-	}
-
 	if c.cancel != nil {
 		c.cancel()
 		c.Logger.Info("wormhole client stopped")
@@ -64,10 +61,6 @@ func (c *client) Start(ctx context.Context, tlsConfig *tls.Config) error {
 
 	if ctx == nil {
 		return ErrNilContext
-	}
-
-	if c.Logger == nil {
-		c.Logger = &logger.NoopLogger{}
 	}
 
 	c.ctx, c.cancel = context.WithCancel(ctx)

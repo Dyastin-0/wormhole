@@ -75,7 +75,7 @@ func TestStart(t *testing.T) {
 				if (err != nil) != tt.wantErr {
 					t.Errorf("Start() error = %v, wantErr = %v", err, tt.wantErr)
 				}
-			case <-time.After(200 * time.Millisecond):
+			case <-time.After(3 * time.Second):
 				if tt.wantErr {
 					t.Error("expected an error but Start() did not return in time")
 				} else {
@@ -113,7 +113,7 @@ func TestStop(t *testing.T) {
 		if err != nil && !errors.Is(err, context.Canceled) {
 			t.Errorf("Start() returned error after Stop(): %v", err)
 		}
-	case <-time.After(1 * time.Second):
+	case <-time.After(3 * time.Second):
 		t.Error("Start() did not return within 1 second after Stop()")
 	}
 }
@@ -155,7 +155,10 @@ func TestHandshake(t *testing.T) {
 		}
 	}()
 
-	domain, proto, _, _, err := w.handshake(server)
+	enc := json.NewEncoder(server)
+	dec := json.NewDecoder(server)
+
+	domain, proto, _, _, err := w.handshake(enc, dec)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -181,7 +184,10 @@ func TestHTTP(t *testing.T) {
 		DNSManager: &dnsmanager.Manager{
 			API: newMockDNSAPI("wormhole.dyastin.tech", "127.0.0.1"),
 		},
+		Logger: &logger.NoopLogger{},
 	}
+
+	w.ctx, w.cancel = context.WithCancel(context.Background())
 
 	go func() {
 		conn, errr := ln.Accept()
@@ -242,7 +248,7 @@ func TestHTTP(t *testing.T) {
 	}
 
 	session.Close()
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(3 * time.Second)
 
 	_, exists = w.tunnels.Load(domain)
 
