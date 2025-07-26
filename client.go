@@ -108,14 +108,14 @@ func (c *client) Start(ctx context.Context, tlsConfig *tls.Config) error {
 	}
 
 	c.Logger.Info("tunnel started")
-	fmt.Printf("domain: https://%s", msg.TunnelDomain)
+	fmt.Printf("wormhole [inf]: domain -> https://%s\n", msg.TunnelDomain)
 
 	for {
 		stream, err := session.Accept()
 		if err != nil {
 			select {
 			case <-c.ctx.Done():
-				return c.ctx.Err()
+				return nil
 			default:
 				if errors.Is(err, yamux.ErrTimeout) {
 					return nil
@@ -167,6 +167,7 @@ func (c *client) handleMessage(stream net.Conn) error {
 			switch msg.Message {
 			case MsgTunnelttlTimeout:
 				c.Stop()
+				fmt.Printf("wormhole [inf]: %s\n", msg.Message)
 				return nil
 			default:
 			}

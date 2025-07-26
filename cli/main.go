@@ -133,7 +133,7 @@ func start(ctx context.Context, cmd *cli.Command) error {
 	newStore := store.New(queries)
 
 	newLogger := logger.New()
-	newLogger.InitMultiWriter("wormhole", "/var/log/wormhole/wormhole.log")
+	newLogger.InitMultiWriter("/var/log/wormhole/wormhole.log")
 
 	issuer := token.DefaultIssuer()
 
@@ -203,7 +203,7 @@ func http(ctx context.Context, cmd *cli.Command) error {
 	c := wormhole.NewClient(api, id, name, wsa, target, wormhole.ProtoHTTP)
 
 	logger := logger.New()
-	logger.InitMultiWriter("wormhole-client", "/var/log/wormhole-client/wormhole-client.log")
+	logger.Init("/var/log/wormhole-client/wormhole-client.log")
 
 	c.Logger = logger
 

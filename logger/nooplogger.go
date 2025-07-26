@@ -2,8 +2,8 @@ package logger
 
 type NoopLogger struct{}
 
-func (n *NoopLogger) Init(name, path string)            {}
-func (n *NoopLogger) InitMultiWriter(name, path string) {}
+func (n *NoopLogger) Init(path string)            {}
+func (n *NoopLogger) InitMultiWriter(path string) {}
 
 func (n *NoopLogger) Info(msg string)  {}
 func (n *NoopLogger) Warn(msg string)  {}

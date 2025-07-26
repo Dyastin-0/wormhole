@@ -11,8 +11,8 @@ import (
 )
 
 type Logger interface {
-	Init(name, path string)
-	InitMultiWriter(name, path string)
+	Init(path string)
+	InitMultiWriter(path string)
 
 	Info(msg string)
 	Warn(msg string)
@@ -30,7 +30,6 @@ type Logger interface {
 type logger struct {
 	base    zerolog.Logger
 	context map[string]any
-	name    string
 	path    string
 }
 
@@ -40,15 +39,7 @@ func New() Logger {
 	}
 }
 
-func (l *logger) Init(name, path string) {
-	if l.name != "" {
-		l.name = name
-	}
-
-	if path != "" {
-		l.path = path
-	}
-
+func (l *logger) Init(path string) {
 	logWriter := &lumberjack.Logger{
 		Filename:   l.path,
 		MaxSize:    5,
@@ -60,19 +51,10 @@ func (l *logger) Init(name, path string) {
 	l.base = zerolog.New(logWriter).
 		With().
 		Timestamp().
-		Str("name", name).
 		Logger()
 }
 
-func (l *logger) InitMultiWriter(name, path string) {
-	if l.name != "" {
-		l.name = name
-	}
-
-	if path != "" {
-		l.path = path
-	}
-
+func (l *logger) InitMultiWriter(path string) {
 	fileWriter := &lumberjack.Logger{
 		Filename:   l.path,
 		MaxSize:    5,
@@ -86,7 +68,6 @@ func (l *logger) InitMultiWriter(name, path string) {
 	l.base = zerolog.New(multi).
 		With().
 		Timestamp().
-		Str("name", name).
 		Logger()
 }
 
