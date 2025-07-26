@@ -40,6 +40,10 @@ func New() Logger {
 }
 
 func (l *logger) Init(path string) {
+	if path != "" {
+		l.path = path
+	}
+
 	logWriter := &lumberjack.Logger{
 		Filename:   l.path,
 		MaxSize:    5,
@@ -55,6 +59,10 @@ func (l *logger) Init(path string) {
 }
 
 func (l *logger) InitMultiWriter(path string) {
+	if path != "" {
+		l.path = path
+	}
+
 	fileWriter := &lumberjack.Logger{
 		Filename:   l.path,
 		MaxSize:    5,
