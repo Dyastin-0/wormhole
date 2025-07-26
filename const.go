@@ -32,6 +32,10 @@ var (
 )
 
 const (
+	MsgTunnelttlTimeout = "tunnel ttl time out"
+)
+
+const (
 	ProtoHTTP = "http"
 	ProtoTCP  = "tcp"
 )

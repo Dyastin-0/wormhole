@@ -3,6 +3,7 @@ package wormhole
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -21,10 +22,10 @@ type Wormhole struct {
 	addr     string
 	httpAddr string
 
-	tunnels    sync.Map            // stores k=string;v=*tunnel
-	Store      *store.Store        // api store
-	DNSManager *dnsmanager.Manager // dns manager
-	Issuer     *token.Issuer       // api token issuer
+	tunnels    sync.Map // stores k=string;v=*tunnel
+	Store      *store.Store
+	DNSManager *dnsmanager.Manager
+	Issuer     *token.Issuer
 	Logger     logger.Logger
 
 	cancel            context.CancelFunc
@@ -182,36 +183,40 @@ func (w *Wormhole) handleConn(conn net.Conn) error {
 
 	w.tunnels.Store(domain, &tunnel{proto: proto, session: session})
 
-	var once sync.Once
-
-	go func() {
+	ttlexpired := make(chan bool, 1)
+	// handle tunnel ttl
+	go func(stream net.Conn) {
 		<-time.After(ttl)
-		once.Do(func() {
-			err := w.DNSManager.API.DeleteDNSRecord(w.ctx, dnsRecord.ID)
-			if err != nil {
-				w.Logger.Error(err.Error())
-			}
-			session.Close()
+
+		enc := json.NewEncoder(stream)
+
+		err := enc.Encode(&message{
+			Message: MsgTunnelttlTimeout,
 		})
-	}()
+		if err != nil {
+			w.Logger.Error(fmt.Sprintf("%s: %s", ErrFailedToEncodeMessage.Error(), err.Error()))
+		}
+		stream.Close()
+
+		ttlexpired <- true
+	}(stream)
 
 	select {
 	case <-session.CloseChan():
 		w.Logger.Debug("session closed")
 	case <-w.ctx.Done():
 		w.Logger.Debug("context canceled")
+	case <-ttlexpired:
+		w.Logger.WithStr("tunnel", dnsRecord.Meta.Name).Debug("ttl expired")
 	}
 
 	cleanupCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
 
-	once.Do(func() {
-		err := w.DNSManager.API.DeleteDNSRecord(cleanupCtx, dnsRecord.ID)
-		if err != nil {
-			w.Logger.Error(err.Error())
-		}
-
-		cancel()
-	})
+	err = w.DNSManager.API.DeleteDNSRecord(cleanupCtx, dnsRecord.ID)
+	if err != nil {
+		w.Logger.Error(err.Error())
+	}
 
 	<-cleanupCtx.Done()
 

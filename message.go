@@ -1,7 +1,7 @@
 package wormhole
 
 type message struct {
-	Action       string `json:"action"`
+	Message      string `json:"action"`
 	Status       int    `json:"status"`
 	Err          string `json:"err"`
 	APIKey       string `json:"api_key"`

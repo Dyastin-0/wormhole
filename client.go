@@ -10,6 +10,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"time"
 
 	"github.com/Dyastin-0/wormhole/logger"
 	"github.com/hashicorp/yamux"
@@ -99,6 +100,9 @@ func (c *client) Start(ctx context.Context, tlsConfig *tls.Config) error {
 		return fmt.Errorf("%v: %w", ErrHandshakeFailed, err)
 	}
 
+	// handle other messages
+	go c.handleMessage(stream)
+
 	if msg.Status != StatusOK {
 		c.Logger.Error(msg.Err)
 		return fmt.Errorf("%v: %w", ErrHandshakeFailed, ErrTunnelNameAlreadyUsed)
@@ -114,12 +118,14 @@ func (c *client) Start(ctx context.Context, tlsConfig *tls.Config) error {
 			case <-c.ctx.Done():
 				return c.ctx.Err()
 			default:
-				if errors.Is(session.GoAway(), err) || errors.Is(err, io.EOF) {
+				if errors.Is(err, yamux.ErrTimeout) {
 					return nil
 				}
-
-				if session.GoAway() != nil {
-					c.Logger.Info("wormhole server connection closed")
+				if errors.Is(err, yamux.ErrRemoteGoAway) {
+					fmt.Println("wormhole: server connection closed")
+					return nil
+				}
+				if errors.Is(err, io.EOF) {
 					return nil
 				}
 
@@ -136,10 +142,43 @@ func (c *client) Start(ctx context.Context, tlsConfig *tls.Config) error {
 	}
 }
 
-// implements simple handshake
-func (c *client) handshake(stream net.Conn) (*message, error) {
+func (c *client) handleMessage(stream net.Conn) error {
 	defer stream.Close()
 
+	dec := json.NewDecoder(stream)
+
+	for {
+		select {
+		case <-c.ctx.Done():
+			return c.ctx.Err()
+
+		default:
+			stream.SetReadDeadline(time.Now().Add(5 * time.Second))
+
+			msg := &message{}
+
+			err := dec.Decode(msg)
+			if err != nil {
+				if errors.Is(err, io.EOF) {
+					return err
+				}
+
+				fmt.Printf("wormhole [err]: %s\n", ErrFailedToDecodeMessage.Error())
+				continue
+			}
+
+			switch msg.Message {
+			case MsgTunnelttlTimeout:
+				c.Stop()
+				return nil
+			default:
+			}
+		}
+	}
+}
+
+// implements simple handshake
+func (c *client) handshake(stream net.Conn) (*message, error) {
 	enc := json.NewEncoder(stream)
 	dec := json.NewDecoder(stream)
 
@@ -189,6 +228,7 @@ func (c *client) http(stream net.Conn) error {
 	if err != nil {
 		return fmt.Errorf("%v: %w", ErrFailedToDialTCP, err)
 	}
+	defer conn.Close()
 
 	err = req.Write(conn)
 	if err != nil {
