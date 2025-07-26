@@ -10,7 +10,6 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"time"
 
 	"github.com/Dyastin-0/wormhole/logger"
 	"github.com/hashicorp/yamux"
@@ -153,8 +152,6 @@ func (c *client) handleMessage(stream net.Conn) error {
 			return c.ctx.Err()
 
 		default:
-			stream.SetReadDeadline(time.Now().Add(5 * time.Second))
-
 			msg := &message{}
 
 			err := dec.Decode(msg)

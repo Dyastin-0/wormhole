@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"net"
 	"time"
 
 	"github.com/Dyastin-0/wormhole/api/db"
@@ -22,12 +20,7 @@ const (
 	MaxJSONSize = 2048
 )
 
-func (w *Wormhole) handshake(stream net.Conn) (string, string, string, time.Duration, error) {
-	dec := json.NewDecoder(io.LimitReader(stream, MaxJSONSize))
-	enc := json.NewEncoder(stream)
-
-	dec.DisallowUnknownFields()
-
+func (w *Wormhole) handshake(enc *json.Encoder, dec *json.Decoder) (string, string, string, time.Duration, error) {
 	var msg message
 
 	err := dec.Decode(&msg)

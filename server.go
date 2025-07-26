@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"sync"
@@ -161,7 +162,12 @@ func (w *Wormhole) handleConn(conn net.Conn) error {
 		return errf
 	}
 
-	domain, proto, ipv4, ttl, err := w.handshake(stream)
+	dec := json.NewDecoder(io.LimitReader(stream, MaxJSONSize))
+	enc := json.NewEncoder(stream)
+
+	dec.DisallowUnknownFields()
+
+	domain, proto, ipv4, ttl, err := w.handshake(enc, dec)
 	if err != nil {
 		w.Logger.Error(err.Error())
 		return err
@@ -185,10 +191,8 @@ func (w *Wormhole) handleConn(conn net.Conn) error {
 
 	ttlexpired := make(chan bool, 1)
 	// handle tunnel ttl
-	go func(stream net.Conn) {
+	go func(stream net.Conn, enc *json.Encoder) {
 		<-time.After(ttl)
-
-		enc := json.NewEncoder(stream)
 
 		err := enc.Encode(&message{
 			Message: MsgTunnelttlTimeout,
@@ -199,7 +203,7 @@ func (w *Wormhole) handleConn(conn net.Conn) error {
 		stream.Close()
 
 		ttlexpired <- true
-	}(stream)
+	}(stream, enc)
 
 	select {
 	case <-session.CloseChan():
