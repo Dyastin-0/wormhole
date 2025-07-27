@@ -133,7 +133,13 @@ func start(ctx context.Context, cmd *cli.Command) error {
 	newStore := store.New(queries)
 
 	newLogger := logger.New()
-	newLogger.InitMultiWriter("~/wormhole/server/logs/wormhole.log")
+
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		homeDir = "."
+	}
+
+	newLogger.InitMultiWriter(fmt.Sprintf("%s/wormhole/server/logs/wormhole.log", homeDir))
 
 	issuer := token.DefaultIssuer()
 
@@ -202,12 +208,18 @@ func http(ctx context.Context, cmd *cli.Command) error {
 
 	c := wormhole.NewClient(api, id, name, wsa, target, wormhole.ProtoHTTP)
 
-	logger := logger.New()
-	logger.Init("~/wormhole/client/logs/wormhole.log")
+	newLogger := logger.New()
 
-	c.Logger = logger
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		homeDir = "."
+	}
 
-	err := c.Start(ctx, tlsconfig)
+	newLogger.InitMultiWriter(fmt.Sprintf("%s/wormhole/client/logs/wormhole.log", homeDir))
+
+	c.Logger = newLogger
+
+	err = c.Start(ctx, tlsconfig)
 	if err != nil {
 		return err
 	}
