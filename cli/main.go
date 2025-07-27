@@ -234,7 +234,7 @@ func LogPath(base string) (string, error) {
 		return "", fmt.Errorf("failed to get home directory: %w", err)
 	}
 
-	logDir := filepath.Join(homeDir, "wormhole", base, "logs")
+	logDir := filepath.Join(homeDir, "wormhole-logs", base, "logs")
 
 	if err := os.MkdirAll(logDir, 0755); err != nil {
 		return "", fmt.Errorf("failed to create log directory: %w", err)
