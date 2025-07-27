@@ -216,7 +216,7 @@ func http(ctx context.Context, cmd *cli.Command) error {
 		return err
 	}
 
-	newLogger.InitMultiWriter(logPath)
+	newLogger.Init(logPath)
 
 	c.Logger = newLogger
 
