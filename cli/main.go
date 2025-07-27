@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 
 	"github.com/Dyastin-0/wormhole"
@@ -134,12 +135,12 @@ func start(ctx context.Context, cmd *cli.Command) error {
 
 	newLogger := logger.New()
 
-	homeDir, err := os.UserHomeDir()
+	logPath, err := LogPath("server")
 	if err != nil {
-		homeDir = "."
+		return err
 	}
 
-	newLogger.InitMultiWriter(fmt.Sprintf("%s/wormhole/server/logs/wormhole.log", homeDir))
+	newLogger.InitMultiWriter(logPath)
 
 	issuer := token.DefaultIssuer()
 
@@ -210,12 +211,12 @@ func http(ctx context.Context, cmd *cli.Command) error {
 
 	newLogger := logger.New()
 
-	homeDir, err := os.UserHomeDir()
+	logPath, err := LogPath("client")
 	if err != nil {
-		homeDir = "."
+		return err
 	}
 
-	newLogger.InitMultiWriter(fmt.Sprintf("%s/wormhole/client/logs/wormhole.log", homeDir))
+	newLogger.InitMultiWriter(logPath)
 
 	c.Logger = newLogger
 
@@ -225,4 +226,20 @@ func http(ctx context.Context, cmd *cli.Command) error {
 	}
 
 	return nil
+}
+
+func LogPath(base string) (string, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("failed to get home directory: %w", err)
+	}
+
+	logDir := filepath.Join(homeDir, "wormhole", base, "logs")
+
+	if err := os.MkdirAll(logDir, 0755); err != nil {
+		return "", fmt.Errorf("failed to create log directory: %w", err)
+	}
+
+	logPath := filepath.Join(logDir, "wormhole.log")
+	return logPath, nil
 }
