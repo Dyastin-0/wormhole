@@ -123,7 +123,7 @@ func start(ctx context.Context, cmd *cli.Command) error {
 	baseDNS := cmd.String("dns")
 	ipv4 := cmd.String("ipv4")
 
-	w := wormhole.New(addr, httpAddr)
+	w := wormhole.NewServer(addr, httpAddr)
 
 	conn, err := dbsql.Open("sqlite3", "file:dev.db?_foreign_keys=on&_journal_mode=WAL&_cache=shared&_busy_timeout=5000")
 	if err != nil {

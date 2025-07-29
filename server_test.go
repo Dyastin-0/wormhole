@@ -21,7 +21,7 @@ import (
 )
 
 func TestNew(t *testing.T) {
-	w := New(":8888", ":9999")
+	w := NewServer(":8888", ":9999")
 
 	if w.addr != ":8888" {
 		t.Errorf("addr mismatch: got %s, want %s", w.addr, ":8888")
@@ -55,7 +55,7 @@ func TestStart(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			w := New(tt.addr, tt.httpAddr)
+			w := NewServer(tt.addr, tt.httpAddr)
 			dbStore := store.New(nil)
 			dnsManager := &dnsmanager.Manager{
 				API: newMockDNSAPI("dyastin.tech", "127.0.0.1"),
@@ -87,7 +87,7 @@ func TestStart(t *testing.T) {
 }
 
 func TestStop(t *testing.T) {
-	w := New(":8083", ":8010")
+	w := NewServer(":8083", ":8010")
 
 	store := store.New(nil)
 	dnsManager := &dnsmanager.Manager{
@@ -123,7 +123,7 @@ func TestHandshake(t *testing.T) {
 	defer client.Close()
 	defer server.Close()
 
-	w := &Wormhole{
+	w := &Server{
 		DNSManager: &dnsmanager.Manager{
 			API: newMockDNSAPI("dyastin.tech", "127.0.0.1"),
 		},
@@ -180,7 +180,7 @@ func TestHTTP(t *testing.T) {
 
 	defer ln.Close()
 
-	w := &Wormhole{
+	w := &Server{
 		DNSManager: &dnsmanager.Manager{
 			API: newMockDNSAPI("wormhole.dyastin.tech", "127.0.0.1"),
 		},
@@ -262,7 +262,7 @@ func TestTunneler(t *testing.T) {
 	defer client.Close()
 	defer server.Close()
 
-	w := &Wormhole{
+	w := &Server{
 		tunnelHTTPRequest: tunnelHTTPRequest,
 	}
 
@@ -319,7 +319,7 @@ func TestTunneler(t *testing.T) {
 	}
 }
 
-func TestWormhole_HTTP(t *testing.T) {
+func TestServer_HTTP(t *testing.T) {
 	clientConn, serverConn := net.Pipe()
 	defer clientConn.Close()
 	defer serverConn.Close()
@@ -330,7 +330,7 @@ func TestWormhole_HTTP(t *testing.T) {
 		API: newMockDNSAPI("dyastin.tech", "127.0.0.1"),
 	}
 
-	w := &Wormhole{
+	w := &Server{
 		DNSManager: dnsManager,
 		tunnelHTTPRequest: func(stream net.Conn, wr http.ResponseWriter, r *http.Request) error {
 			wr.WriteHeader(http.StatusTeapot)

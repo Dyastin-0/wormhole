@@ -223,20 +223,20 @@ func (c *client) http(stream net.Conn) error {
 
 	err = req.Write(conn)
 	if err != nil {
-		return fmt.Errorf("%v: %w", ErrFailedToWriteHTTPTunnelRequest, err)
+		return fmt.Errorf("%v: %w", ErrFailedToWriteHTTPRequest, err)
 	}
 
 	localBufr := bufio.NewReader(conn)
 
 	resp, err := http.ReadResponse(localBufr, req)
 	if err != nil {
-		return fmt.Errorf("%v: %w", ErrFailedToReadTCPTunnelResponse, err)
+		return fmt.Errorf("%v: %w", ErrFailedToReadHTTPResponse, err)
 	}
 	defer resp.Body.Close()
 
 	err = resp.Write(stream)
 	if err != nil {
-		return fmt.Errorf("%v: %w", ErrFailedToWriteHTTPTunnelResponse, err)
+		return fmt.Errorf("%v: %w", ErrFailedToWriteHTTPResponse, err)
 	}
 
 	return nil

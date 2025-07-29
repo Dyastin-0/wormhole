@@ -2,6 +2,7 @@
 package wormhole
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -19,7 +20,7 @@ import (
 	"github.com/hashicorp/yamux"
 )
 
-type Wormhole struct {
+type Server struct {
 	addr     string
 	httpAddr string
 
@@ -32,11 +33,11 @@ type Wormhole struct {
 	donech            chan bool
 	cancel            context.CancelFunc
 	ctx               context.Context
-	tunnelHTTPRequest func(stream net.Conn, wr http.ResponseWriter, r *http.Request) error
+	tunnelHTTPRequest func(stream net.Conn, s http.ResponseWriter, r *http.Request) error
 }
 
-func New(addr, httpAddr string) *Wormhole {
-	return &Wormhole{
+func NewServer(addr, httpAddr string) *Server {
+	return &Server{
 		addr:              addr,
 		httpAddr:          httpAddr,
 		tunnelHTTPRequest: tunnelHTTPRequest,
@@ -45,38 +46,38 @@ func New(addr, httpAddr string) *Wormhole {
 	}
 }
 
-func (w *Wormhole) Stop() {
-	w.donech <- true
+func (s *Server) Stop() {
+	s.donech <- true
 }
 
-func (w *Wormhole) Start(ctx context.Context) error {
+func (s *Server) Start(ctx context.Context) error {
 	if ctx == nil {
 		return ErrNilContext
 	}
 
-	if w.DNSManager == nil {
+	if s.DNSManager == nil {
 		return ErrNilDNSManager
 	}
 
-	if w.Store == nil {
+	if s.Store == nil {
 		return ErrNilStore
 	}
 
-	w.ctx, w.cancel = context.WithCancel(ctx)
+	s.ctx, s.cancel = context.WithCancel(ctx)
 
 	// run donech listener
 	go func() {
-		<-w.donech
-		w.cancel()
+		<-s.donech
+		s.cancel()
 	}()
 
 	errch := make(chan error, 2)
 
 	go func() {
-		err := w.start()
+		err := s.start()
 		if err != nil && !errors.Is(err, context.Canceled) {
-			w.Logger.Error("tcp server exited: " + err.Error())
-			w.cancel()
+			s.Logger.Error("tcp server exited: " + err.Error())
+			s.cancel()
 			errch <- err
 		} else {
 			errch <- nil
@@ -84,10 +85,10 @@ func (w *Wormhole) Start(ctx context.Context) error {
 	}()
 
 	go func() {
-		err := w.StartHTTP()
+		err := s.StartHTTP()
 		if err != nil && !errors.Is(err, context.Canceled) {
-			w.Logger.Error("http server exited: " + err.Error())
-			w.cancel()
+			s.Logger.Error("http server exited: " + err.Error())
+			s.cancel()
 			errch <- err
 		} else {
 			errch <- nil
@@ -101,65 +102,65 @@ func (w *Wormhole) Start(ctx context.Context) error {
 		}
 	}
 
-	w.Logger.Info("waiting for cleanup...")
+	s.Logger.Info("waiting for cleanup...")
 	time.Sleep(2 * time.Second)
-	w.Logger.Info("clean up done!")
+	s.Logger.Info("clean up done!")
 
 	return finalErr
 }
 
-func (w *Wormhole) start() error {
-	listener, err := net.Listen("tcp", w.addr)
+func (s *Server) start() error {
+	listener, err := net.Listen("tcp", s.addr)
 	if err != nil {
-		return fmt.Errorf("%v: %w", ErrFailedToListenToTCP, err)
+		return fmt.Errorf("%v: %s", ErrFailedToListenToTCP, err)
 	}
 
 	go func() {
-		<-w.ctx.Done()
-		w.Logger.Info("context cancelled, closing tcp listener")
+		<-s.ctx.Done()
+		s.Logger.Info("context cancelled, closing tcp listener")
 		listener.Close()
 	}()
 
-	w.Logger.Info("service started")
+	s.Logger.Info("service started")
 
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
 			select {
-			case <-w.ctx.Done():
-				return w.ctx.Err()
+			case <-s.ctx.Done():
+				return s.ctx.Err()
 			default:
 				if errors.Is(err, net.ErrClosed) {
 					return nil
 				}
 
-				w.Logger.Error(fmt.Sprintf("%s: %s", ErrFailedToAcceptConn.Error(), err))
+				s.Logger.Error(fmt.Sprintf("%s: %s", ErrFailedToAcceptConn.Error(), err))
 				continue
 
 			}
 		}
 
 		go func(c net.Conn) {
-			if err := w.handleConn(c); err != nil {
-				w.Logger.Error(fmt.Sprintf("%v\n", err))
+			if err := s.handleConn(c); err != nil {
+				s.Logger.Error(fmt.Sprintf("%v\n", err))
 			}
 		}(conn)
 	}
 }
 
-func (w *Wormhole) handleConn(conn net.Conn) error {
+func (s *Server) handleConn(conn net.Conn) error {
 	session, err := yamux.Server(conn, nil)
 	if err != nil {
-		errf := fmt.Errorf("%v: %w", ErrFailedToCreateYamuxServer, err)
-		w.Logger.Error(errf.Error())
+		errf := fmt.Errorf("%v: %s", ErrFailedToCreateYamuxServer, err)
+		s.Logger.Error(errf.Error())
 		return errf
 	}
 	defer session.Close()
 
 	stream, err := session.Accept()
 	if err != nil {
-		errf := fmt.Errorf("%v: %w", ErrFailedToAcceptConn, err)
-		w.Logger.Error(errf.Error())
+		errf := fmt.Errorf("%v: %s", ErrFailedToAcceptConn, err)
+		s.Logger.Error(errf.Error())
 		return errf
 	}
 
@@ -168,9 +169,9 @@ func (w *Wormhole) handleConn(conn net.Conn) error {
 
 	dec.DisallowUnknownFields()
 
-	domain, proto, ipv4, ttl, err := w.handshake(enc, dec)
+	domain, proto, ipv4, ttl, err := s.handshake(enc, dec)
 	if err != nil {
-		w.Logger.Error(err.Error())
+		s.Logger.Error(err.Error())
 		return err
 	}
 
@@ -182,13 +183,13 @@ func (w *Wormhole) handleConn(conn net.Conn) error {
 		Proxied: false,
 	}
 
-	dnsRecord, err := w.DNSManager.API.CreateDNSRecord(w.ctx, ttl, record)
+	dnsRecord, err := s.DNSManager.API.CreateDNSRecord(s.ctx, ttl, record)
 	if err != nil {
-		w.Logger.Error(err.Error())
+		s.Logger.Error(err.Error())
 		return err
 	}
 
-	w.tunnels.Store(domain, &tunnel{proto: proto, session: session})
+	s.tunnels.Store(domain, &tunnel{proto: proto, session: session})
 
 	ttlexpired := make(chan bool, 1)
 	// handle tunnel ttl
@@ -199,7 +200,7 @@ func (w *Wormhole) handleConn(conn net.Conn) error {
 			Message: MsgTunnelttlTimeout,
 		})
 		if err != nil {
-			w.Logger.Error(fmt.Sprintf("%s: %s", ErrFailedToEncodeMessage.Error(), err.Error()))
+			s.Logger.Error(fmt.Sprintf("%s: %s", ErrFailedToEncodeMessage.Error(), err.Error()))
 		}
 		stream.Close()
 
@@ -208,23 +209,179 @@ func (w *Wormhole) handleConn(conn net.Conn) error {
 
 	select {
 	case <-session.CloseChan():
-		w.Logger.Debug("session closed")
-	case <-w.ctx.Done():
-		w.Logger.Debug("context canceled")
+		s.Logger.Debug("session closed")
+	case <-s.ctx.Done():
+		s.Logger.Debug("context canceled")
 	case <-ttlexpired:
-		w.Logger.WithStr("tunnel", dnsRecord.Meta.Name).Debug("ttl expired")
+		s.Logger.WithStr("tunnel", dnsRecord.Meta.Name).Debug("ttl expired")
 	}
 
 	cleanupCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	err = w.DNSManager.API.DeleteDNSRecord(cleanupCtx, dnsRecord.ID)
+	err = s.DNSManager.API.DeleteDNSRecord(cleanupCtx, dnsRecord.ID)
 	if err != nil {
-		w.Logger.Error(err.Error())
+		s.Logger.Error(err.Error())
 	}
 
 	<-cleanupCtx.Done()
 
-	w.tunnels.Delete(domain)
+	s.tunnels.Delete(domain)
 	return nil
+}
+
+func (s *Server) handshake(enc *json.Encoder, dec *json.Decoder) (string, string, string, time.Duration, error) {
+	var msg message
+	var err error
+	err = dec.Decode(&msg)
+	if err != nil {
+		return "", "", "", 0, fmt.Errorf("%v: %w", ErrFailedToDecodeMessage, err)
+	}
+
+	if msg.TunnelProto != ProtoHTTP && msg.TunnelProto != ProtoTCP {
+		errMsg := &message{Status: StatusUnsupportedProto, Err: ErrUnsupportedProtocol.Error()}
+
+		err = enc.Encode(errMsg)
+		if err != nil {
+			return "", "", "", 0, errors.Join(
+				fmt.Errorf("%v: %w", ErrHandshakeFailed, ErrUnsupportedProtocol),
+				fmt.Errorf("%v: %w", ErrFailedToEncodeMessage, err),
+			)
+		}
+
+		return "", "", "", 0, ErrUnsupportedProtocol
+	}
+
+	var ipv4, domain, proto string
+	var ttl time.Duration
+
+	domain = fmt.Sprintf("%s.%s", msg.TunnelName, s.DNSManager.API.BaseDNS())
+	ipv4 = s.DNSManager.API.IPV4()
+	ttl = 1 * time.Hour
+	proto = msg.TunnelProto
+
+	if _, exists := s.tunnels.Load(domain); exists {
+		errMsg := &message{Status: StatusNameAlreadyUsed, Err: ErrTunnelNameAlreadyUsed.Error()}
+
+		err = enc.Encode(errMsg)
+		if err != nil {
+			return "", "", "", 0, errors.Join(
+				fmt.Errorf("%v: %w", ErrHandshakeFailed, ErrTunnelNameAlreadyUsed),
+				fmt.Errorf("%v: %w", ErrFailedToEncodeMessage, err),
+			)
+		}
+
+		return "", "", "", 0, fmt.Errorf("%v: %w", ErrHandshakeFailed, ErrTunnelNameAlreadyUsed)
+	}
+
+	err = enc.Encode(&message{
+		Status:       StatusOK,
+		TunnelDomain: domain,
+	})
+	if err != nil {
+		return "", "", "", 0, fmt.Errorf("%v: %w", ErrHandshakeFailed, err)
+	}
+
+	return domain, proto, ipv4, ttl, nil
+}
+
+func (s *Server) HTTP(wr http.ResponseWriter, r *http.Request) {
+	id := r.Header.Get("X-Forwarded-Host")
+
+	if id == "" {
+		id = r.Header.Get("Host")
+	}
+
+	s.Logger.Debug("host: " + id)
+
+	t, ok := s.tunnels.Load(id)
+	if !ok {
+		http.Error(wr, "tunnel not found", http.StatusNotFound)
+		return
+	}
+
+	stream, err := t.(*tunnel).session.Open()
+	if err != nil {
+		s.Logger.Error(fmt.Sprintf("%s: %s\n", id, ErrFailedToOpenStream))
+		http.Error(wr, "failed to open stream", http.StatusInternalServerError)
+		return
+	}
+	defer stream.Close()
+
+	err = s.tunnelHTTPRequest(stream, wr, r)
+	if err != nil {
+		errf := fmt.Sprintf("tunnel error: %s", err.Error())
+
+		s.Logger.Error(errf)
+		http.Error(wr, errf, http.StatusInternalServerError)
+	}
+}
+
+func (s *Server) StartHTTP() error {
+	server := &http.Server{
+		Addr:    s.httpAddr,
+		Handler: http.HandlerFunc(s.HTTP),
+	}
+
+	go func() {
+		<-s.ctx.Done()
+
+		s.Logger.Info("context cancelled, shutting down http server")
+
+		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+		defer cancel()
+
+		if err := server.Shutdown(ctx); err != nil {
+			s.Logger.Error(fmt.Sprintf("%s: %v", fmt.Errorf("http server shutdown failed"), err))
+		}
+	}()
+
+	err := server.ListenAndServe()
+	if err != nil && err != http.ErrServerClosed {
+		return fmt.Errorf("%v: %w", fmt.Errorf("http server stopped"), err)
+	}
+
+	return nil
+}
+
+func tunnelHTTPRequest(stream net.Conn, wr http.ResponseWriter, r *http.Request) error {
+	err := r.Write(stream)
+	if err != nil {
+		return fmt.Errorf("%v: %w", ErrFailedToWriteHTTPRequestToTunnel, err)
+	}
+
+	bufr := bufio.NewReader(stream)
+
+	resp, err := http.ReadResponse(bufr, r)
+	if err != nil {
+		return fmt.Errorf("%v: %w", ErrFailedToReadHTTPResponseFromTunnel, err)
+	}
+
+	defer resp.Body.Close()
+
+	copyHeader(wr.Header(), resp.Header)
+	io.Copy(wr, resp.Body)
+
+	return nil
+}
+
+func copyHeader(dst, src http.Header) {
+	for k, vv := range src {
+		for _, v := range vv {
+			dst.Add(k, v)
+		}
+	}
+}
+
+func (s *Server) tcp(stream net.Conn) error {
+	return nil
+}
+
+func (s *Server) stream(src, dst net.Conn, errch chan error) {
+	defer dst.Close()
+
+	_, err := io.Copy(dst, src)
+	if err != nil {
+		errch <- err
+	}
 }
