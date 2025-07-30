@@ -4,6 +4,7 @@ package wormhole
 import (
 	"bufio"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,12 +18,15 @@ import (
 	"github.com/Dyastin-0/wormhole/dnsmanager"
 	"github.com/Dyastin-0/wormhole/logger"
 	"github.com/Dyastin-0/wormhole/token"
+	"github.com/caddyserver/certmagic"
 	"github.com/hashicorp/yamux"
+	"github.com/rs/zerolog/log"
 )
 
 type Server struct {
 	addr     string
 	httpAddr string
+	tcpAddr  string
 
 	tunnels    sync.Map // stores k=string;v=*tunnel
 	Store      *store.Store
@@ -34,6 +38,7 @@ type Server struct {
 	cancel            context.CancelFunc
 	ctx               context.Context
 	tunnelHTTPRequest func(stream net.Conn, s http.ResponseWriter, r *http.Request) error
+	tunnelTCPStream   func(src, dst net.Conn) error
 }
 
 func NewServer(addr, httpAddr string) *Server {
@@ -71,32 +76,39 @@ func (s *Server) Start(ctx context.Context) error {
 		s.cancel()
 	}()
 
-	errch := make(chan error, 2)
+	errch := make(chan error, 3)
 
 	go func() {
 		err := s.start()
 		if err != nil && !errors.Is(err, context.Canceled) {
 			s.Logger.Error("tcp server exited: " + err.Error())
 			s.cancel()
-			errch <- err
-		} else {
-			errch <- nil
 		}
+		errch <- err
+	}()
+
+	magic := certmagic.NewDefault()
+
+	go func() {
+		err := s.startTCP(magic.TLSConfig())
+		if err != nil {
+			s.Logger.Error("tls server exited: " + err.Error())
+			s.cancel()
+		}
+		errch <- err
 	}()
 
 	go func() {
-		err := s.StartHTTP()
+		err := s.startHTTP()
 		if err != nil && !errors.Is(err, context.Canceled) {
 			s.Logger.Error("http server exited: " + err.Error())
 			s.cancel()
-			errch <- err
-		} else {
-			errch <- nil
 		}
+		errch <- err
 	}()
 
 	var finalErr error
-	for i := 0; i < 2; i++ {
+	for range 3 {
 		if err := <-errch; err != nil && finalErr == nil {
 			finalErr = err
 		}
@@ -196,7 +208,7 @@ func (s *Server) handleConn(conn net.Conn) error {
 	go func(stream net.Conn, enc *json.Encoder) {
 		<-time.After(ttl)
 
-		err := enc.Encode(&message{
+		err = enc.Encode(&message{
 			Message: MsgTunnelttlTimeout,
 		})
 		if err != nil {
@@ -285,7 +297,7 @@ func (s *Server) handshake(enc *json.Encoder, dec *json.Decoder) (string, string
 	return domain, proto, ipv4, ttl, nil
 }
 
-func (s *Server) HTTP(wr http.ResponseWriter, r *http.Request) {
+func (s *Server) HTTPHandler(wr http.ResponseWriter, r *http.Request) {
 	id := r.Header.Get("X-Forwarded-Host")
 
 	if id == "" {
@@ -296,14 +308,14 @@ func (s *Server) HTTP(wr http.ResponseWriter, r *http.Request) {
 
 	t, ok := s.tunnels.Load(id)
 	if !ok {
-		http.Error(wr, "tunnel not found", http.StatusNotFound)
+		http.Error(wr, ErrTunnelNotFound.Error(), http.StatusNotFound)
 		return
 	}
 
 	stream, err := t.(*tunnel).session.Open()
 	if err != nil {
 		s.Logger.Error(fmt.Sprintf("%s: %s\n", id, ErrFailedToOpenStream))
-		http.Error(wr, "failed to open stream", http.StatusInternalServerError)
+		http.Error(wr, ErrFailedToOpenStream.Error(), http.StatusInternalServerError)
 		return
 	}
 	defer stream.Close()
@@ -317,10 +329,10 @@ func (s *Server) HTTP(wr http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *Server) StartHTTP() error {
+func (s *Server) startHTTP() error {
 	server := &http.Server{
 		Addr:    s.httpAddr,
-		Handler: http.HandlerFunc(s.HTTP),
+		Handler: http.HandlerFunc(s.HTTPHandler),
 	}
 
 	go func() {
@@ -373,15 +385,117 @@ func copyHeader(dst, src http.Header) {
 	}
 }
 
-func (s *Server) tcp(stream net.Conn) error {
+func (s *Server) startTCP(tlsconfig *tls.Config) error {
+	listener, err := tls.Listen("tcp", s.tcpAddr, tlsconfig)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrFailedToListenToTCP, err)
+	}
+
+	go func() {
+		<-s.ctx.Done()
+		s.Logger.Info("context cancelled, closing tcp listener")
+		listener.Close()
+	}()
+
+	for {
+		conn, err := listener.Accept()
+		if err != nil {
+			select {
+			case <-s.ctx.Done():
+				return s.ctx.Err()
+			default:
+				if errors.Is(err, net.ErrClosed) {
+					return nil
+				}
+
+				s.Logger.Error(fmt.Sprintf("%s: %s", ErrFailedToAcceptConn.Error(), err))
+				continue
+			}
+		}
+
+		go func() {
+			err := s.TCPHandler(conn)
+			if err != nil {
+				s.Logger.Error(err.Error())
+			}
+		}()
+	}
+}
+
+func (s *Server) TCPHandler(stream net.Conn) error {
+	defer stream.Close()
+
+	if s.tunnelTCPStream == nil {
+		s.tunnelTCPStream = tunnelTCPStream
+	}
+
+	sni := getSNI(stream)
+	if sni == "" {
+		return ErrMissingSNI
+	}
+
+	t, ok := s.tunnels.Load(sni)
+	if !ok {
+		return ErrTunnelNotFound
+	}
+
+	dst, err := t.(*tunnel).session.Open()
+	if err != nil {
+		return ErrFailedToOpenStream
+	}
+
+	return s.tunnelTCPStream(stream, dst)
+}
+
+func getSNI(conn net.Conn) string {
+	tlsConn, ok := conn.(*tls.Conn)
+	if !ok {
+		return ""
+	}
+
+	if err := tlsConn.Handshake(); err != nil {
+		log.Warn().Err(err).Msg("tls handshake failed")
+		return ""
+	}
+
+	state := tlsConn.ConnectionState()
+	return state.ServerName
+}
+
+func tunnelTCPStream(src, dst net.Conn) error {
+	errch := make(chan error, 2)
+	wg := sync.WaitGroup{}
+	wg.Add(2)
+
+	go func() {
+		errch <- stream(src, dst)
+		wg.Done()
+	}()
+
+	go func() {
+		errch <- stream(dst, src)
+		wg.Done()
+	}()
+
+	wg.Wait()
+	close(errch)
+
+	for err := range errch {
+		if err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
-func (s *Server) stream(src, dst net.Conn, errch chan error) {
+func stream(src, dst net.Conn) error {
 	defer dst.Close()
 
 	_, err := io.Copy(dst, src)
 	if err != nil {
-		errch <- err
+		return err
 	}
+
+	return nil
 }

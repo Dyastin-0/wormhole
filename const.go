@@ -42,6 +42,10 @@ var (
 	// Used when the server failed to read the http response from the yamux session
 	ErrFailedToReadHTTPResponseFromTunnel = errors.New("failed to read http response from tunnel")
 
+	// Used when a tcp connection has empty sni
+	ErrMissingSNI     = errors.New("missing sni")
+	ErrTunnelNotFound = errors.New("tunnel not found")
+
 	ErrContextCancelled = errors.New("context canceled")
 	ErrNilContext       = errors.New("nil context")
 	ErrNilTLSConfig     = errors.New("nil tls config")

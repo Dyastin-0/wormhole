@@ -107,8 +107,9 @@ func startCommand() *cli.Command {
 				Required: true,
 			},
 			&cli.StringFlag{
-				Name:  "ipv4",
-				Usage: "set ipv4 target for dns",
+				Name:     "ipv4",
+				Usage:    "set ipv4 target for dns",
+				Required: true,
 			},
 		},
 		Action: start,

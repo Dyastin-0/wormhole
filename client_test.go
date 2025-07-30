@@ -194,3 +194,89 @@ func TestClientHandleConnUnsupported(t *testing.T) {
 		t.Errorf("expected unsupported protocol error, got: %v", err)
 	}
 }
+
+func TestTCP(t *testing.T) {
+	s := Server{
+		tunnelTCPStream: tunnelTCPStream,
+	}
+	c := client{}
+
+	// mock connection between wormhole client and server
+	sessions, sessionc := net.Pipe()
+	defer sessions.Close()
+	defer sessionc.Close()
+
+	sln, err := net.Listen("tcp", ":3211")
+	if err != nil {
+		t.Error(err)
+	}
+	defer sln.Close()
+
+	go func() {
+		for {
+			conn, err := sln.Accept()
+			if err != nil {
+				t.Log(err)
+				break
+			}
+
+			go s.tunnelTCPStream(conn, sessionc)
+		}
+	}()
+
+	// Local client
+	lln, err := net.Listen("tcp", ":3222")
+	if err != nil {
+		t.Error(err)
+	}
+	defer lln.Close()
+
+	msg := "hello"
+	go func() {
+		for {
+			conn, err := lln.Accept()
+			if err != nil {
+				t.Log(err)
+				break
+			}
+
+			go conn.Write([]byte(msg))
+		}
+	}()
+
+	time.Sleep(1 * time.Second)
+	// Dial the local client, and tunnel the conn to the mock server conn
+	lconn, err := net.Dial("tcp", ":3222")
+	if err != nil {
+		t.Error(err)
+	}
+	defer lconn.Close()
+
+	go c.tcp(lconn, sessions)
+
+	// Create a conn to server
+	conn, err := net.Dial("tcp", ":3211")
+	if err != nil {
+		t.Error(err)
+	}
+	defer conn.Close()
+
+	buf := make([]byte, 1024)
+
+	n, err := conn.Read(buf)
+	if err != nil {
+		t.Error(err)
+	}
+
+	dataByte := buf[:n]
+	dataString := string(dataByte)
+
+	if dataString != msg {
+		t.Errorf("expected message to be %s, but got %s", msg, dataString)
+	}
+}
+
+//  client dials server
+//  server forwards conn to client <->
+//  client forwards conn to local server <->
+//  local server responds

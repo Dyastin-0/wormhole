@@ -352,7 +352,7 @@ func TestServer_HTTP(t *testing.T) {
 
 	rr := httptest.NewRecorder()
 
-	w.HTTP(rr, req)
+	w.HTTPHandler(rr, req)
 
 	res := rr.Result()
 	body, _ := io.ReadAll(res.Body)

@@ -10,6 +10,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"sync"
 
 	"github.com/Dyastin-0/wormhole/logger"
 	"github.com/hashicorp/yamux"
@@ -200,7 +201,12 @@ func (c *client) handleConn(stream net.Conn) error {
 	case ProtoHTTP:
 		return c.http(stream)
 	case ProtoTCP:
-		return c.tcp(stream)
+		conn, err := net.Dial("tcp", c.targetAddr)
+		if err != nil {
+			return fmt.Errorf("%w: %v", ErrFailedToDialTCP, err)
+		}
+
+		return c.tcp(stream, conn)
 	default:
 		return ErrUnsupportedProtocol
 	}
@@ -242,6 +248,40 @@ func (c *client) http(stream net.Conn) error {
 	return nil
 }
 
-func (c *client) tcp(stream net.Conn) error {
+func (c *client) tcp(src, dst net.Conn) error {
+	errch := make(chan error, 2)
+	wg := sync.WaitGroup{}
+	wg.Add(2)
+
+	go func() {
+		errch <- c.stream(src, dst)
+		wg.Done()
+	}()
+
+	go func() {
+		errch <- c.stream(dst, src)
+		wg.Done()
+	}()
+
+	wg.Wait()
+	close(errch)
+
+	for err := range errch {
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (c *client) stream(src, dst net.Conn) error {
+	defer dst.Close()
+
+	_, err := io.Copy(dst, src)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
