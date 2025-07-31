@@ -20,6 +20,7 @@ import (
 	"github.com/Dyastin-0/wormhole/token"
 	"github.com/caddyserver/certmagic"
 	"github.com/hashicorp/yamux"
+	"github.com/rs/zerolog/log"
 )
 
 type Server struct {
@@ -456,8 +457,6 @@ func (s *Server) TCPHandler(stream net.Conn) error {
 		return fmt.Errorf("%w: %v", ErrMissingSNI, err)
 	}
 
-	s.Logger.Debug("SNI: " + sni)
-
 	t, ok := s.tunnels.Load(sni)
 	if !ok {
 		return ErrTunnelNotFound
@@ -475,6 +474,12 @@ func getSNI(conn net.Conn) (string, error) {
 	tlsConn, ok := conn.(*tls.Conn)
 	if !ok {
 		return "", fmt.Errorf("conn not ok")
+	}
+
+	if err := tlsConn.Handshake(); err != nil {
+		log.Warn().Err(err).Msg("tls handshake failed")
+		state := tlsConn.ConnectionState()
+		return state.ServerName, fmt.Errorf("tls handshake error: %v", err)
 	}
 
 	state := tlsConn.ConnectionState()
