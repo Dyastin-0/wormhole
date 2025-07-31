@@ -256,7 +256,15 @@ func (s *Server) handshake(enc *json.Encoder, dec *json.Decoder) (string, string
 		return "", "", "", 0, fmt.Errorf("%v: %w", ErrFailedToDecodeMessage, err)
 	}
 
-	if msg.TunnelProto != ProtoHTTP && msg.TunnelProto != ProtoTCP {
+	var ipv4, domain, proto string
+	var ttl time.Duration
+
+	switch msg.TunnelProto {
+	case ProtoHTTP:
+		domain = fmt.Sprintf("%s.%s", msg.TunnelName, s.DNSManager.API.BaseDNS())
+	case ProtoTCP:
+		domain = fmt.Sprintf("%s.tcp.%s", msg.TunnelName, s.DNSManager.API.BaseDNS())
+	default:
 		errMsg := &message{Status: StatusUnsupportedProto, Err: ErrUnsupportedProtocol.Error()}
 
 		err = enc.Encode(errMsg)
@@ -270,10 +278,6 @@ func (s *Server) handshake(enc *json.Encoder, dec *json.Decoder) (string, string
 		return "", "", "", 0, ErrUnsupportedProtocol
 	}
 
-	var ipv4, domain, proto string
-	var ttl time.Duration
-
-	domain = fmt.Sprintf("%s.%s", msg.TunnelName, s.DNSManager.API.BaseDNS())
 	ipv4 = s.DNSManager.API.IPV4()
 	ttl = 1 * time.Hour
 	proto = msg.TunnelProto

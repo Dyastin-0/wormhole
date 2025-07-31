@@ -102,7 +102,12 @@ func (c *client) Start(ctx context.Context, tlsConfig *tls.Config) error {
 	}
 
 	c.Logger.Info("tunnel started")
-	fmt.Printf("wormhole [inf]: domain -> https://%s\n", msg.TunnelDomain)
+	switch c.proto {
+	case ProtoHTTP:
+		fmt.Printf("wormhole [inf]: address -> https://%s\n", msg.TunnelDomain)
+	case ProtoTCP:
+		fmt.Printf("wormhole [inf]: address -> %s:8443\n", msg.TunnelDomain)
+	}
 
 	for {
 		stream, err := session.Accept()
