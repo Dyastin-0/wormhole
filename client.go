@@ -134,8 +134,8 @@ func (c *client) Start(ctx context.Context, tlsConfig *tls.Config) error {
 
 		go func(s net.Conn) {
 			if err := c.handleConn(s); err != nil {
-				fmt.Printf("wormhole [err]: %s", err.Error())
-				c.Logger.Error(fmt.Sprintf("%v\n", err))
+				fmt.Printf("wormhole [err]: %s\n", err.Error())
+				c.Logger.Error(fmt.Sprintf("%v", err))
 			}
 		}(stream)
 	}
