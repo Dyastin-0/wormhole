@@ -478,7 +478,10 @@ func (s *Server) getSNI(conn net.Conn) string {
 
 	if err := tlsConn.Handshake(); err != nil {
 		s.Logger.Debug("tls handshake failed")
-		return ""
+
+		state := tlsConn.ConnectionState()
+		s.Logger.Debug("sni: " + state.ServerName)
+		return state.ServerName
 	}
 
 	state := tlsConn.ConnectionState()
