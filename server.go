@@ -456,6 +456,8 @@ func (s *Server) TCPHandler(stream net.Conn) error {
 		return fmt.Errorf("%w: %v", ErrMissingSNI, err)
 	}
 
+	s.Logger.Debug("SNI: " + sni)
+
 	t, ok := s.tunnels.Load(sni)
 	if !ok {
 		return ErrTunnelNotFound
