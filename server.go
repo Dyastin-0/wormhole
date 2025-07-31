@@ -226,11 +226,11 @@ func (s *Server) handleConn(conn net.Conn) error {
 
 	select {
 	case <-session.CloseChan():
-		s.Logger.Debug("session closed")
+		s.Logger.Info("session closed")
 	case <-s.ctx.Done():
-		s.Logger.Debug("context canceled")
+		s.Logger.Info("context canceled")
 	case <-ttlexpired:
-		s.Logger.WithStr("tunnel", dnsRecord.Meta.Name).Debug("ttl expired")
+		s.Logger.WithStr("tunnel", dnsRecord.Meta.Name).Info("ttl expired")
 	}
 
 	cleanupCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -472,20 +472,17 @@ func (s *Server) TCPHandler(stream net.Conn) error {
 func (s *Server) getSNI(conn net.Conn) string {
 	tlsConn, ok := conn.(*tls.Conn)
 	if !ok {
-		s.Logger.Debug("tls con not ok")
 		return ""
 	}
 
 	if err := tlsConn.Handshake(); err != nil {
-		s.Logger.Debug("tls handshake failed: " + err.Error())
+		s.Logger.Error("tls handshake failed: " + err.Error())
 
 		state := tlsConn.ConnectionState()
-		s.Logger.Debug("sni: " + state.ServerName)
 		return state.ServerName
 	}
 
 	state := tlsConn.ConnectionState()
-	s.Logger.Debug("sni: " + state.ServerName)
 	return state.ServerName
 }
 
