@@ -20,7 +20,6 @@ import (
 	"github.com/Dyastin-0/wormhole/token"
 	"github.com/caddyserver/certmagic"
 	"github.com/hashicorp/yamux"
-	"github.com/rs/zerolog/log"
 )
 
 type Server struct {
@@ -452,7 +451,7 @@ func (s *Server) TCPHandler(stream net.Conn) error {
 		s.tunnelTCPStream = tunnelTCPStream
 	}
 
-	sni := getSNI(stream)
+	sni := s.getSNI(stream)
 	if sni == "" {
 		return ErrMissingSNI
 	}
@@ -470,21 +469,20 @@ func (s *Server) TCPHandler(stream net.Conn) error {
 	return s.tunnelTCPStream(stream, dst)
 }
 
-func getSNI(conn net.Conn) string {
+func (s *Server) getSNI(conn net.Conn) string {
 	tlsConn, ok := conn.(*tls.Conn)
 	if !ok {
+		s.Logger.Debug("tls con not ok")
 		return ""
 	}
 
 	if err := tlsConn.Handshake(); err != nil {
-		log.Warn().Err(err).Msg("tls handshake failed")
-		state := tlsConn.ConnectionState()
-		log.Warn().Msg("err sni: " + state.ServerName)
-		return state.ServerName
+		s.Logger.Debug("tls handshake failed")
+		return ""
 	}
 
 	state := tlsConn.ConnectionState()
-	log.Warn().Msg("sni: " + state.ServerName)
+	s.Logger.Debug("sni: " + state.ServerName)
 	return state.ServerName
 }
 
