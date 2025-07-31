@@ -88,7 +88,7 @@ func (s *Server) Start(ctx context.Context) error {
 	}()
 
 	magic := certmagic.NewDefault()
-	magic.ManageSync(ctx, []string{fmt.Sprintf("*.tcp.%s", s.tcpAddr)})
+	magic.ManageSync(ctx, []string{fmt.Sprintf("*.tcp.%s", s.DNSManager.API.BaseDNS())})
 
 	go func() {
 		err := s.startTCP(magic.TLSConfig())
