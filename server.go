@@ -41,10 +41,11 @@ type Server struct {
 	tunnelTCPStream   func(src, dst net.Conn) error
 }
 
-func NewServer(addr, httpAddr string) *Server {
+func NewServer(addr, httpAddr, tcpAddr string) *Server {
 	return &Server{
 		addr:              addr,
 		httpAddr:          httpAddr,
+		tcpAddr:           tcpAddr,
 		tunnelHTTPRequest: tunnelHTTPRequest,
 		Logger:            &logger.NoopLogger{},
 		donech:            make(chan bool, 1),
@@ -122,6 +123,10 @@ func (s *Server) Start(ctx context.Context) error {
 }
 
 func (s *Server) start() error {
+	if s.addr == "" {
+		return fmt.Errorf("s.addr not set")
+	}
+
 	listener, err := net.Listen("tcp", s.addr)
 	if err != nil {
 		return fmt.Errorf("%v: %s", ErrFailedToListenToTCP, err)
@@ -245,6 +250,7 @@ func (s *Server) handleConn(conn net.Conn) error {
 func (s *Server) handshake(enc *json.Encoder, dec *json.Decoder) (string, string, string, time.Duration, error) {
 	var msg message
 	var err error
+
 	err = dec.Decode(&msg)
 	if err != nil {
 		return "", "", "", 0, fmt.Errorf("%v: %w", ErrFailedToDecodeMessage, err)
@@ -330,6 +336,10 @@ func (s *Server) HTTPHandler(wr http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) startHTTP() error {
+	if s.httpAddr == "" {
+		return fmt.Errorf("s.httpAddr is not set")
+	}
+
 	server := &http.Server{
 		Addr:    s.httpAddr,
 		Handler: http.HandlerFunc(s.HTTPHandler),
@@ -386,6 +396,14 @@ func copyHeader(dst, src http.Header) {
 }
 
 func (s *Server) startTCP(tlsconfig *tls.Config) error {
+	if s.tcpAddr == "" {
+		return fmt.Errorf("s.tcpAddr is not set")
+	}
+
+	if tlsconfig == nil {
+		return ErrNilTLSConfig
+	}
+
 	listener, err := tls.Listen("tcp", s.tcpAddr, tlsconfig)
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrFailedToListenToTCP, err)

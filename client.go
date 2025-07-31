@@ -188,7 +188,7 @@ func (c *client) handshake(stream net.Conn) (*message, error) {
 
 	err = dec.Decode(&msg)
 	if err != nil {
-		return nil, fmt.Errorf("%v: %w", ErrFailedToDecodeMessage, err)
+		return nil, fmt.Errorf("client err: %v: %w", ErrFailedToDecodeMessage, err)
 	}
 
 	return msg, nil

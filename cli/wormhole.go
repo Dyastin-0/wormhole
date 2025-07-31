@@ -55,6 +55,7 @@ func New() *cli.Command {
 		Commands: []*cli.Command{
 			startCommand(),
 			httpCommand(),
+			tcpCommand(),
 		},
 	}
 }
@@ -78,6 +79,11 @@ func startCommand() *cli.Command {
 		Name:  "start",
 		Usage: "start a wormhole server",
 		Flags: []cli.Flag{
+			&cli.StringFlag{
+				Name:    "tcpAdress",
+				Aliases: []string{"ta", "tcpAddr"},
+				Value:   ":8890",
+			},
 			&cli.StringFlag{
 				Name:    "address",
 				Aliases: []string{"a", "addr"},
@@ -119,12 +125,13 @@ func startCommand() *cli.Command {
 func start(ctx context.Context, cmd *cli.Command) error {
 	addr := cmd.String("addr")
 	httpAddr := cmd.String("httpAddr")
+	tcpAddr := cmd.String("tcpAddr")
 	zone := cmd.String("zone")
 	api := cmd.String("api")
 	baseDNS := cmd.String("dns")
 	ipv4 := cmd.String("ipv4")
 
-	w := wormhole.NewServer(addr, httpAddr)
+	w := wormhole.NewServer(addr, httpAddr, tcpAddr)
 
 	conn, err := dbsql.Open("sqlite3", "file:dev.db?_foreign_keys=on&_journal_mode=WAL&_cache=shared&_busy_timeout=5000")
 	if err != nil {
@@ -162,37 +169,9 @@ func start(ctx context.Context, cmd *cli.Command) error {
 
 func httpCommand() *cli.Command {
 	return &cli.Command{
-		Name:  "http",
-		Usage: "start a wormhole http reverse tunnel client",
-		Flags: []cli.Flag{
-			&cli.StringFlag{
-				Name:    "id",
-				Aliases: []string{"i"},
-				Usage:   "set the tunnel id which wormhole client will use",
-			},
-			&cli.StringFlag{
-				Name:     "name",
-				Aliases:  []string{"n"},
-				Usage:    "set your wormhole tunnel's domain (https://{name}.wormhole.dyastin.tech)",
-				Required: true,
-			},
-			&cli.StringFlag{
-				Name:     "target",
-				Aliases:  []string{"t"},
-				Usage:    "set the address where the request will be tunneled to (:3000)",
-				Required: true,
-			},
-			&cli.StringFlag{
-				Name:    "wormhole-server-address",
-				Aliases: []string{"s", "ws", "wsa", "server"},
-				Usage:   "set the wormhole server address",
-				Value:   "wormhole.dyastin.tech:8443",
-			},
-			&cli.StringFlag{
-				Name:  "api",
-				Usage: "set the wormhole api key",
-			},
-		},
+		Name:   "http",
+		Usage:  "start a wormhole http reverse tunnel client",
+		Flags:  baseClientFlags(),
 		Action: http,
 	}
 }
@@ -227,6 +206,80 @@ func http(ctx context.Context, cmd *cli.Command) error {
 	}
 
 	return nil
+}
+
+func tcpCommand() *cli.Command {
+	return &cli.Command{
+		Name:   "tcp",
+		Usage:  "start a wormhole tcp reverse tunnel client",
+		Flags:  baseClientFlags(),
+		Action: tcp,
+	}
+}
+
+func tcp(ctx context.Context, cmd *cli.Command) error {
+	api := cmd.String("api")
+	name := cmd.String("name")
+	id := cmd.String("id")
+	target := cmd.String("target")
+	wsa := cmd.String("wormhole-server-address")
+
+	tlsconfig := &tls.Config{
+		ServerName: "wormhole.dyastin.tech",
+	}
+
+	c := wormhole.NewClient(api, id, name, wsa, target, wormhole.ProtoTCP)
+
+	newLogger := logger.New()
+
+	logPath, err := LogPath("client")
+	if err != nil {
+		return err
+	}
+
+	newLogger.Init(logPath)
+
+	c.Logger = newLogger
+
+	err = c.Start(ctx, tlsconfig)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func baseClientFlags(flags ...cli.Flag) []cli.Flag {
+	return append(
+		flags,
+		&cli.StringFlag{
+			Name:    "id",
+			Aliases: []string{"i"},
+			Usage:   "set the tunnel id which wormhole client will use",
+		},
+		&cli.StringFlag{
+			Name:     "name",
+			Aliases:  []string{"n"},
+			Usage:    "set your wormhole tunnel's domain (https://{name}.wormhole.dyastin.tech)",
+			Required: true,
+		},
+		&cli.StringFlag{
+			Name:     "target",
+			Aliases:  []string{"t"},
+			Usage:    "set the address where the request will be tunneled to (:3000)",
+			Required: true,
+		},
+		&cli.StringFlag{
+			Name:    "wormhole-server-address",
+			Aliases: []string{"s", "ws", "wsa", "server"},
+			Usage:   "set the wormhole server address",
+			Value:   "wormhole.dyastin.tech:8443",
+		},
+		&cli.StringFlag{
+			Name:  "api",
+			Usage: "set the wormhole api key",
+		},
+	)
 }
 
 func LogPath(base string) (string, error) {
