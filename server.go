@@ -452,9 +452,9 @@ func (s *Server) TCPHandler(stream net.Conn) error {
 		s.tunnelTCPStream = tunnelTCPStream
 	}
 
-	sni, err := getSNI(stream)
-	if err != nil {
-		return fmt.Errorf("%w: %v", ErrMissingSNI, err)
+	sni := getSNI(stream)
+	if sni == "" {
+		return ErrMissingSNI
 	}
 
 	t, ok := s.tunnels.Load(sni)
@@ -470,20 +470,22 @@ func (s *Server) TCPHandler(stream net.Conn) error {
 	return s.tunnelTCPStream(stream, dst)
 }
 
-func getSNI(conn net.Conn) (string, error) {
+func getSNI(conn net.Conn) string {
 	tlsConn, ok := conn.(*tls.Conn)
 	if !ok {
-		return "", fmt.Errorf("conn not ok")
+		return ""
 	}
 
 	if err := tlsConn.Handshake(); err != nil {
 		log.Warn().Err(err).Msg("tls handshake failed")
 		state := tlsConn.ConnectionState()
-		return state.ServerName, fmt.Errorf("tls handshake error: %v", err)
+		log.Warn().Msg("err sni: " + state.ServerName)
+		return state.ServerName
 	}
 
 	state := tlsConn.ConnectionState()
-	return state.ServerName, nil
+	log.Warn().Msg("sni: " + state.ServerName)
+	return state.ServerName
 }
 
 func tunnelTCPStream(src, dst net.Conn) error {
