@@ -453,6 +453,7 @@ func (s *Server) TCPHandler(stream net.Conn) error {
 	}
 
 	sni := stream.(*tls.Conn).ConnectionState().ServerName
+	s.Logger.Debug("sni: " + sni)
 
 	t, ok := s.tunnels.Load(sni)
 	if !ok {
