@@ -89,6 +89,7 @@ func (s *Server) Start(ctx context.Context) error {
 	}()
 
 	magic := certmagic.NewDefault()
+	magic.DefaultServerName = fmt.Sprintf("*.%s", s.tcpAddr)
 
 	go func() {
 		err := s.startTCP(magic.TLSConfig())
