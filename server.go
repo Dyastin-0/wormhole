@@ -452,10 +452,7 @@ func (s *Server) TCPHandler(stream net.Conn) error {
 		s.tunnelTCPStream = tunnelTCPStream
 	}
 
-	sni := getSNI(stream)
-	if sni == "" {
-		return ErrMissingSNI
-	}
+	sni := stream.(*tls.Conn).ConnectionState().ServerName
 
 	t, ok := s.tunnels.Load(sni)
 	if !ok {
