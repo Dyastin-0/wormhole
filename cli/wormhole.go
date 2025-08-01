@@ -147,7 +147,12 @@ func start(ctx context.Context, cmd *cli.Command) error {
 
 	w := wormhole.NewServer(addr, httpAddr, tcpAddr)
 
-	conn, err := dbsql.Open("sqlite3", "file:dev.db?_foreign_keys=on&_journal_mode=WAL&_cache=shared&_busy_timeout=5000")
+	dbPath := os.Getenv("DB_PATH")
+	if dbPath == "" {
+		return fmt.Errorf("DB_PATH not set in .env")
+	}
+
+	conn, err := dbsql.Open("sqlite3", dbPath)
 	if err != nil {
 		log.Fatalf("failed to connect to db: %v", err)
 	}
