@@ -3,21 +3,19 @@ package server
 
 import (
 	"context"
-	dbsql "database/sql"
 	"fmt"
-	"log"
 	"net"
 	"net/http"
 	"os"
 	"time"
 
-	"github.com/Dyastin-0/wormhole/api/db"
 	"github.com/Dyastin-0/wormhole/api/header"
 	"github.com/Dyastin-0/wormhole/api/interceptor"
 	"github.com/Dyastin-0/wormhole/api/proto/auth"
 	"github.com/Dyastin-0/wormhole/api/proto/tunnel"
 	"github.com/Dyastin-0/wormhole/api/proto/user"
 	"github.com/Dyastin-0/wormhole/api/store"
+	"github.com/Dyastin-0/wormhole/logger"
 	"github.com/Dyastin-0/wormhole/token"
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"github.com/joho/godotenv"
@@ -27,34 +25,71 @@ import (
 	"google.golang.org/grpc/reflection"
 )
 
-func Start(ctx context.Context, dbPath, httpAddr, grpcAddr string) error {
+type Server struct {
+	addr        string
+	gatewayAddr string
+	store       *store.Store
+	donech      chan bool
+	Logger      logger.Logger
+}
+
+func New(addr, gatewayAddr string, store *store.Store) *Server {
+	return &Server{
+		addr:        addr,
+		gatewayAddr: gatewayAddr,
+		store:       store,
+		donech:      make(chan bool),
+		Logger:      &logger.NoopLogger{},
+	}
+}
+
+func (s *Server) Stop() {
+	s.donech <- true
+}
+
+func (s *Server) Start(ctx context.Context) error {
 	err := godotenv.Load(".env")
 	if err != nil {
 		panic(err)
 	}
 
+	newCtx, cancel := context.WithCancel(ctx)
+
 	errch := make(chan error, 2)
 
-	go func() { errch <- startGRPC(ctx, grpcAddr, dbPath) }()
-	go func() { errch <- startHTTP(ctx, httpAddr, grpcAddr) }()
+	go func() {
+		errch <- s.startGRPC(newCtx)
+		cancel()
+	}()
 
-	<-ctx.Done()
-	log.Println("gRPC server shutting down...")
+	go func() {
+		errch <- s.startHTTP(newCtx)
+		cancel()
+	}()
+
+	select {
+	case <-ctx.Done():
+		close(s.donech)
+	case <-s.donech:
+		close(errch)
+	}
+
+	s.Logger.Info("server shutting down...")
 
 	var finalErr error
-	for range 3 {
+	for range 2 {
 		if err := <-errch; err != nil && finalErr == nil {
 			finalErr = err
 		}
 	}
 
-	time.Sleep(2 * time.Second)
-	log.Println("server shutdown.")
+	time.Sleep(3 * time.Second)
+	s.Logger.Info("server shutdown.")
 
 	return finalErr
 }
 
-func startHTTP(ctx context.Context, addr, grpcAddr string) error {
+func (s *Server) startHTTP(ctx context.Context) error {
 	mux := runtime.NewServeMux(
 		header.DefaultOutgoingHeaderMatcher,
 		header.DefaultIncomingHeaderMatcher,
@@ -63,34 +98,35 @@ func startHTTP(ctx context.Context, addr, grpcAddr string) error {
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 	}
 
-	if err := user.RegisterUserServiceHandlerFromEndpoint(ctx, mux, grpcAddr, opts); err != nil {
-		log.Fatalf("failed to register user gateway: %v", err)
+	if err := user.RegisterUserServiceHandlerFromEndpoint(ctx, mux, s.addr, opts); err != nil {
+		s.Logger.Fatal(fmt.Sprintf("failed to register user gateway: %v", err))
 	}
 
-	if err := auth.RegisterAuthServiceHandlerFromEndpoint(ctx, mux, grpcAddr, opts); err != nil {
-		log.Fatalf("failed to register auth gateway: %v", err)
+	if err := auth.RegisterAuthServiceHandlerFromEndpoint(ctx, mux, s.addr, opts); err != nil {
+		s.Logger.Fatal(fmt.Sprintf("failed to register auth gateway: %v", err))
 	}
 
-	if err := tunnel.RegisterTunnelServiceHandlerFromEndpoint(ctx, mux, grpcAddr, opts); err != nil {
-		log.Fatalf("failed to register tunnel gateway: %v", err)
+	if err := tunnel.RegisterTunnelServiceHandlerFromEndpoint(ctx, mux, s.addr, opts); err != nil {
+		s.Logger.Fatal(fmt.Sprintf("failed to register tunnel gateway: %v", err))
 	}
 
 	server := http.Server{
 		Handler: mux,
-		Addr:    addr,
+		Addr:    s.gatewayAddr,
 	}
 
 	go func() {
-		<-ctx.Done()
-
-		fmt.Println("context canceled, grafully shutting down...")
+		select {
+		case <-ctx.Done():
+		case <-s.donech:
+		}
 
 		newCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
 		server.Shutdown(newCtx)
 	}()
 
-	fmt.Println("http started")
+	s.Logger.Info("http started.")
 	if err := server.ListenAndServe(); err == http.ErrServerClosed {
 		return ctx.Err()
 	} else {
@@ -98,31 +134,21 @@ func startHTTP(ctx context.Context, addr, grpcAddr string) error {
 	}
 }
 
-func startGRPC(ctx context.Context, addr, dbPath string) error {
-	// for dev use:
-	// file:dev.db?_foreign_keys=on&_journal_mode=WAL&_cache=shared&_busy_timeout=5000
-	conn, err := dbsql.Open("sqlite3", dbPath)
-	if err != nil {
-		log.Fatalf("failed to connect to db: %v", err)
-	}
-	defer conn.Close()
-
+func (s *Server) startGRPC(ctx context.Context) error {
 	accessSecret := os.Getenv("ACCESS_SECRET")
 	if accessSecret == "" {
-		panic("ACCESS_SECRET is not defined in .env")
+		s.Logger.Panic("ACCESS_SECRET is not defined in .env")
 	}
 
 	refreshSecret := os.Getenv("REFRESH_SECRET")
 	if refreshSecret == "" {
-		panic("REFRESH_SECRET is not defined in .env")
+		s.Logger.Panic("REFRESH_SECRET is not defined in .env")
 	}
 
 	issuer := token.New(accessSecret, refreshSecret)
 	methods := interceptor.DefaultMethods()
 	authInterceptor := interceptor.NewAuthInterceptor(methods, issuer)
 
-	queries := db.New(conn)
-	store := store.New(queries)
 	grpcServer := grpc.NewServer(
 		grpc.UnaryInterceptor(authInterceptor.Unary()),
 		grpc.StreamInterceptor(authInterceptor.Stream()),
@@ -131,24 +157,28 @@ func startGRPC(ctx context.Context, addr, dbPath string) error {
 	auth.RegisterAuthServiceServer(
 		grpcServer,
 		NewAuthServer(
-			store,
+			s.store,
 			issuer,
 		),
 	)
-	user.RegisterUserServiceServer(grpcServer, NewUserServer(store))
-	tunnel.RegisterTunnelServiceServer(grpcServer, NewTunnelServer(store))
+	user.RegisterUserServiceServer(grpcServer, NewUserServer(s.store))
+	tunnel.RegisterTunnelServiceServer(grpcServer, NewTunnelServer(s.store))
 
 	reflection.Register(grpcServer)
 
-	ln, err := net.Listen("tcp", addr)
+	ln, err := net.Listen("tcp", s.addr)
 	if err != nil {
-		log.Fatalf("failed to listen: %v", err)
+		s.Logger.Fatal(fmt.Sprintf("failed to listen: %v", err))
 	}
 
-	fmt.Println("grpc started")
+	s.Logger.Info("grpc started.")
 
 	go func() {
-		<-ctx.Done()
+		select {
+		case <-ctx.Done():
+		case <-s.donech:
+		}
+
 		grpcServer.GracefulStop()
 	}()
 
@@ -157,5 +187,6 @@ func startGRPC(ctx context.Context, addr, dbPath string) error {
 		return err
 	}
 
+	s.Logger.Info("grpc server shutdown.")
 	return ctx.Err()
 }

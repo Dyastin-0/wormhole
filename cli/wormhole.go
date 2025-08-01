@@ -14,6 +14,7 @@ import (
 
 	"github.com/Dyastin-0/wormhole"
 	"github.com/Dyastin-0/wormhole/api/db"
+	"github.com/Dyastin-0/wormhole/api/server"
 	"github.com/Dyastin-0/wormhole/api/store"
 	"github.com/Dyastin-0/wormhole/dnsmanager"
 	"github.com/Dyastin-0/wormhole/logger"
@@ -80,7 +81,18 @@ func startCommand() *cli.Command {
 		Usage: "start a wormhole server",
 		Flags: []cli.Flag{
 			&cli.StringFlag{
+				Name:  "grpcAddr",
+				Usage: "set the adress for the grpc service",
+				Value: ":8891",
+			},
+			&cli.StringFlag{
+				Name:  "grpcGatewayAddr",
+				Usage: "set the address for the grpc service gateway",
+				Value: ":8892",
+			},
+			&cli.StringFlag{
 				Name:    "tcpAdress",
+				Usage:   "set the tcp reverse tunnel address",
 				Aliases: []string{"ta", "tcpAddr"},
 				Value:   ":8890",
 			},
@@ -130,6 +142,8 @@ func start(ctx context.Context, cmd *cli.Command) error {
 	api := cmd.String("api")
 	baseDNS := cmd.String("dns")
 	ipv4 := cmd.String("ipv4")
+	grpcGatewayAddr := cmd.String("grpcGatewayAddr")
+	grpcAddr := cmd.String("grpcAddr")
 
 	w := wormhole.NewServer(addr, httpAddr, tcpAddr)
 
@@ -140,18 +154,15 @@ func start(ctx context.Context, cmd *cli.Command) error {
 
 	queries := db.New(conn)
 	newStore := store.New(queries)
-
 	newLogger := logger.New()
 
 	logPath, err := LogPath("server")
 	if err != nil {
 		return err
 	}
-
 	newLogger.InitMultiWriter(logPath)
 
 	issuer := token.DefaultIssuer()
-
 	manager := dnsmanager.NewCloudflareManager(api, zone, baseDNS, ipv4)
 
 	w.Store = newStore
@@ -159,12 +170,38 @@ func start(ctx context.Context, cmd *cli.Command) error {
 	w.Issuer = issuer
 	w.DNSManager = manager
 
-	err = w.Start(ctx)
+	errch := make(chan error, 2)
+
+	serverLogPath, err := LogPath("api")
 	if err != nil {
 		return err
 	}
+	newLogger.InitMultiWriter(logPath)
 
-	return nil
+	serverLogger := logger.New()
+	serverLogger.Init(serverLogPath)
+
+	s := server.New(grpcAddr, grpcGatewayAddr, newStore)
+	s.Logger = serverLogger
+
+	go func() {
+		errch <- s.Start(ctx)
+	}()
+
+	go func() {
+		errch <- w.Start(ctx)
+	}()
+
+	<-ctx.Done()
+
+	var finalErr error
+	for range 2 {
+		if err := <-errch; err != nil && finalErr == nil {
+			finalErr = err
+		}
+	}
+
+	return finalErr
 }
 
 func httpCommand() *cli.Command {
@@ -288,7 +325,7 @@ func LogPath(base string) (string, error) {
 		return "", fmt.Errorf("failed to get home directory: %w", err)
 	}
 
-	logDir := filepath.Join(homeDir, "wormhole-logs", base, "logs")
+	logDir := filepath.Join(homeDir, "wormhole-logs", base)
 
 	if err := os.MkdirAll(logDir, 0755); err != nil {
 		return "", fmt.Errorf("failed to create log directory: %w", err)
