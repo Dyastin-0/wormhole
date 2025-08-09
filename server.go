@@ -87,11 +87,8 @@ func (s *Server) Start(ctx context.Context) error {
 		errch <- err
 	}()
 
-	magic := certmagic.NewDefault()
-	magic.ManageSync(ctx, []string{fmt.Sprintf("*.tcp.%s", s.DNSManager.API.BaseDNS())})
-
 	go func() {
-		err := s.startTCP(magic.TLSConfig())
+		err := s.startTCP(certmagic.Default.TLSConfig())
 		if err != nil {
 			s.Logger.Error("tls server exited: " + err.Error())
 			s.cancel()

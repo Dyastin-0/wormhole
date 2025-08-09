@@ -1,10 +1,10 @@
 version: "2"
 sql:
-- schema: "migrations/schema.sql"
+- schema: "db/migrations/schema.sql"
   queries:
-    - "sql/user.sql"
-    - "sql/tunnel.sql"
-    - "sql/auth.sql"
+    - "db/sql/user.sql"
+    - "db/sql/tunnel.sql"
+    - "db/sql/auth.sql"
   engine: "sqlite"
   gen:
     go:

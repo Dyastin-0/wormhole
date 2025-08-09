@@ -21,7 +21,7 @@ import (
 )
 
 func TestNew(t *testing.T) {
-	w := NewServer(":8888", ":9999")
+	w := NewServer(":8888", ":9999", ":7777")
 
 	if w.addr != ":8888" {
 		t.Errorf("addr mismatch: got %s, want %s", w.addr, ":8888")
@@ -37,25 +37,28 @@ func TestStart(t *testing.T) {
 		name     string
 		addr     string
 		httpAddr string
+		tcpAddr  string
 		wantErr  bool
 	}{
 		{
 			name:     "invalid address",
 			addr:     "8000",
 			httpAddr: "2000",
+			tcpAddr:  "3000",
 			wantErr:  true,
 		},
 		{
 			name:     "valid address",
 			addr:     ":8001",
 			httpAddr: ":8002",
+			tcpAddr:  ":8011",
 			wantErr:  false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			w := NewServer(tt.addr, tt.httpAddr)
+			w := NewServer(tt.addr, tt.httpAddr, tt.tcpAddr)
 			dbStore := store.New(nil)
 			dnsManager := &dnsmanager.Manager{
 				API: newMockDNSAPI("dyastin.tech", "127.0.0.1"),
@@ -87,7 +90,7 @@ func TestStart(t *testing.T) {
 }
 
 func TestStop(t *testing.T) {
-	w := NewServer(":8083", ":8010")
+	w := NewServer(":8083", ":8010", ":9988")
 
 	store := store.New(nil)
 	dnsManager := &dnsmanager.Manager{
