@@ -88,7 +88,7 @@ func (s *Server) Start(ctx context.Context) error {
 	}()
 
 	go func() {
-		err := s.startTCP(certmagic.Default.TLSConfig())
+		err := s.startTCP(certmagic.NewDefault().TLSConfig())
 		if err != nil {
 			s.Logger.Error("tls server exited: " + err.Error())
 			s.cancel()
