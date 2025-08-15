@@ -116,14 +116,11 @@ func (c *client) Start(ctx context.Context, tlsConfig *tls.Config) error {
 			case <-c.ctx.Done():
 				return nil
 			default:
-				if errors.Is(err, yamux.ErrTimeout) {
-					return nil
-				}
-				if errors.Is(err, yamux.ErrRemoteGoAway) {
-					fmt.Println("wormhole: server connection closed")
-					return nil
-				}
-				if errors.Is(err, io.EOF) {
+				if errors.Is(err, yamux.ErrTimeout) ||
+					errors.Is(err, yamux.ErrRemoteGoAway) ||
+					errors.Is(err, io.EOF) {
+					fmt.Println("wormhole [err]: server connection closed")
+					fmt.Println("wormhole [err]: %v", err)
 					return nil
 				}
 
