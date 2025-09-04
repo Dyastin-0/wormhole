@@ -18,7 +18,6 @@ import (
 	"github.com/Dyastin-0/wormhole/logger"
 	"github.com/Dyastin-0/wormhole/token"
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
-	"github.com/joho/godotenv"
 	_ "github.com/mattn/go-sqlite3"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -48,11 +47,6 @@ func (s *Server) Stop() {
 }
 
 func (s *Server) Start(ctx context.Context) error {
-	err := godotenv.Load(".env")
-	if err != nil {
-		panic(err)
-	}
-
 	newCtx, cancel := context.WithCancel(ctx)
 
 	errch := make(chan error, 2)
