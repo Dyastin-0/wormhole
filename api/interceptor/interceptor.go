@@ -13,7 +13,11 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// map[grpcMethod]map[role]bool
+const (
+	TokenJWT    = "jwt"
+	TokenAPIKey = "apikey"
+)
+
 type (
 	methods    map[string]roles
 	roles      map[string]bool
@@ -23,13 +27,29 @@ type (
 type AuthInterceptor struct {
 	methods methods
 	issuer  *token.Issuer
+
+	apiKeyEnabled   bool
+	apiKeyValidator *APIKeyValidator
 }
 
-func NewAuthInterceptor(methods methods, issuer *token.Issuer) *AuthInterceptor {
-	return &AuthInterceptor{
+type APIKeyValidator struct{}
+
+func NewAuthInterceptor(
+	methods methods,
+	issuer *token.Issuer,
+	apiKeyValidator *APIKeyValidator,
+) *AuthInterceptor {
+	authInterceptor := &AuthInterceptor{
 		methods: methods,
 		issuer:  issuer,
 	}
+
+	if apiKeyValidator != nil {
+		authInterceptor.apiKeyValidator = apiKeyValidator
+		authInterceptor.apiKeyEnabled = true
+	}
+
+	return authInterceptor
 }
 
 func DefaultMethods() methods {
@@ -98,33 +118,51 @@ func (a *AuthInterceptor) authorize(ctx context.Context, roles map[string]bool) 
 		return nil, status.Error(codes.Unauthenticated, "missing metadata")
 	}
 
-	authToken := md[header.HeaderAuthorization]
-	if len(authToken) == 0 {
-		return nil, status.Error(codes.Unauthenticated, "missing authorization header")
-	}
-
-	authTokenStr := authToken[0]
-	if !strings.HasPrefix(authTokenStr, "Bearer ") {
-		return nil, status.Error(codes.Unauthenticated, "invalid authorization header")
-	}
-
-	authTokenStr = authTokenStr[7:]
-
-	payload, err := a.issuer.ParseAccessToken(authTokenStr)
+	authToken, tokenType, err := a.getToken(md)
 	if err != nil {
-		return nil, status.Errorf(codes.Unauthenticated, "invalid access token: %s", err)
+		return nil, err
 	}
 
-	rolePayload := (*payload)[token.PayloadRole].(string)
-
-	for role := range roles {
-		if role == rolePayload {
-			id := (*payload)[token.PayloadID]
-
-			newCtx := context.WithValue(ctx, CtxPayload("user_id"), id)
-			return newCtx, nil
+	switch tokenType {
+	case TokenJWT:
+		payload, err := a.issuer.ParseAccessToken(authToken)
+		if err != nil {
+			return nil, status.Errorf(codes.Unauthenticated, "invalid access token: %s", err)
 		}
+
+		rolePayload := (*payload)[token.PayloadRole].(string)
+
+		for role := range roles {
+			if role == rolePayload {
+				id := (*payload)[token.PayloadID]
+
+				newCtx := context.WithValue(ctx, CtxPayload("user_id"), id)
+				return newCtx, nil
+			}
+		}
+
+	case TokenAPIKey:
 	}
 
 	return nil, status.Error(codes.Unauthenticated, "not authorized")
+}
+
+func (a *AuthInterceptor) getToken(md metadata.MD) (string, string, error) {
+	authToken := md[header.HeaderAuthorization]
+	if len(authToken) > 0 {
+		authTokenStr := authToken[0]
+		if strings.HasPrefix(authTokenStr, "Bearer ") {
+			return authTokenStr[7:], TokenJWT, nil
+		}
+		return "", "", status.Error(codes.Unauthenticated, "invalid authorization header")
+	}
+
+	if a.apiKeyEnabled && a.apiKeyValidator != nil {
+		apiKeyToken := md[header.HeaderAPIKey]
+		if len(apiKeyToken) > 0 {
+			return apiKeyToken[0], TokenAPIKey, nil
+		}
+	}
+
+	return "", "", status.Error(codes.Unauthenticated, "missing authorization header")
 }

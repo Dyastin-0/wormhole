@@ -10,6 +10,7 @@ import (
 const (
 	HeaderSetCookie     = "set-cookie"
 	HeaderAuthorization = "authorization"
+	HeaderAPIKey        = "x-wormhole-api-key"
 	HeaderCookie        = "cookie"
 )
 
