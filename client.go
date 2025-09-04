@@ -120,7 +120,7 @@ func (c *client) Start(ctx context.Context, tlsConfig *tls.Config) error {
 					errors.Is(err, yamux.ErrRemoteGoAway) ||
 					errors.Is(err, io.EOF) {
 					fmt.Println("wormhole [err]: server connection closed")
-					fmt.Println("wormhole [err]: %v", err)
+					fmt.Printf("wormhole [err]: %v\n", err)
 					return nil
 				}
 
