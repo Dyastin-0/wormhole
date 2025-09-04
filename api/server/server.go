@@ -141,7 +141,7 @@ func (s *Server) startGRPC(ctx context.Context) error {
 
 	issuer := token.New(accessSecret, refreshSecret)
 	methods := interceptor.DefaultMethods()
-	authInterceptor := interceptor.NewAuthInterceptor(methods, issuer)
+	authInterceptor := interceptor.NewAuthInterceptor(methods, issuer, &interceptor.APIKeyValidator{})
 
 	grpcServer := grpc.NewServer(
 		grpc.UnaryInterceptor(authInterceptor.Unary()),

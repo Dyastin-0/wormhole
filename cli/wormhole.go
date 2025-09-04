@@ -226,7 +226,7 @@ func http(ctx context.Context, cmd *cli.Command) error {
 	wsa := cmd.String("wormhole-server-address")
 
 	tlsconfig := &tls.Config{
-		ServerName: "wormhole.dyastin.tech",
+		ServerName: "wormhole.dyastin.dev",
 	}
 
 	c := wormhole.NewClient(api, id, name, wsa, target, wormhole.ProtoHTTP)
@@ -267,7 +267,7 @@ func tcp(ctx context.Context, cmd *cli.Command) error {
 	wsa := cmd.String("wormhole-server-address")
 
 	tlsconfig := &tls.Config{
-		ServerName: "wormhole.dyastin.tech",
+		ServerName: "wormhole.dyastin.dev",
 	}
 
 	c := wormhole.NewClient(api, id, name, wsa, target, wormhole.ProtoTCP)
@@ -302,7 +302,7 @@ func baseClientFlags(flags ...cli.Flag) []cli.Flag {
 		&cli.StringFlag{
 			Name:     "name",
 			Aliases:  []string{"n"},
-			Usage:    "set your wormhole tunnel's domain (https://{name}.wormhole.dyastin.tech)",
+			Usage:    "set your wormhole tunnel's domain (https://{name}.wormhole.dyastin.dev)",
 			Required: true,
 		},
 		&cli.StringFlag{
@@ -315,7 +315,7 @@ func baseClientFlags(flags ...cli.Flag) []cli.Flag {
 			Name:    "wormhole-server-address",
 			Aliases: []string{"s", "ws", "wsa", "server"},
 			Usage:   "set the wormhole server address",
-			Value:   "wormhole.dyastin.tech:8443",
+			Value:   "wormhole.dyastin.dev:8443",
 		},
 		&cli.StringFlag{
 			Name:  "api",
