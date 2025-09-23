@@ -8,29 +8,74 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 )
 
-type CloudflareDNSAPI struct {
-	apiToken string
-	baseDNS  string
-	ipV4     string
-	zoneID   string
+type Cloudflare struct {
+	token      string
+	baseDomain string
+	ipV4       string
+	zoneID     string
 }
 
 var (
 	ErrFailedToCreateNewDNSRecord         = errors.New("failed to create new dns record")
+	ErrRecordAlreadyExists                = errors.New("record already exists")
 	ErrFailedToDeleteDNSRecord            = errors.New("failed to delete dns record")
 	ErrFailedToInitializeCloudflareClient = errors.New("failed to initialize cloudflare client")
 )
 
-func NewCloudflareAPI(apiToken, zoneID, baseDNS, ipv4 string) DNSAPI {
-	return &CloudflareDNSAPI{
-		apiToken: apiToken,
-		zoneID:   zoneID,
-		baseDNS:  baseDNS,
-		ipV4:     ipv4,
+type OptFunc func(c *Cloudflare)
+
+func WithBaseDomain(domain string) OptFunc {
+	return func(c *Cloudflare) {
+		c.baseDomain = domain
 	}
+}
+
+func WithToken(token string) OptFunc {
+	return func(c *Cloudflare) {
+		c.token = token
+	}
+}
+
+func WithIPv4(ipV4 string) OptFunc {
+	return func(c *Cloudflare) {
+		c.ipV4 = ipV4
+	}
+}
+
+func WithZoneID(zoneID string) OptFunc {
+	return func(c *Cloudflare) {
+		c.zoneID = zoneID
+	}
+}
+
+func NewCloudflare(opts ...OptFunc) (DNSManager, error) {
+	c := &Cloudflare{}
+
+	for _, opt := range opts {
+		opt(c)
+	}
+
+	if c.baseDomain == "" {
+		return nil, fmt.Errorf("baseDNS must be set")
+	}
+
+	if c.ipV4 == "" {
+		return nil, fmt.Errorf("ipV4 must be set")
+	}
+
+	if c.zoneID == "" {
+		return nil, fmt.Errorf("zoneID must be set")
+	}
+
+	if c.token == "" {
+		return nil, fmt.Errorf("token must be set")
+	}
+
+	return c, nil
 }
 
 type cloudflareDNSCreateRequest struct {
@@ -52,11 +97,11 @@ type cloudflareDNSCreateResponse struct {
 	} `json:"result"`
 }
 
-func (c *CloudflareDNSAPI) CreateDNSRecord(ctx context.Context, ttl time.Duration, record *Record) (*DNSRecord, error) {
+func (c *Cloudflare) CreateDNSRecord(ctx context.Context, ttl time.Duration, record *Record) (*DNSRecord, error) {
 	body := cloudflareDNSCreateRequest{
 		Type:    record.Type,
 		Name:    record.Name,
-		Content: record.Content,
+		Content: c.ipV4,
 		TTL:     record.TTL,
 		Proxied: record.Proxied,
 		Comment: "created via wormhole",
@@ -72,7 +117,7 @@ func (c *CloudflareDNSAPI) CreateDNSRecord(ctx context.Context, ttl time.Duratio
 		return nil, err
 	}
 
-	req.Header.Set("Authorization", "Bearer "+c.apiToken)
+	req.Header.Set("Authorization", "Bearer "+c.token)
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := http.DefaultClient.Do(req)
@@ -84,8 +129,19 @@ func (c *CloudflareDNSAPI) CreateDNSRecord(ctx context.Context, ttl time.Duratio
 	data, _ := io.ReadAll(resp.Body)
 
 	var parsed cloudflareDNSCreateResponse
-	if err := json.Unmarshal(data, &parsed); err != nil || !parsed.Success {
-		return nil, fmt.Errorf("%w: %s", ErrFailedToCreateNewDNSRecord, string(data))
+	err = json.Unmarshal(data, &parsed)
+	if err != nil {
+		return nil, errors.Join(ErrFailedToCreateNewDNSRecord, err)
+	}
+
+	if !parsed.Success {
+		for _, err := range parsed.Errors {
+			if strings.Contains(err.Message, "record already exists") {
+				return nil, ErrRecordAlreadyExists
+			}
+		}
+
+		return nil, ErrFailedToCreateNewDNSRecord
 	}
 
 	return &DNSRecord{
@@ -95,7 +151,7 @@ func (c *CloudflareDNSAPI) CreateDNSRecord(ctx context.Context, ttl time.Duratio
 	}, nil
 }
 
-func (c *CloudflareDNSAPI) DeleteDNSRecord(ctx context.Context, recordID string) error {
+func (c *Cloudflare) DeleteDNSRecord(ctx context.Context, recordID string) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodDelete,
 		fmt.Sprintf("https://api.cloudflare.com/client/v4/zones/%s/dns_records/%s", c.zoneID, recordID),
 		nil,
@@ -104,7 +160,7 @@ func (c *CloudflareDNSAPI) DeleteDNSRecord(ctx context.Context, recordID string)
 		return err
 	}
 
-	req.Header.Set("Authorization", "Bearer "+c.apiToken)
+	req.Header.Set("Authorization", "Bearer "+c.token)
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := http.DefaultClient.Do(req)
@@ -125,5 +181,5 @@ func (c *CloudflareDNSAPI) DeleteDNSRecord(ctx context.Context, recordID string)
 	return nil
 }
 
-func (c *CloudflareDNSAPI) BaseDNS() string { return c.baseDNS }
-func (c *CloudflareDNSAPI) IPV4() string    { return c.ipV4 }
+func (c *Cloudflare) BaseDomain() string { return c.baseDomain }
+func (c *Cloudflare) IPV4() string       { return c.ipV4 }
