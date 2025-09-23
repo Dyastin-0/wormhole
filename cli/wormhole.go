@@ -50,6 +50,7 @@ func New() *cli.Command {
 		Commands: []*cli.Command{
 			startCommand(),
 			httpCommand(),
+			tcpCommand(),
 		},
 	}
 }
