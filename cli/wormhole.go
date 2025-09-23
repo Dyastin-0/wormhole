@@ -190,6 +190,38 @@ func http(ctx context.Context, cmd *cli.Command) error {
 	return nil
 }
 
+func tcpCommand() *cli.Command {
+	return &cli.Command{
+		Name:   "tcp",
+		Usage:  "start a wormhole tcp reverse tunnel client",
+		Flags:  baseClientFlags(),
+		Action: tcp,
+	}
+}
+
+func tcp(ctx context.Context, cmd *cli.Command) error {
+	name := cmd.String("name")
+	addr := cmd.String("addr")
+	targetAddr := cmd.String("targetAddr")
+
+	wormholeClient, err := wclient.New(
+		wclient.WithProtoTCP,
+		wclient.WithName(name),
+		wclient.WithAddr(addr),
+		wclient.WithTargetAddr(targetAddr),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to initialize wormhole client: %w", err)
+	}
+
+	err = wormholeClient.Run(ctx)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func baseClientFlags(flags ...cli.Flag) []cli.Flag {
 	return append(
 		flags,
