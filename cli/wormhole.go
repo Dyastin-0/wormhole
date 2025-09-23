@@ -14,7 +14,6 @@ import (
 	wserver "github.com/Dyastin-0/wormhole/core/server"
 	"github.com/Dyastin-0/wormhole/dnsmanager"
 	"github.com/common-nighthawk/go-figure"
-	_ "github.com/mattn/go-sqlite3"
 	"github.com/urfave/cli/v3"
 	"golang.org/x/sync/errgroup"
 )

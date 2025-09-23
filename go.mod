@@ -6,7 +6,6 @@ require (
 	github.com/caddyserver/certmagic v0.23.0
 	github.com/common-nighthawk/go-figure v0.0.0-20210622060536-734e95fb86be
 	github.com/hashicorp/yamux v0.1.2
-	github.com/mattn/go-sqlite3 v1.14.28
 	github.com/orcaman/concurrent-map/v2 v2.0.1
 	github.com/rs/zerolog v1.34.0
 	github.com/stretchr/testify v1.11.1
