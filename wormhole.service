@@ -4,12 +4,8 @@ After=network.target
 
 [Service]
 User=mrps
-ExecStart=/opt/mrps/wormhole/wormhole start -zone 2b805b4b26269a21b8f0c4aa9373cf6e -api 9ulHZNgcOaauX2riPxP98Fm9hBJ1SApeUkK4AcRA -dns wormhole.dyastin.dev -ipv4 159.65.8.78 
-EnvironmentFile=/home/mrps/prod/wormhole/.env
+ExecStart=/opt/mrps/wormhole/wormhole
 Restart=never
-CapabilityBoundingSet=CAP_NET_BIND_SERVICE
-AmbientCapabilities=CAP_NET_BIND_SERVICE
-NoNewPrivileges=true
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=mrps
