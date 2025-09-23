@@ -100,7 +100,7 @@ type cloudflareDNSCreateResponse struct {
 func (c *Cloudflare) CreateDNSRecord(ctx context.Context, ttl time.Duration, record *Record) (*DNSRecord, error) {
 	body := cloudflareDNSCreateRequest{
 		Type:    record.Type,
-		Name:    record.Name,
+		Name:    fmt.Sprintf("%s.%s", record.Name, c.baseDomain),
 		Content: c.ipV4,
 		TTL:     record.TTL,
 		Proxied: record.Proxied,
