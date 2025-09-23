@@ -118,8 +118,8 @@ func (c *Client) RunWithTCP(ctx context.Context) error {
 		prettyPrint("err", fmt.Sprintf("unexpected response status: %v", response.Status))
 		return fmt.Errorf("unexpected response status: %v", response.Status)
 	}
-	expiresAt := time.Now().Add(time.Duration(response.TTLHours))
 
+	expiresAt := time.Now().Add(time.Duration(response.TTLHours))
 	prettyPrint(
 		"inf",
 		"tunnel created!",
@@ -207,11 +207,12 @@ func (c *Client) Run(ctx context.Context) error {
 		return fmt.Errorf("unexpected response status: %v", response.Status)
 	}
 
+	expiresAt := time.Now().Add(time.Duration(response.TTLHours))
 	prettyPrint(
 		"inf",
 		"tunnel created!",
 		fmt.Sprintf("%s%s", Proto(c.proto), response.Domain),
-		fmt.Sprintf("tunnel expires at %s", time.Now().Add(time.Duration(response.TTLHours)*time.Second)),
+		fmt.Sprintf("tunnel expires at %s", expiresAt.Format("Jan 2, 2006 3:04 PM")),
 	)
 
 	return c.handleMessages(ctx, session)
