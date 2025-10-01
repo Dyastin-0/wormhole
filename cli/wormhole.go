@@ -2,8 +2,6 @@ package main
 
 import (
 	"context"
-	"crypto/tls"
-	dbsql "database/sql"
 	"errors"
 	"fmt"
 	"log"
@@ -12,16 +10,12 @@ import (
 	"path/filepath"
 	"syscall"
 
-	"github.com/Dyastin-0/wormhole"
-	"github.com/Dyastin-0/wormhole/api/db"
-	"github.com/Dyastin-0/wormhole/api/server"
-	"github.com/Dyastin-0/wormhole/api/store"
+	wclient "github.com/Dyastin-0/wormhole/core/client"
+	wserver "github.com/Dyastin-0/wormhole/core/server"
 	"github.com/Dyastin-0/wormhole/dnsmanager"
-	"github.com/Dyastin-0/wormhole/logger"
-	"github.com/Dyastin-0/wormhole/token"
 	"github.com/common-nighthawk/go-figure"
-	_ "github.com/mattn/go-sqlite3"
 	"github.com/urfave/cli/v3"
+	"golang.org/x/sync/errgroup"
 )
 
 var (
@@ -81,51 +75,38 @@ func startCommand() *cli.Command {
 		Usage: "start a wormhole server",
 		Flags: []cli.Flag{
 			&cli.StringFlag{
-				Name:  "grpcAddr",
-				Usage: "set the adress for the grpc service",
-				Value: ":8891",
-			},
-			&cli.StringFlag{
-				Name:  "grpcGatewayAddr",
-				Usage: "set the address for the grpc service gateway",
-				Value: ":8892",
-			},
-			&cli.StringFlag{
-				Name:    "tcpAdress",
-				Usage:   "set the tcp reverse tunnel address",
-				Aliases: []string{"ta", "tcpAddr"},
-				Value:   ":8890",
-			},
-			&cli.StringFlag{
 				Name:    "address",
 				Aliases: []string{"a", "addr"},
 				Value:   ":8888",
 				Usage:   "set the address where wormhole server will run",
 			},
 			&cli.StringFlag{
-				Name:    "httpAdress",
-				Aliases: []string{"ha", "httpAddr"},
+				Name:    "serveAddress",
+				Aliases: []string{"sa", "serveAddr"},
 				Value:   ":8889",
-				Usage:   "set the address where wormhole http handler will run",
+				Usage:   "set the address where wormhole tunnel handler will run",
 			},
 			&cli.StringFlag{
-				Name:     "zone",
+				Name:     "zoneID",
 				Aliases:  []string{"z"},
 				Usage:    "set cloudflare zone",
 				Required: true,
 			},
 			&cli.StringFlag{
-				Name:     "api",
-				Usage:    "set cloudflare api",
+				Name:     "token",
+				Aliases:  []string{"t"},
+				Usage:    "set cloudflare api token",
 				Required: true,
 			},
 			&cli.StringFlag{
-				Name:     "dns",
-				Usage:    "set base dns for tunnels",
+				Name:     "domain",
+				Aliases:  []string{"d"},
+				Usage:    "set base domain for tunnels",
 				Required: true,
 			},
 			&cli.StringFlag{
 				Name:     "ipv4",
+				Aliases:  []string{"ip"},
 				Usage:    "set ipv4 target for dns",
 				Required: true,
 			},
@@ -136,77 +117,46 @@ func startCommand() *cli.Command {
 
 func start(ctx context.Context, cmd *cli.Command) error {
 	addr := cmd.String("addr")
-	httpAddr := cmd.String("httpAddr")
-	tcpAddr := cmd.String("tcpAddr")
-	zone := cmd.String("zone")
-	api := cmd.String("api")
-	baseDNS := cmd.String("dns")
-	ipv4 := cmd.String("ipv4")
-	grpcGatewayAddr := cmd.String("grpcGatewayAddr")
-	grpcAddr := cmd.String("grpcAddr")
+	serveAddr := cmd.String("serveAddr")
+	zoneID := cmd.String("zoneID")
+	token := cmd.String("token")
+	domain := cmd.String("domain")
+	ipV4 := cmd.String("ipv4")
 
-	w := wormhole.NewServer(addr, httpAddr, tcpAddr)
-
-	dbPath := os.Getenv("DB_PATH")
-	if dbPath == "" {
-		return fmt.Errorf("DB_PATH not set in .env")
+	dnsManager, err := dnsmanager.NewCloudflare(
+		dnsmanager.WithBaseDomain(domain),
+		dnsmanager.WithToken(token),
+		dnsmanager.WithZoneID(zoneID),
+		dnsmanager.WithIPv4(ipV4),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to initialize dns manager: %w", err)
 	}
 
-	conn, err := dbsql.Open("sqlite3", dbPath)
+	wormholeServer, err := wserver.New(
+		wserver.WithAddr(addr),
+		wserver.WithServeAddr(serveAddr),
+		wserver.WithDNSManager(dnsManager),
+	)
 	if err != nil {
-		log.Fatalf("failed to connect to db: %v", err)
+		return fmt.Errorf("failed to create server: %w", err)
 	}
 
-	queries := db.New(conn)
-	newStore := store.New(queries)
-	newLogger := logger.New()
+	g, gCtx := errgroup.WithContext(ctx)
 
-	logPath, err := LogPath("server")
-	if err != nil {
+	g.Go(func() error {
+		return wormholeServer.Run(gCtx)
+	})
+
+	g.Go(func() error {
+		return wormholeServer.RunTunneler(gCtx)
+	})
+
+	if err := g.Wait(); err != nil {
 		return err
 	}
-	newLogger.InitMultiWriter(logPath)
 
-	issuer := token.DefaultIssuer()
-	manager := dnsmanager.NewCloudflareManager(api, zone, baseDNS, ipv4)
-
-	w.Store = newStore
-	w.Logger = newLogger
-	w.Issuer = issuer
-	w.DNSManager = manager
-
-	errch := make(chan error, 2)
-
-	serverLogPath, err := LogPath("api")
-	if err != nil {
-		return err
-	}
-	newLogger.InitMultiWriter(logPath)
-
-	serverLogger := logger.New()
-	serverLogger.Init(serverLogPath)
-
-	s := server.New(grpcAddr, grpcGatewayAddr, newStore)
-	s.Logger = serverLogger
-
-	go func() {
-		errch <- s.Start(ctx)
-	}()
-
-	go func() {
-		errch <- w.Start(ctx)
-	}()
-
-	<-ctx.Done()
-
-	var finalErr error
-	for range 2 {
-		if err := <-errch; err != nil && finalErr == nil {
-			finalErr = err
-		}
-	}
-
-	return finalErr
+	return nil
 }
 
 func httpCommand() *cli.Command {
@@ -219,30 +169,21 @@ func httpCommand() *cli.Command {
 }
 
 func http(ctx context.Context, cmd *cli.Command) error {
-	api := cmd.String("api")
 	name := cmd.String("name")
-	id := cmd.String("id")
-	target := cmd.String("target")
-	wsa := cmd.String("wormhole-server-address")
+	addr := cmd.String("addr")
+	targetAddr := cmd.String("targetAddr")
 
-	tlsconfig := &tls.Config{
-		ServerName: "wormhole.dyastin.dev",
-	}
-
-	c := wormhole.NewClient(api, id, name, wsa, target, wormhole.ProtoHTTP)
-
-	newLogger := logger.New()
-
-	logPath, err := LogPath("client")
+	wormholeClient, err := wclient.New(
+		wclient.WithProtoHTTP,
+		wclient.WithName(name),
+		wclient.WithAddr(addr),
+		wclient.WithTargetAddr(targetAddr),
+	)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to initialize wormhole client: %w", err)
 	}
 
-	newLogger.Init(logPath)
-
-	c.Logger = newLogger
-
-	err = c.Start(ctx, tlsconfig)
+	err = wormholeClient.Run(ctx)
 	if err != nil {
 		return err
 	}
@@ -260,30 +201,21 @@ func tcpCommand() *cli.Command {
 }
 
 func tcp(ctx context.Context, cmd *cli.Command) error {
-	api := cmd.String("api")
 	name := cmd.String("name")
-	id := cmd.String("id")
-	target := cmd.String("target")
-	wsa := cmd.String("wormhole-server-address")
+	addr := cmd.String("addr")
+	targetAddr := cmd.String("targetAddr")
 
-	tlsconfig := &tls.Config{
-		ServerName: "wormhole.dyastin.dev",
-	}
-
-	c := wormhole.NewClient(api, id, name, wsa, target, wormhole.ProtoTCP)
-
-	newLogger := logger.New()
-
-	logPath, err := LogPath("client")
+	wormholeClient, err := wclient.New(
+		wclient.WithProtoTCP,
+		wclient.WithName(name),
+		wclient.WithAddr(addr),
+		wclient.WithTargetAddr(targetAddr),
+	)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to initialize wormhole client: %w", err)
 	}
 
-	newLogger.Init(logPath)
-
-	c.Logger = newLogger
-
-	err = c.Start(ctx, tlsconfig)
+	err = wormholeClient.Run(ctx)
 	if err != nil {
 		return err
 	}
@@ -295,31 +227,22 @@ func baseClientFlags(flags ...cli.Flag) []cli.Flag {
 	return append(
 		flags,
 		&cli.StringFlag{
-			Name:    "id",
-			Aliases: []string{"i"},
-			Usage:   "set the tunnel id which wormhole client will use",
-		},
-		&cli.StringFlag{
 			Name:     "name",
 			Aliases:  []string{"n"},
 			Usage:    "set your wormhole tunnel's domain (https://{name}.wormhole.dyastin.dev)",
 			Required: true,
 		},
 		&cli.StringFlag{
-			Name:     "target",
-			Aliases:  []string{"t"},
-			Usage:    "set the address where the request will be tunneled to (:3000)",
+			Name:     "targetAddress",
+			Aliases:  []string{"targetAddr", "t"},
+			Usage:    "set the address where the request will be tunneled to (eg., :3000)",
 			Required: true,
 		},
 		&cli.StringFlag{
-			Name:    "wormhole-server-address",
-			Aliases: []string{"s", "ws", "wsa", "server"},
+			Name:    "address",
+			Aliases: []string{"addr"},
 			Usage:   "set the wormhole server address",
 			Value:   "wormhole.dyastin.dev:8443",
-		},
-		&cli.StringFlag{
-			Name:  "api",
-			Usage: "set the wormhole api key",
 		},
 	)
 }
