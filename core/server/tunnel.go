@@ -12,6 +12,7 @@ import (
 	"github.com/Dyastin-0/wormhole/core/proxy"
 	"github.com/Dyastin-0/wormhole/dnsmanager"
 	"github.com/hashicorp/yamux"
+	"github.com/rs/zerolog/log"
 )
 
 // Tunnel represents a wormhole tunnel.
@@ -64,7 +65,10 @@ func (t *Tunnel) From(ctx context.Context, stream net.Conn) error {
 	defer proxyCancel()
 
 	go func() {
-		<-ctx.Done()
+		select {
+		case <-ctx.Done():
+		case <-t.session.CloseChan():
+		}
 		time.Sleep(2 * time.Second)
 		proxyCancel()
 	}()
@@ -73,6 +77,7 @@ func (t *Tunnel) From(ctx context.Context, stream net.Conn) error {
 
 	t.metrics.IncrementConnections()
 	defer t.metrics.DecrementActiveConnections()
+	defer log.Debug().Msg("deferred")
 
 	return proxy.StreamWithContext(proxyCtx, proxyStream, remoteStream)
 }
