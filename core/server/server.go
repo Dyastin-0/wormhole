@@ -287,10 +287,9 @@ func (s *Server) handleRequest(ctx context.Context, stream net.Conn, session *ya
 		return err
 	}
 
-	log.Debug().Msg(fmt.Sprintf("0b%08b\n", header.Flags))
-
 	if header.HasFlag(proto.FlagMetrics) {
 		go func() {
+			log.Debug().Msg(fmt.Sprintf("0b%08b\n", header.Flags))
 			er := s.streamMetrics(ctx, tunnel)
 			if er != nil {
 				log.Error().Err(er).Str("domain", domain).Msg("metrics stream stopped")
