@@ -45,16 +45,12 @@ func StreamWithContext(ctx context.Context, src, dst io.ReadWriter) error {
 
 	// Copy src -> dst
 	wg.Go(func() {
-		if copyErr := CopyWithContext(localCtx, dst, src); copyErr != nil {
-			errch <- copyErr
-		}
+		errch <- CopyWithContext(localCtx, dst, src)
 	})
 
 	// Copy dst -> src
 	wg.Go(func() {
-		if copyErr := CopyWithContext(localCtx, src, dst); copyErr != nil {
-			errch <- copyErr
-		}
+		errch <- CopyWithContext(localCtx, src, dst)
 	})
 
 	done := make(chan struct{})

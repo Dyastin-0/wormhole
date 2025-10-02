@@ -157,9 +157,6 @@ func (s *Server) tunnel(ctx context.Context, conn net.Conn) error {
 		return fmt.Errorf("no tunnel for %s", sni)
 	}
 
-	tunnel.metrics.IncrementConnections()
-	defer tunnel.metrics.DecrementActiveConnections()
-
 	return tunnel.From(ctx, conn)
 }
 

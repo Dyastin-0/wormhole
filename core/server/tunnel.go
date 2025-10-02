@@ -71,5 +71,8 @@ func (t *Tunnel) From(ctx context.Context, stream net.Conn) error {
 
 	proxyStream := t.metrics.NewProxyReadWriter(stream)
 
+	t.metrics.IncrementConnections()
+	defer t.metrics.DecrementActiveConnections()
+
 	return proxy.StreamWithContext(proxyCtx, proxyStream, remoteStream)
 }
