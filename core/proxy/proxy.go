@@ -5,10 +5,7 @@ import (
 	"context"
 	"io"
 	"net"
-	"sync"
 	"time"
-
-	"github.com/rs/zerolog/log"
 )
 
 // Stream handles bidirectional stream between src and dst.
@@ -16,33 +13,32 @@ func Stream(src, dst io.ReadWriter) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	var wg sync.WaitGroup
 	errch := make(chan error, 1)
 
 	// Copy src -> dst
-	wg.Go(func() {
+	go func() {
 		err := CopyWithContext(ctx, dst, src)
 		select {
 		case errch <- err:
 		default:
 		}
-	})
+	}()
 
 	// Copy dst -> src
-	wg.Go(func() {
+	go func() {
 		err := CopyWithContext(ctx, src, dst)
 		select {
 		case errch <- err:
 		default:
 		}
-	})
+	}()
 
-	wg.Wait()
+	err := <-errch
 
 	closeConnection(src)
 	closeConnection(dst)
 
-	return <-errch
+	return err
 }
 
 // StreamWithContext is Stream with context.
@@ -59,7 +55,6 @@ func StreamWithContext(ctx context.Context, src, dst io.ReadWriter) error {
 		case errch <- err:
 		default:
 		}
-		log.Error().Err(err).Msg("COPY ERR")
 	}()
 
 	// Copy dst -> src
@@ -69,10 +64,7 @@ func StreamWithContext(ctx context.Context, src, dst io.ReadWriter) error {
 		case errch <- err:
 		default:
 		}
-		log.Error().Err(err).Msg("COPY ERR")
 	}()
-
-	time.Sleep(50 * time.Millisecond)
 
 	select {
 	case <-errch:
