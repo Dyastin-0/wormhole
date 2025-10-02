@@ -361,25 +361,55 @@ func (c *Client) handleMessages(ctx context.Context, session *yamux.Session) err
 }
 
 func (c *Client) handleMetrics(ctx context.Context, header *proto.Header, stream net.Conn) error {
+	defer stream.Close()
+
 	buf := make([]byte, header.Length)
 	_, err := io.ReadFull(stream, buf)
 	if err != nil {
 		return fmt.Errorf("failed to read metrics: %w", err)
 	}
 
-	desrializedMetrics, err := proto.DeserializeMetrics(buf)
+	deserializedMetrics, err := proto.DeserializeMetrics(buf)
 	if err != nil {
 		return fmt.Errorf("failed to deserialize metrics: %w", err)
 	}
 
-	printMetrics(desrializedMetrics)
+	printMetrics(deserializedMetrics)
 
+	// Continue reading subsequent metrics
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
-			// read header+metrics here
+			// Read header
+			headerBuf := make([]byte, proto.HeaderSize)
+			_, err := io.ReadFull(stream, headerBuf)
+			if err != nil {
+				if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+					return nil
+				}
+				return fmt.Errorf("failed to read metrics header: %w", err)
+			}
+
+			h, err := proto.DeserializeHeader(headerBuf)
+			if err != nil {
+				return fmt.Errorf("failed to deserialize header: %w", err)
+			}
+
+			// Read metrics payload
+			metricsBuf := make([]byte, h.Length)
+			_, err = io.ReadFull(stream, metricsBuf)
+			if err != nil {
+				return fmt.Errorf("failed to read metrics: %w", err)
+			}
+
+			m, err := proto.DeserializeMetrics(metricsBuf)
+			if err != nil {
+				return fmt.Errorf("failed to deserialize metrics: %w", err)
+			}
+
+			printMetrics(m)
 		}
 	}
 }
@@ -414,8 +444,8 @@ func Proto(p uint8) string {
 
 // printMetrics logs the metrics.
 func printMetrics(metrics *proto.Metrics) {
-	fmt.Printf("wormhole [info] ingress %d bytes", metrics.Ingress)
-	fmt.Printf("wormhole [info] egress %d bytes", metrics.Egress)
+	fmt.Printf("wormhole [info] ingress %d bytes\n", metrics.Ingress)
+	fmt.Printf("wormhole [info] egress %d bytes\n", metrics.Egress)
 }
 
 // prettyPrint logs messages to the console with a specified log level.

@@ -288,13 +288,12 @@ func (s *Server) handleRequest(ctx context.Context, stream net.Conn, session *ya
 	}
 
 	if header.HasFlag(proto.FlagMetrics) {
-		go func() {
-			log.Debug().Msg(fmt.Sprintf("0b%08b\n", header.Flags))
+		go func(ctx context.Context, tunnel *Tunnel) {
 			er := s.streamMetrics(ctx, tunnel)
 			if er != nil {
 				log.Error().Err(er).Str("domain", domain).Msg("metrics stream stopped")
 			}
-		}()
+		}(ctx, tunnel)
 	}
 
 	select {
@@ -393,6 +392,7 @@ func (s *Server) streamMetrics(ctx context.Context, tunnel *Tunnel) error {
 	if err != nil {
 		return fmt.Errorf("failed to open yamux stream: %w", err)
 	}
+	defer stream.Close()
 
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
@@ -402,7 +402,9 @@ func (s *Server) streamMetrics(ctx context.Context, tunnel *Tunnel) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-ticker.C:
-			go s.sendMetrics(stream, tunnel)
+			if err := s.sendMetrics(stream, tunnel); err != nil {
+				return fmt.Errorf("failed to send metrics: %w", err)
+			}
 		}
 	}
 }
