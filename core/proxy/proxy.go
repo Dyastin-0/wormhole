@@ -73,6 +73,8 @@ func StreamWithContext(ctx context.Context, src, dst io.ReadWriter) error {
 		log.Error().Err(err).Msg("COPY ERR")
 	})
 
+	time.Sleep(50 * time.Millisecond)
+
 	done := make(chan struct{})
 	go func() {
 		wg.Wait()
