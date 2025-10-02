@@ -41,8 +41,8 @@ const (
 	RequestSize uint8 = 5
 	// ResponseSize is the fixed size of a response’s non-string fields in bytes (13 bytes).
 	ResponseSize uint8 = 13
-	// MetricsSize is the fixed size of a metrics' fields in bytes (16).
-	MetricsSize uint8 = 16
+	// MetricsSize is the fixed size of a metrics' fields in bytes (36).
+	MetricsSize uint8 = 36
 )
 
 // Constants definition of supported protocols for tunneling.
@@ -160,6 +160,12 @@ type Metrics struct {
 	Ingress uint64
 	// Egress represents the outgoing bytes.
 	Egress uint64
+	// Uptime represents the time elapsed since tunnel started in milliseconds.
+	Uptime uint64
+	// ConnectionCount specifies the total number of connections.
+	ConnectionCount uint64
+	// ActiveConnections represents current active connections.
+	ActiveConnections int32
 }
 
 // SerializeHeader serializes a Header to a byte slice.
@@ -337,6 +343,15 @@ func SerializeMetrics(metrics *Metrics) ([]byte, error) {
 	}
 	if err := binary.Write(buf, binary.BigEndian, metrics.Egress); err != nil {
 		return nil, fmt.Errorf("failed to write egress: %w", err)
+	}
+	if err := binary.Write(buf, binary.BigEndian, metrics.Uptime); err != nil {
+		return nil, fmt.Errorf("failed to write uptime: %w", err)
+	}
+	if err := binary.Write(buf, binary.BigEndian, metrics.ConnectionCount); err != nil {
+		return nil, fmt.Errorf("failed to write connection count: %w", err)
+	}
+	if err := binary.Write(buf, binary.BigEndian, metrics.ActiveConnections); err != nil {
+		return nil, fmt.Errorf("failed to write active connections: %w", err)
 	}
 
 	return buf.Bytes(), nil

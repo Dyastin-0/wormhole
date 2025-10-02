@@ -363,6 +363,15 @@ func (c *Client) handleMessages(ctx context.Context, session *yamux.Session) err
 func (c *Client) handleMetrics(ctx context.Context, header *proto.Header, stream net.Conn) error {
 	defer stream.Close()
 
+	program, metricsChan := StartMetricsDisplay()
+	defer close(metricsChan)
+
+	go func() {
+		if _, err := program.Run(); err != nil {
+			log.Error().Err(err).Msg("metrics display error")
+		}
+	}()
+
 	buf := make([]byte, header.Length)
 	_, err := io.ReadFull(stream, buf)
 	if err != nil {
@@ -374,15 +383,19 @@ func (c *Client) handleMetrics(ctx context.Context, header *proto.Header, stream
 		return fmt.Errorf("failed to deserialize metrics: %w", err)
 	}
 
-	printMetrics(deserializedMetrics)
+	metricsChan <- MetricsMsg{
+		Ingress:           deserializedMetrics.Ingress,
+		Egress:            deserializedMetrics.Egress,
+		Uptime:            deserializedMetrics.Uptime,
+		ConnectionCount:   deserializedMetrics.ConnectionCount,
+		ActiveConnections: deserializedMetrics.ActiveConnections,
+	}
 
-	// Continue reading subsequent metrics
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
-			// Read header
 			headerBuf := make([]byte, proto.HeaderSize)
 			_, err := io.ReadFull(stream, headerBuf)
 			if err != nil {
@@ -397,19 +410,24 @@ func (c *Client) handleMetrics(ctx context.Context, header *proto.Header, stream
 				return fmt.Errorf("failed to deserialize header: %w", err)
 			}
 
-			// Read metrics payload
 			metricsBuf := make([]byte, h.Length)
 			_, err = io.ReadFull(stream, metricsBuf)
 			if err != nil {
 				return fmt.Errorf("failed to read metrics: %w", err)
 			}
 
-			m, err := proto.DeserializeMetrics(metricsBuf)
+			deserializedMetrics, err := proto.DeserializeMetrics(metricsBuf)
 			if err != nil {
 				return fmt.Errorf("failed to deserialize metrics: %w", err)
 			}
 
-			printMetrics(m)
+			metricsChan <- MetricsMsg{
+				Ingress:           deserializedMetrics.Ingress,
+				Egress:            deserializedMetrics.Egress,
+				Uptime:            deserializedMetrics.Uptime,
+				ConnectionCount:   deserializedMetrics.ConnectionCount,
+				ActiveConnections: deserializedMetrics.ActiveConnections,
+			}
 		}
 	}
 }

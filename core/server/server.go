@@ -86,7 +86,7 @@ func (s *Server) RunTunneler(ctx context.Context) error {
 
 	go func() {
 		<-ctx.Done()
-		time.Sleep(5 * time.Second)
+		time.Sleep(2 * time.Second)
 		ln.Close()
 	}()
 
@@ -118,7 +118,7 @@ func (s *Server) RunWithListener(ctx context.Context, ln net.Listener) error {
 func (s *Server) RunTunnelerWithListener(ctx context.Context, ln net.Listener) error {
 	go func() {
 		<-ctx.Done()
-		time.Sleep(5 * time.Second)
+		time.Sleep(2 * time.Second)
 		ln.Close()
 	}()
 
@@ -164,7 +164,7 @@ func (s *Server) tunnel(ctx context.Context, conn net.Conn) error {
 func (s *Server) handleConnections(ctx context.Context, ln net.Listener) error {
 	go func() {
 		<-ctx.Done()
-		time.Sleep(5 * time.Second)
+		time.Sleep(2 * time.Second)
 		ln.Close()
 	}()
 
@@ -394,7 +394,7 @@ func (s *Server) streamMetrics(ctx context.Context, tunnel *Tunnel) error {
 	}
 	defer stream.Close()
 
-	ticker := time.NewTicker(5 * time.Second)
+	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
 
 	for {
@@ -411,7 +411,7 @@ func (s *Server) streamMetrics(ctx context.Context, tunnel *Tunnel) error {
 
 // sendMetrics sends the latest metrics of the specified tunnel.
 func (s *Server) sendMetrics(stream net.Conn, tunnel *Tunnel) error {
-	metrics := proto.NewMetrics(tunnel.metrics.IngressBytes, tunnel.metrics.EgressBytes)
+	metrics := proto.NewMetrics(tunnel.metrics.GetIngressBytes(), tunnel.metrics.GetEgressBytes())
 	serializedMetrics, err := proto.SerializeMetrics(metrics)
 	if err != nil {
 		return fmt.Errorf("failed to serialize metrics: %w", err)
