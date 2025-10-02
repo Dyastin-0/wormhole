@@ -56,27 +56,27 @@ func StreamWithContext(ctx context.Context, src, dst io.ReadWriter) error {
 	// Copy src -> dst
 	wg.Go(func() {
 		err := CopyWithContext(localCtx, dst, src)
-		log.Error().Err(err).Msg("copy err")
 		select {
 		case errch <- err:
 		default:
 		}
+		log.Error().Err(err).Msg("COPY ERR")
 	})
 
 	// Copy dst -> src
 	wg.Go(func() {
 		err := CopyWithContext(localCtx, src, dst)
-		log.Error().Err(err).Msg("copy err")
 		select {
 		case errch <- err:
 		default:
 		}
+		log.Error().Err(err).Msg("COPY ERR")
 	})
 
 	done := make(chan struct{})
 	go func() {
 		wg.Wait()
-		log.Debug().Msg("here")
+		log.Debug().Msg("HERE")
 		close(done)
 	}()
 
