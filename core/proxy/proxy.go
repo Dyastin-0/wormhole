@@ -54,24 +54,28 @@ func StreamWithContext(ctx context.Context, src, dst io.ReadWriter) error {
 	defer cancel()
 
 	// Copy src -> dst
-	wg.Go(func() {
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
 		err := CopyWithContext(localCtx, dst, src)
 		select {
 		case errch <- err:
 		default:
 		}
 		log.Error().Err(err).Msg("COPY ERR")
-	})
+	}()
 
 	// Copy dst -> src
-	wg.Go(func() {
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
 		err := CopyWithContext(localCtx, src, dst)
 		select {
 		case errch <- err:
 		default:
 		}
 		log.Error().Err(err).Msg("COPY ERR")
-	})
+	}()
 
 	time.Sleep(50 * time.Millisecond)
 
