@@ -30,6 +30,8 @@ type Client struct {
 	proto uint8
 	// name is the desired subdomain for the tunnel (e.g., "example" for "example.domain.com").
 	name string
+	// metrics specifies if the client want to stream the tunnel metrics.
+	metrics bool
 }
 
 // New creates a new Client with the specified configuration options.
@@ -233,6 +235,9 @@ func (c *Client) sendRequest(ctx context.Context, stream net.Conn) (*proto.Heade
 	}
 
 	header := proto.NewHeader(proto.TypeRequest, uint64(len(serializedRequest)))
+	if c.metrics {
+		header.SetFlag(proto.FlagMetrics)
+	}
 	serializedHeader, err := proto.SerializeHeader(header)
 	if err != nil {
 		return nil, fmt.Errorf("failed to serialize header: %w", err)
@@ -337,6 +342,13 @@ func (c *Client) handleMessages(ctx context.Context, session *yamux.Session) err
 					log.Error().Err(err).Msg("stream stopped")
 				}
 			}(ctx, stream)
+		case proto.TypeMetrics:
+			go func(ctx context.Context, stream net.Conn) {
+				if err := c.handleMetrics(ctx, header, stream); err != nil {
+					log.Error().Err(err).Msg("metrics handler stopped")
+				}
+			}(ctx, stream)
+
 		case proto.TypeEnd:
 			stream.Close()
 			prettyPrint("inf", "tunnel timed out")
@@ -345,6 +357,30 @@ func (c *Client) handleMessages(ctx context.Context, session *yamux.Session) err
 		default:
 			log.Debug().Msgf("unexpected header type: %v", header.Type)
 			stream.Close()
+		}
+	}
+}
+
+func (c *Client) handleMetrics(ctx context.Context, header *proto.Header, stream net.Conn) error {
+	buf := make([]byte, header.Length)
+	_, err := io.ReadFull(stream, buf)
+	if err != nil {
+		return fmt.Errorf("failed to read metrics: %w", err)
+	}
+
+	desrializedMetrics, err := proto.DeserializeMetrics(buf)
+	if err != nil {
+		return fmt.Errorf("failed to deserialize metrics: %w", err)
+	}
+
+	printMetrics(desrializedMetrics)
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+			// read header+metrics here
 		}
 	}
 }
@@ -375,6 +411,12 @@ func Proto(p uint8) string {
 	default:
 		return ""
 	}
+}
+
+// printMetrics logs the metrics.
+func printMetrics(metrics *proto.Metrics) {
+	fmt.Printf("wormhole [info] ingress %d bytes", metrics.Ingress)
+	fmt.Printf("wormhole [info] egress %d bytes", metrics.Egress)
 }
 
 // prettyPrint logs messages to the console with a specified log level.

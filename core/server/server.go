@@ -287,6 +287,15 @@ func (s *Server) handleRequest(ctx context.Context, stream net.Conn, session *ya
 		return err
 	}
 
+	if header.HasFlag(proto.FlagMetrics) {
+		go func() {
+			er := s.streamMetrics(ctx, tunnel)
+			if er != nil {
+				log.Error().Err(er).Str("domain", domain).Msg("metrics stream stopped")
+			}
+		}()
+	}
+
 	select {
 	case <-ctx.Done():
 	case <-session.CloseChan():
@@ -372,6 +381,53 @@ func (s *Server) sendErr(stream net.Conn, message string) error {
 	_, err = stream.Write(data)
 	if err != nil {
 		return fmt.Errorf("failed to write error response: %w", err)
+	}
+
+	return nil
+}
+
+// streamMetrics streams the tunnel metrics to the tunnel on interval.
+func (s *Server) streamMetrics(ctx context.Context, tunnel *Tunnel) error {
+	stream, err := tunnel.session.Open()
+	if err != nil {
+		return fmt.Errorf("failed to open yamux stream: %w", err)
+	}
+
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+			go s.sendMetrics(stream, tunnel)
+		}
+	}
+}
+
+// sendMetrics sends the latest metrics of the specified tunnel.
+func (s *Server) sendMetrics(stream net.Conn, tunnel *Tunnel) error {
+	metrics := proto.NewMetrics(tunnel.metrics.IngressBytes, tunnel.metrics.EgressBytes)
+	serializedMetrics, err := proto.SerializeMetrics(metrics)
+	if err != nil {
+		return fmt.Errorf("failed to serialize metrics: %w", err)
+	}
+
+	header := proto.NewHeader(proto.TypeMetrics, uint64(len(serializedMetrics)))
+	serializedHeader, err := proto.SerializeHeader(header)
+	if err != nil {
+		return fmt.Errorf("failed to serialize header: %w", err)
+	}
+
+	_, err = stream.Write(serializedHeader)
+	if err != nil {
+		return fmt.Errorf("failed to write header: %w", err)
+	}
+
+	_, err = stream.Write(serializedMetrics)
+	if err != nil {
+		return fmt.Errorf("failed to write metrics: %w", err)
 	}
 
 	return nil

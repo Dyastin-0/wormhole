@@ -18,11 +18,16 @@ const (
 	TypeAccess uint8 = 0x03
 	// TypeAck indicates an acknowledgment of an access message.
 	TypeAck uint8 = 0x04
+	// TypeMetrics indicates an incoming tunnel metrics stream.
+	TypeMetrics = 0x05
 	// TypeEnd indicates that a tunnel reached its end.
-	TypeEnd uint8 = 0x05
+	TypeEnd uint8 = 0x06
 	// TypeError indicates an error response from the server.
 	TypeError uint8 = 0xFF
 )
+
+// FlagMetrics indicates that the client wants to stream the tunnel metrics.
+const FlagMetrics = 0x01
 
 // Constants definition for protocol limits and sizes.
 const (
@@ -34,8 +39,10 @@ const (
 	HeaderSize uint8 = 12
 	// RequestSize is the fixed size of a request’s non-string fields in bytes (5 bytes).
 	RequestSize uint8 = 5
-	// ResponseSize is the fixed size of a response’s non-string fields in bytes (9 bytes).
+	// ResponseSize is the fixed size of a response’s non-string fields in bytes (13 bytes).
 	ResponseSize uint8 = 13
+	// MetricsSize is the fixed size of a metrics' fields in bytes (16).
+	MetricsSize uint8 = 16
 )
 
 // Constants definition of supported protocols for tunneling.
@@ -82,6 +89,8 @@ var (
 	ErrInvalidRequestSize = errors.New("request data too small")
 	// ErrInvalidResponseSize is returned when the response data is too small.
 	ErrInvalidResponseSize = errors.New("response data too small")
+	// ErrInvalidMetricsSize is returned when the metrics data is too small.
+	ErrInvalidMetricsSize = errors.New("metrics data too small")
 	// ErrInvalidLength is returned when a string length field does not match the actual string length.
 	ErrInvalidLength = errors.New("invalid length field")
 	// ErrInsufficientData is returned when there is not enough data to deserialize a string field.
@@ -100,10 +109,27 @@ type Header struct {
 	Version uint8
 	// Type specifies the message type (e.g., TypeRequest, TypeResponse).
 	Type uint8
+	// Flags specifies the
+	Flags uint8
 	// Length specifies the payload length in bytes (must not exceed MaxPayloadSize).
 	Length uint64
 	// Reserved is a reserved field that must be zero.
-	Reserved uint16
+	Reserved uint8
+}
+
+// HasFlag checks if flag is set.
+func (h *Header) HasFlag(flag uint8) bool {
+	return h.Flags&flag != 0
+}
+
+// SetFlag sets a specific flag.
+func (h *Header) SetFlag(flag uint8) {
+	h.Flags |= flag
+}
+
+// ClearFlag clears a specific flag.
+func (h *Header) ClearFlag(flag uint8) {
+	h.Flags &^= flag
 }
 
 // Request represents a client’s request to establish a tunnel.
@@ -128,6 +154,14 @@ type Response struct {
 	Domain string
 }
 
+// Metrics represets the tunnel's incoming and outgoing bytes metrics.
+type Metrics struct {
+	// Ingress represents the incoming bytes.
+	Ingress uint64
+	// Egress represents the outgoing bytes.
+	Egress uint64
+}
+
 // SerializeHeader serializes a Header to a byte slice.
 func SerializeHeader(header *Header) ([]byte, error) {
 	if err := validateHeader(header); err != nil {
@@ -141,6 +175,9 @@ func SerializeHeader(header *Header) ([]byte, error) {
 	}
 	if err := binary.Write(buf, binary.BigEndian, header.Type); err != nil {
 		return nil, fmt.Errorf("failed to write type: %w", err)
+	}
+	if err := binary.Write(buf, binary.BigEndian, header.Flags); err != nil {
+		return nil, fmt.Errorf("failed to write flags: %w", err)
 	}
 	if err := binary.Write(buf, binary.BigEndian, header.Length); err != nil {
 		return nil, fmt.Errorf("failed to write length: %w", err)
@@ -242,7 +279,7 @@ func SerializeResponse(resp *Response) ([]byte, error) {
 		return nil, fmt.Errorf("failed to write status: %w", err)
 	}
 	if err := binary.Write(buf, binary.BigEndian, resp.TTLHours); err != nil {
-		return nil, fmt.Errorf("failed to write TTL: %w", err)
+		return nil, fmt.Errorf("failed to write ttl: %w", err)
 	}
 	if err := binary.Write(buf, binary.BigEndian, resp.DomainLength); err != nil {
 		return nil, fmt.Errorf("failed to write domain length: %w", err)
@@ -289,6 +326,36 @@ func DeserializeResponse(data []byte) (*Response, error) {
 	}
 
 	return &resp, nil
+}
+
+// SerializeMetrics serializes Metrics into byte slice.
+func SerializeMetrics(metrics *Metrics) ([]byte, error) {
+	buf := bytes.NewBuffer(make([]byte, 0, MetricsSize))
+
+	if err := binary.Write(buf, binary.BigEndian, metrics.Ingress); err != nil {
+		return nil, fmt.Errorf("failed to write ingress: %w", err)
+	}
+	if err := binary.Write(buf, binary.BigEndian, metrics.Egress); err != nil {
+		return nil, fmt.Errorf("failed to write egress: %w", err)
+	}
+
+	return buf.Bytes(), nil
+}
+
+// DeserializeMetrics deserializes a byte slice into Metrics.
+func DeserializeMetrics(data []byte) (*Metrics, error) {
+	if len(data) < int(MetricsSize) {
+		return nil, ErrInvalidMetricsSize
+	}
+
+	reader := bytes.NewReader(data[:MetricsSize])
+	var metrics Metrics
+
+	if err := binary.Read(reader, binary.BigEndian, &metrics); err != nil {
+		return nil, fmt.Errorf("failed to read metrics: %w", err)
+	}
+
+	return &metrics, nil
 }
 
 // validateHeader validates a Header’s fields.
@@ -374,6 +441,7 @@ func NewHeader(msgType uint8, length uint64) *Header {
 	return &Header{
 		Version:  Version,
 		Type:     msgType,
+		Flags:    0,
 		Length:   length,
 		Reserved: 0,
 	}
@@ -395,6 +463,14 @@ func NewResponse(status uint8, ttlSeconds uint64, domain string) *Response {
 		TTLHours:     ttlSeconds,
 		DomainLength: uint32(len(domain)),
 		Domain:       domain,
+	}
+}
+
+// NewMetrics creates a new Metrics with the specified ingress and egress.
+func NewMetrics(ingress, egress uint64) *Metrics {
+	return &Metrics{
+		Ingress: ingress,
+		Egress:  egress,
 	}
 }
 

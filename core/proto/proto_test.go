@@ -16,10 +16,7 @@ func TestHeaderSerializeDeserialize(t *testing.T) {
 	deserialized, err := DeserializeHeader(serialized)
 	require.NoError(t, err)
 
-	assert.Equal(t, original.Version, deserialized.Version)
-	assert.Equal(t, original.Type, deserialized.Type)
-	assert.Equal(t, original.Length, deserialized.Length)
-	assert.Equal(t, original.Reserved, deserialized.Reserved)
+	require.Equal(t, original, deserialized)
 }
 
 func TestRequestSerializeDeserialize(t *testing.T) {
@@ -31,9 +28,7 @@ func TestRequestSerializeDeserialize(t *testing.T) {
 	deserialized, err := DeserializeRequest(serialized)
 	require.NoError(t, err)
 
-	assert.Equal(t, original.Proto, deserialized.Proto)
-	assert.Equal(t, original.Name, deserialized.Name)
-	assert.Equal(t, original.NameLength, deserialized.NameLength)
+	require.Equal(t, original, deserialized)
 }
 
 func TestResponseSerializeDeserialize(t *testing.T) {
@@ -45,10 +40,7 @@ func TestResponseSerializeDeserialize(t *testing.T) {
 	deserialized, err := DeserializeResponse(serialized)
 	require.NoError(t, err)
 
-	assert.Equal(t, original.Status, deserialized.Status)
-	assert.Equal(t, original.TTLHours, deserialized.TTLHours)
-	assert.Equal(t, original.Domain, deserialized.Domain)
-	assert.Equal(t, original.DomainLength, deserialized.DomainLength)
+	require.Equal(t, original, deserialized)
 }
 
 func TestValidateHeaderInvalidVersion(t *testing.T) {
@@ -86,6 +78,25 @@ func TestValidateRequestEmptyName(t *testing.T) {
 	_, err := SerializeRequest(req)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "string field cannot be empty")
+}
+
+func TestFlag(t *testing.T) {
+	header := NewHeader(TypeEnd, 0)
+	header.SetFlag(FlagMetrics)
+	require.True(t, header.HasFlag(FlagMetrics))
+	header.ClearFlag(FlagMetrics)
+	require.False(t, header.HasFlag(FlagMetrics))
+}
+
+func TestMetricsSerializeDeserialize(t *testing.T) {
+	original := NewMetrics(1024, 1024)
+	serialized, err := SerializeMetrics(original)
+	require.NoError(t, err)
+
+	deserialized, err := DeserializeMetrics(serialized)
+	require.NoError(t, err)
+
+	require.Equal(t, original, deserialized)
 }
 
 func TestIsValidType(t *testing.T) {
