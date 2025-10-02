@@ -47,59 +47,47 @@ func Stream(src, dst io.ReadWriter) error {
 
 // StreamWithContext is Stream with context.
 func StreamWithContext(ctx context.Context, src, dst io.ReadWriter) error {
-	var wg sync.WaitGroup
 	errch := make(chan error, 1)
 
 	localCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	// Copy src -> dst
-	wg.Go(func() {
+	go func() {
 		err := CopyWithContext(localCtx, dst, src)
 		select {
 		case errch <- err:
 		default:
 		}
 		log.Error().Err(err).Msg("COPY ERR")
-	})
+	}()
 
 	// Copy dst -> src
-	wg.Go(func() {
+	go func() {
 		err := CopyWithContext(localCtx, src, dst)
 		select {
 		case errch <- err:
 		default:
 		}
 		log.Error().Err(err).Msg("COPY ERR")
-	})
+	}()
 
 	time.Sleep(50 * time.Millisecond)
 
-	done := make(chan struct{})
-	go func() {
-		wg.Wait()
-		log.Debug().Msg("HERE")
-		close(done)
-	}()
-
 	select {
-	case <-done:
+	case <-errch:
 	case <-ctx.Done():
-		errch <- ctx.Err()
-		cancel()
-		<-done
 	}
+
+	cancel()
+	closeConnection(src)
+	closeConnection(dst)
 
 	return <-errch
 }
 
 // CopyWithContext performs io.Copy with context cancellation.
 func CopyWithContext(ctx context.Context, dst, src io.ReadWriter) error {
-	defer func() {
-		closeConnection(src)
-		closeConnection(dst)
-	}()
-
 	buf := make([]byte, 32*1024)
 
 	if conn, ok := src.(net.Conn); ok {
