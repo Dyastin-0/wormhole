@@ -76,10 +76,9 @@ func StreamWithContext(ctx context.Context, src, dst io.ReadWriter) error {
 	done := make(chan struct{})
 	go func() {
 		wg.Wait()
+		log.Debug().Msg("here")
 		close(done)
 	}()
-
-	log.Debug().Msg("here")
 
 	select {
 	case <-done:
