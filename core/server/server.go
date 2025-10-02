@@ -394,7 +394,7 @@ func (s *Server) streamMetrics(ctx context.Context, tunnel *Tunnel) error {
 	}
 	defer stream.Close()
 
-	ticker := time.NewTicker(1 * time.Second)
+	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
 
 	for {

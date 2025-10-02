@@ -12,7 +12,6 @@ import (
 	"github.com/Dyastin-0/wormhole/core/proxy"
 	"github.com/Dyastin-0/wormhole/dnsmanager"
 	"github.com/hashicorp/yamux"
-	"github.com/rs/zerolog/log"
 )
 
 // Tunnel represents a wormhole tunnel.
@@ -77,7 +76,6 @@ func (t *Tunnel) From(ctx context.Context, stream net.Conn) error {
 
 	t.metrics.IncrementConnections()
 	defer t.metrics.DecrementActiveConnections()
-	defer log.Printf("deferred")
 
 	return proxy.StreamWithContext(proxyCtx, proxyStream, remoteStream)
 }
