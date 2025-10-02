@@ -128,9 +128,6 @@ func CopyWithContext(ctx context.Context, dst, src io.ReadWriter) error {
 				}
 			}
 
-			if readErr == io.EOF {
-				return nil
-			}
 			return readErr
 		}
 	}
