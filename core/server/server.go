@@ -411,7 +411,13 @@ func (s *Server) streamMetrics(ctx context.Context, tunnel *Tunnel) error {
 
 // sendMetrics sends the latest metrics of the specified tunnel.
 func (s *Server) sendMetrics(stream net.Conn, tunnel *Tunnel) error {
-	metrics := proto.NewMetrics(tunnel.metrics.GetIngressBytes(), tunnel.metrics.GetEgressBytes())
+	metrics := proto.NewMetrics(
+		tunnel.metrics.GetIngressBytes(),
+		tunnel.metrics.GetEgressBytes(),
+		uint64(tunnel.metrics.GetUptime()),
+		tunnel.metrics.GetConnectionCount(),
+		uint32(tunnel.metrics.GetActiveConnections()),
+	)
 	serializedMetrics, err := proto.SerializeMetrics(metrics)
 	if err != nil {
 		return fmt.Errorf("failed to serialize metrics: %w", err)

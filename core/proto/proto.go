@@ -482,10 +482,13 @@ func NewResponse(status uint8, ttlSeconds uint64, domain string) *Response {
 }
 
 // NewMetrics creates a new Metrics with the specified ingress and egress.
-func NewMetrics(ingress, egress uint64) *Metrics {
+func NewMetrics(ingress, egress, uptime, connectionCount uint64, activeConnections uint32) *Metrics {
 	return &Metrics{
-		Ingress: ingress,
-		Egress:  egress,
+		Ingress:           ingress,
+		Egress:            egress,
+		Uptime:            uptime,
+		ConnectionCount:   connectionCount,
+		ActiveConnections: int32(activeConnections),
 	}
 }
 

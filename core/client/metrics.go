@@ -9,7 +9,6 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// MetricsMsg is sent when new metrics arrive.
 type MetricsMsg struct {
 	Ingress           uint64
 	Egress            uint64
@@ -18,7 +17,6 @@ type MetricsMsg struct {
 	ActiveConnections int32
 }
 
-// metricsModel holds the state for the metrics display.
 type metricsModel struct {
 	spinner     spinner.Model
 	metrics     MetricsMsg
@@ -29,34 +27,40 @@ type metricsModel struct {
 	startTime   time.Time
 }
 
-// Styles.
 var (
+	accent     = lipgloss.Color("250")
+	highlight  = lipgloss.Color("255")
+	subtle     = lipgloss.Color("245")
+	borderTone = lipgloss.Color("240")
+
 	titleStyle = lipgloss.NewStyle().
 			Bold(true).
-			Foreground(lipgloss.Color("86")).
+			Foreground(highlight).
+			Underline(true).
 			MarginBottom(1)
 
 	labelStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("241"))
+			Foreground(subtle)
 
 	valueStyle = lipgloss.NewStyle().
 			Bold(true).
-			Foreground(lipgloss.Color("86"))
+			Foreground(highlight)
 
 	rateStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("243"))
+			Foreground(accent)
 
 	boxStyle = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("62")).
+			BorderForeground(borderTone).
 			Padding(1, 2).
-			MarginTop(1)
+			MarginTop(1).
+			MarginBottom(1)
 )
 
 func newMetricsModel() metricsModel {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
-	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
+	s.Style = lipgloss.NewStyle().Foreground(accent)
 
 	return metricsModel{
 		spinner:     s,
@@ -104,51 +108,57 @@ func (m metricsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m metricsModel) View() string {
-	title := titleStyle.Render("🔌 Tunnel Metrics")
-
 	ingressLine := fmt.Sprintf("%s  %s  %s",
-		labelStyle.Render("📥 Ingress:"),
+		labelStyle.Render("Ingress:"),
 		valueStyle.Render(formatBytes(m.metrics.Ingress)),
-		rateStyle.Render(fmt.Sprintf("(↑ %s/s)", formatBytes(uint64(m.ingressRate)))),
+		rateStyle.Render(fmt.Sprintf("(%s/s)", formatBytes(uint64(m.ingressRate)))),
 	)
 
 	egressLine := fmt.Sprintf("%s  %s  %s",
-		labelStyle.Render("📤 Egress: "),
+		labelStyle.Render("Egress: "),
 		valueStyle.Render(formatBytes(m.metrics.Egress)),
-		rateStyle.Render(fmt.Sprintf("(↑ %s/s)", formatBytes(uint64(m.egressRate)))),
+		rateStyle.Render(fmt.Sprintf("(%s/s)", formatBytes(uint64(m.egressRate)))),
 	)
 
 	activeConnsLine := fmt.Sprintf("%s  %s",
-		labelStyle.Render("🔗 Active:  "),
+		labelStyle.Render("Active: "),
 		valueStyle.Render(fmt.Sprintf("%d", m.metrics.ActiveConnections)),
 	)
 
 	totalConnsLine := fmt.Sprintf("%s  %s",
-		labelStyle.Render("📊 Total:   "),
+		labelStyle.Render("Total:  "),
 		valueStyle.Render(fmt.Sprintf("%d", m.metrics.ConnectionCount)),
 	)
 
 	uptimeLine := fmt.Sprintf("%s  %s",
-		labelStyle.Render("⏱  Uptime:  "),
+		labelStyle.Render("Uptime: "),
 		valueStyle.Render(formatDuration(time.Duration(m.metrics.Uptime)*time.Millisecond)),
 	)
 
-	content := lipgloss.JoinVertical(
+	body := lipgloss.JoinVertical(
 		lipgloss.Left,
-		title,
-		"",
-		labelStyle.Render("Traffic:"),
+		labelStyle.Render("Traffic"),
 		ingressLine,
 		egressLine,
 		"",
-		labelStyle.Render("Connections:"),
+		labelStyle.Render("Connections"),
 		activeConnsLine,
 		totalConnsLine,
 		"",
 		uptimeLine,
 		"",
-		rateStyle.Render("Press q or ctrl+c to stop monitoring"),
+		rateStyle.Render("Press q or ctrl+c to quit"),
 	)
+
+	contentWidth := lipgloss.Width(body)
+
+	title := lipgloss.PlaceHorizontal(
+		contentWidth,
+		lipgloss.Center,
+		titleStyle.Render("Tunnel Metrics"),
+	)
+
+	content := lipgloss.JoinVertical(lipgloss.Left, title, body)
 
 	return boxStyle.Render(content)
 }
