@@ -429,7 +429,7 @@ func validateResponse(resp *Response) error {
 // IsValidType checks if a message type is valid.
 func IsValidType(msgType uint8) bool {
 	switch msgType {
-	case TypeRequest, TypeResponse, TypeAck, TypeAccess, TypeEnd, TypeError:
+	case TypeRequest, TypeResponse, TypeAck, TypeAccess, TypeMetrics, TypeEnd, TypeError:
 		return true
 	default:
 		return false
