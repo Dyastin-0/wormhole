@@ -111,10 +111,10 @@ func (c *Client) RunWithTCP(ctx context.Context) error {
 	switch response.Status {
 	case proto.StatusNameTaken:
 		prettyPrint("err", fmt.Sprintf("subdomain '%s' is already in use", c.name))
-		return fmt.Errorf("subdomain '%s' is already in use", c.name)
+		return nil
 	case proto.StatusUnsupportedProto:
 		prettyPrint("err", fmt.Sprintf("protocol '%v' is not supported", c.proto))
-		return fmt.Errorf("protocol '%v' is not supported", c.proto)
+		return nil
 	case proto.StatusOK:
 	default:
 		prettyPrint("err", fmt.Sprintf("unexpected response status: %v", response.Status))
@@ -199,10 +199,10 @@ func (c *Client) Run(ctx context.Context) error {
 	switch response.Status {
 	case proto.StatusNameTaken:
 		prettyPrint("err", fmt.Sprintf("subdomain '%s' is already in use", c.name))
-		return fmt.Errorf("subdomain '%s' is already in use", c.name)
+		return nil
 	case proto.StatusUnsupportedProto:
 		prettyPrint("err", fmt.Sprintf("protocol '%v' is not supported", c.proto))
-		return fmt.Errorf("protocol '%v' is not supported", c.proto)
+		return nil
 	case proto.StatusOK:
 	default:
 		prettyPrint("err", fmt.Sprintf("unexpected response status: %v", response.Status))
@@ -292,7 +292,6 @@ func (c *Client) ForwardStream(ctx context.Context, stream net.Conn) error {
 func (c *Client) handleMessages(ctx context.Context, session *yamux.Session) error {
 	go func() {
 		<-ctx.Done()
-		time.Sleep(1 * time.Second)
 		session.Close()
 	}()
 
@@ -354,7 +353,7 @@ func (c *Client) handleMessages(ctx context.Context, session *yamux.Session) err
 	}
 }
 
-// handleMetrics handles metric display.
+// handleMetrics handles metrics display.
 func (c *Client) handleMetrics(ctx context.Context, header *proto.Header, stream net.Conn) error {
 	defer stream.Close()
 
