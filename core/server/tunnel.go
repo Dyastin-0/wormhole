@@ -65,7 +65,7 @@ func (t *Tunnel) From(ctx context.Context, stream net.Conn) error {
 
 	go func() {
 		<-ctx.Done()
-		time.Sleep(5 * time.Second)
+		time.Sleep(2 * time.Second)
 		proxyCancel()
 	}()
 
