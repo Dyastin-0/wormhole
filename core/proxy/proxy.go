@@ -19,12 +19,20 @@ func Stream(src, dst io.ReadWriter) error {
 
 	// Copy src -> dst
 	wg.Go(func() {
-		errch <- CopyWithContext(ctx, dst, src)
+		err := CopyWithContext(ctx, dst, src)
+		select {
+		case errch <- err:
+		default:
+		}
 	})
 
 	// Copy dst -> src
 	wg.Go(func() {
-		errch <- CopyWithContext(ctx, src, dst)
+		err := CopyWithContext(ctx, src, dst)
+		select {
+		case errch <- err:
+		default:
+		}
 	})
 
 	wg.Wait()
@@ -45,12 +53,20 @@ func StreamWithContext(ctx context.Context, src, dst io.ReadWriter) error {
 
 	// Copy src -> dst
 	wg.Go(func() {
-		errch <- CopyWithContext(localCtx, dst, src)
+		err := CopyWithContext(localCtx, dst, src)
+		select {
+		case errch <- err:
+		default:
+		}
 	})
 
 	// Copy dst -> src
 	wg.Go(func() {
-		errch <- CopyWithContext(localCtx, src, dst)
+		err := CopyWithContext(localCtx, src, dst)
+		select {
+		case errch <- err:
+		default:
+		}
 	})
 
 	done := make(chan struct{})
