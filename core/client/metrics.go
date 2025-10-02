@@ -132,7 +132,7 @@ func (m metricsModel) View() string {
 
 	uptimeLine := fmt.Sprintf("%s  %s",
 		labelStyle.Render("Uptime: "),
-		valueStyle.Render(formatDuration(time.Duration(m.metrics.Uptime)*time.Millisecond)),
+		valueStyle.Render(formatDuration(time.Duration(m.metrics.Uptime))),
 	)
 
 	body := lipgloss.JoinVertical(
@@ -147,7 +147,7 @@ func (m metricsModel) View() string {
 		"",
 		uptimeLine,
 		"",
-		rateStyle.Render("Press q or ctrl+c to quit"),
+		labelStyle.Render("Press q or ctrl+c to quit"),
 	)
 
 	contentWidth := lipgloss.Width(body)

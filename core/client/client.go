@@ -339,16 +339,10 @@ func (c *Client) handleMessages(ctx context.Context, session *yamux.Session) err
 					log.Error().Err(err).Msg("failed to send ack")
 					return
 				}
-				if err := c.ForwardStream(ctx, stream); err != nil {
-					log.Error().Err(err).Msg("stream stopped")
-				}
+				c.ForwardStream(ctx, stream)
 			}(ctx, stream)
 		case proto.TypeMetrics:
-			go func(ctx context.Context, stream net.Conn) {
-				if err := c.handleMetrics(ctx, header, stream); err != nil {
-					log.Error().Err(err).Msg("metrics handler stopped")
-				}
-			}(ctx, stream)
+			go c.handleMetrics(ctx, header, stream)
 		case proto.TypeEnd:
 			stream.Close()
 			prettyPrint("inf", "tunnel timed out")
@@ -360,6 +354,7 @@ func (c *Client) handleMessages(ctx context.Context, session *yamux.Session) err
 	}
 }
 
+// handleMetrics handles metric display.
 func (c *Client) handleMetrics(ctx context.Context, header *proto.Header, stream net.Conn) error {
 	defer stream.Close()
 
@@ -458,12 +453,6 @@ func Proto(p uint8) string {
 	default:
 		return ""
 	}
-}
-
-// printMetrics logs the metrics.
-func printMetrics(metrics *proto.Metrics) {
-	fmt.Printf("wormhole [info] ingress %d bytes\n", metrics.Ingress)
-	fmt.Printf("wormhole [info] egress %d bytes\n", metrics.Egress)
 }
 
 // prettyPrint logs messages to the console with a specified log level.
