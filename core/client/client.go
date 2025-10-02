@@ -238,6 +238,7 @@ func (c *Client) sendRequest(ctx context.Context, stream net.Conn) (*proto.Heade
 	if c.metrics {
 		header.SetFlag(proto.FlagMetrics)
 	}
+
 	serializedHeader, err := proto.SerializeHeader(header)
 	if err != nil {
 		return nil, fmt.Errorf("failed to serialize header: %w", err)
@@ -291,7 +292,7 @@ func (c *Client) ForwardStream(ctx context.Context, stream net.Conn) error {
 func (c *Client) handleMessages(ctx context.Context, session *yamux.Session) error {
 	go func() {
 		<-ctx.Done()
-		time.Sleep(5 * time.Second)
+		time.Sleep(1 * time.Second)
 		session.Close()
 	}()
 
@@ -348,12 +349,10 @@ func (c *Client) handleMessages(ctx context.Context, session *yamux.Session) err
 					log.Error().Err(err).Msg("metrics handler stopped")
 				}
 			}(ctx, stream)
-
 		case proto.TypeEnd:
 			stream.Close()
 			prettyPrint("inf", "tunnel timed out")
 			return nil
-
 		default:
 			log.Debug().Msgf("unexpected header type: %v", header.Type)
 			stream.Close()

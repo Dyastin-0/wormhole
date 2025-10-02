@@ -287,6 +287,8 @@ func (s *Server) handleRequest(ctx context.Context, stream net.Conn, session *ya
 		return err
 	}
 
+	log.Debug().Msg(fmt.Sprintf("0b%08b\n", header.Flags))
+
 	if header.HasFlag(proto.FlagMetrics) {
 		go func() {
 			er := s.streamMetrics(ctx, tunnel)

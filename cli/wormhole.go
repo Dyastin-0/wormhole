@@ -206,12 +206,14 @@ func tcp(ctx context.Context, cmd *cli.Command) error {
 	name := cmd.String("name")
 	addr := cmd.String("addr")
 	targetAddr := cmd.String("targetAddr")
+	metrics := cmd.Bool("metrics")
 
 	wormholeClient, err := wclient.New(
 		wclient.WithProtoTCP,
 		wclient.WithName(name),
 		wclient.WithAddr(addr),
 		wclient.WithTargetAddr(targetAddr),
+		wclient.WithMetrics(metrics),
 	)
 	if err != nil {
 		return fmt.Errorf("failed to initialize wormhole client: %w", err)
