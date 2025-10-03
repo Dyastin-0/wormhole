@@ -7,9 +7,9 @@ import (
 	"log"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"syscall"
 
+	"github.com/Dyastin-0/wormhole/core"
 	wclient "github.com/Dyastin-0/wormhole/core/client"
 	wserver "github.com/Dyastin-0/wormhole/core/server"
 	"github.com/Dyastin-0/wormhole/dnsmanager"
@@ -44,9 +44,10 @@ func main() {
 
 func New() *cli.Command {
 	return &cli.Command{
-		Name:   "wormhole",
-		Usage:  "a simple tcp-based reverse tunnel",
-		Action: wormholeCommand,
+		Name:    "wormhole",
+		Usage:   "a tcp-based reverse tunnel service",
+		Version: core.VERSION,
+		Action:  wormholeCommand,
 		Commands: []*cli.Command{
 			startCommand(),
 			httpCommand(),
@@ -254,20 +255,4 @@ func baseClientFlags(flags ...cli.Flag) []cli.Flag {
 			Value:   false,
 		},
 	)
-}
-
-func LogPath(base string) (string, error) {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("failed to get home directory: %w", err)
-	}
-
-	logDir := filepath.Join(homeDir, "wormhole-logs", base)
-
-	if err := os.MkdirAll(logDir, 0o755); err != nil {
-		return "", fmt.Errorf("failed to create log directory: %w", err)
-	}
-
-	logPath := filepath.Join(logDir, "wormhole.log")
-	return logPath, nil
 }
