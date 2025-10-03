@@ -140,8 +140,7 @@ func (c *Client) Run(ctx context.Context) error {
 	}
 
 	tlsConfig := &tls.Config{
-		ServerName:         host,
-		InsecureSkipVerify: true,
+		ServerName: host,
 	}
 
 	dialer := &tls.Dialer{
