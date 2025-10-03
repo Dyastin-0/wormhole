@@ -299,6 +299,7 @@ func (s *Server) handleRequest(ctx context.Context, stream net.Conn, session *ya
 	select {
 	case <-ctx.Done():
 	case <-session.CloseChan():
+		log.Info().Str("domain", domain).Msg("session closed")
 	case <-time.After(tunnel.dnsRecord.TTL):
 		log.Info().Str("domain", domain).Msg("tunnel timed out")
 	}

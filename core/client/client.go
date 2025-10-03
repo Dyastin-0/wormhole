@@ -298,6 +298,7 @@ func (c *Client) handleMessages(ctx context.Context, session *yamux.Session) err
 		stream, err := session.Accept()
 		if err != nil {
 			if ctx.Err() != nil {
+				time.Sleep(100 * time.Millisecond)
 				return ctx.Err()
 			}
 			if errors.Is(err, yamux.ErrSessionShutdown) ||
