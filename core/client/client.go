@@ -66,7 +66,10 @@ func (c *Client) RunWithTCP(ctx context.Context) error {
 	}
 	defer conn.Close()
 
-	session, err := yamux.Client(conn, nil)
+	yamuxConfig := yamux.DefaultConfig()
+	yamuxConfig.KeepAliveInterval = 1 * time.Second
+
+	session, err := yamux.Client(conn, yamuxConfig)
 	if err != nil {
 		return fmt.Errorf("failed to create yamux client: %w", err)
 	}
@@ -289,16 +292,10 @@ func (c *Client) ForwardStream(ctx context.Context, stream net.Conn) error {
 
 // handleMessages processes incoming multiplexed streams (control streams) from the server.
 func (c *Client) handleMessages(ctx context.Context, session *yamux.Session) error {
-	go func() {
-		<-ctx.Done()
-		session.Close()
-	}()
-
 	for {
 		stream, err := session.Accept()
 		if err != nil {
 			if ctx.Err() != nil {
-				time.Sleep(100 * time.Millisecond)
 				return ctx.Err()
 			}
 			if errors.Is(err, yamux.ErrSessionShutdown) ||

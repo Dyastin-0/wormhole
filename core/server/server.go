@@ -187,7 +187,10 @@ func (s *Server) handleConnections(ctx context.Context, ln net.Listener) error {
 
 // handleMessages processes messages from a client connection using a yamux session.
 func (s *Server) handleMessages(ctx context.Context, conn net.Conn) error {
-	session, err := yamux.Server(conn, nil)
+	yamuxConfig := yamux.DefaultConfig()
+	yamuxConfig.KeepAliveInterval = 1 * time.Second
+
+	session, err := yamux.Server(conn, yamuxConfig)
 	if err != nil {
 		return fmt.Errorf("failed to create yamux server: %w", err)
 	}
