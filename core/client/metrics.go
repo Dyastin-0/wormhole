@@ -54,7 +54,13 @@ var (
 			BorderForeground(borderTone).
 			Padding(1, 2).
 			MarginTop(1).
-			MarginBottom(1)
+			MarginBottom(1).Width(40)
+)
+
+const (
+	labelWidth = 18
+	valueWidth = 18
+	rateWidth  = 30
 )
 
 func newMetricsModel() metricsModel {
@@ -108,32 +114,13 @@ func (m metricsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m metricsModel) View() string {
-	ingressLine := fmt.Sprintf("%s  %s  %s",
-		labelStyle.Render("Ingress:"),
-		valueStyle.Render(formatBytes(m.metrics.Ingress)),
-		rateStyle.Render(fmt.Sprintf("(%s/s)", formatBytes(uint64(m.ingressRate)))),
-	)
+	ingressLine := formatLineRate("Ingress:", m.metrics.Ingress, m.ingressRate)
+	egressLine := formatLineRate("Egress:", m.metrics.Egress, m.egressRate)
 
-	egressLine := fmt.Sprintf("%s  %s  %s",
-		labelStyle.Render("Egress: "),
-		valueStyle.Render(formatBytes(m.metrics.Egress)),
-		rateStyle.Render(fmt.Sprintf("(%s/s)", formatBytes(uint64(m.egressRate)))),
-	)
+	activeConnsLine := formatLine("Active:", fmt.Sprintf("%d", m.metrics.ActiveConnections))
+	totalConnsLine := formatLine("Total:", fmt.Sprintf("%d", m.metrics.ConnectionCount))
 
-	activeConnsLine := fmt.Sprintf("%s  %s",
-		labelStyle.Render("Active: "),
-		valueStyle.Render(fmt.Sprintf("%d", m.metrics.ActiveConnections)),
-	)
-
-	totalConnsLine := fmt.Sprintf("%s  %s",
-		labelStyle.Render("Total:  "),
-		valueStyle.Render(fmt.Sprintf("%d", m.metrics.ConnectionCount)),
-	)
-
-	uptimeLine := fmt.Sprintf("%s  %s",
-		labelStyle.Render("Uptime: "),
-		valueStyle.Render(formatDuration(time.Duration(m.metrics.Uptime))),
-	)
+	uptimeLine := formatLine("Uptime:", formatDuration(time.Duration(m.metrics.Uptime)))
 
 	body := lipgloss.JoinVertical(
 		lipgloss.Left,
@@ -150,15 +137,26 @@ func (m metricsModel) View() string {
 		labelStyle.Render("Press q or ctrl+c to quit"),
 	)
 
-	contentWidth := lipgloss.Width(body)
+	innerWidth := boxStyle.GetWidth() -
+		boxStyle.GetPaddingLeft() - boxStyle.GetPaddingRight()
 
 	title := lipgloss.PlaceHorizontal(
-		contentWidth,
+		innerWidth,
 		lipgloss.Center,
 		titleStyle.Render("Tunnel Metrics"),
 	)
 
-	content := lipgloss.JoinVertical(lipgloss.Left, title, body)
+	centeredBody := lipgloss.PlaceHorizontal(
+		innerWidth,
+		lipgloss.Center,
+		body,
+	)
+
+	content := lipgloss.JoinVertical(
+		lipgloss.Center,
+		title,
+		centeredBody,
+	)
 
 	return boxStyle.Render(content)
 }
@@ -193,6 +191,23 @@ func formatDuration(d time.Duration) string {
 		return fmt.Sprintf("%dm %ds", m, s)
 	}
 	return fmt.Sprintf("%ds", s)
+}
+
+func formatLineRate(label string, value uint64, rate float64) string {
+	return fmt.Sprintf(
+		"%-*s %-*s %-*s",
+		labelWidth, labelStyle.Render(label),
+		valueWidth, valueStyle.Render(formatBytes(value)),
+		rateWidth, rateStyle.Render(fmt.Sprintf("(%s/s)", formatBytes(uint64(rate)))),
+	)
+}
+
+func formatLine(label string, value string) string {
+	return fmt.Sprintf(
+		"%-*s %-*s",
+		labelWidth, labelStyle.Render(label),
+		valueWidth, valueStyle.Render(value),
+	)
 }
 
 // StartMetricsDisplay starts the metrics display UI.
