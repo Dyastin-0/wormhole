@@ -32,6 +32,8 @@ type Client struct {
 	name string
 	// metrics specifies if the client want to stream the tunnel metrics.
 	metrics bool
+	// domain specifies the approved requested domain name.
+	domain string
 }
 
 // New creates a new Client with the specified configuration options.
@@ -211,6 +213,7 @@ func (c *Client) Run(ctx context.Context) error {
 		return fmt.Errorf("unexpected response status: %v", response.Status)
 	}
 
+	c.domain = response.Domain
 	expiresAt := time.Now().Add(time.Duration(response.TTLHours))
 	prettyPrint(
 		"inf",
@@ -292,19 +295,18 @@ func (c *Client) ForwardStream(ctx context.Context, stream net.Conn) error {
 
 // handleMessages processes incoming multiplexed streams (control streams) from the server.
 func (c *Client) handleMessages(ctx context.Context, session *yamux.Session) error {
+	go func() {
+		<-ctx.Done()
+		session.Close()
+	}()
+
 	for {
 		stream, err := session.Accept()
 		if err != nil {
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
-			if errors.Is(err, yamux.ErrSessionShutdown) ||
-				errors.Is(err, io.EOF) ||
-				errors.Is(err, io.ErrUnexpectedEOF) {
-				return err
-			}
-			log.Error().Err(err).Msg("failed to accept stream")
-			continue
+			return err
 		}
 
 		buf := make([]byte, proto.HeaderSize)
@@ -354,7 +356,7 @@ func (c *Client) handleMessages(ctx context.Context, session *yamux.Session) err
 func (c *Client) handleMetrics(ctx context.Context, header *proto.Header, stream net.Conn) error {
 	defer stream.Close()
 
-	program, metricsChan := StartMetricsDisplay()
+	program, metricsChan := StartMetricsDisplay(c.domain)
 	defer close(metricsChan)
 
 	go func() {

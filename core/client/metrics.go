@@ -18,6 +18,7 @@ type MetricsMsg struct {
 }
 
 type metricsModel struct {
+	name        string
 	spinner     spinner.Model
 	metrics     MetricsMsg
 	prevMetrics MetricsMsg
@@ -54,21 +55,22 @@ var (
 			BorderForeground(borderTone).
 			Padding(1, 2).
 			MarginTop(1).
-			MarginBottom(1).Width(40)
+			MarginBottom(1).Width(42)
 )
 
 const (
-	labelWidth = 18
-	valueWidth = 18
-	rateWidth  = 30
+	labelWidth = 10
+	valueWidth = 10
+	rateWidth  = 12
 )
 
-func newMetricsModel() metricsModel {
+func newMetricsModel(name string) metricsModel {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(accent)
 
 	return metricsModel{
+		name:        name,
 		spinner:     s,
 		metrics:     MetricsMsg{},
 		prevMetrics: MetricsMsg{},
@@ -143,7 +145,7 @@ func (m metricsModel) View() string {
 	title := lipgloss.PlaceHorizontal(
 		innerWidth,
 		lipgloss.Center,
-		titleStyle.Render("Tunnel Metrics"),
+		titleStyle.Render(m.name),
 	)
 
 	centeredBody := lipgloss.PlaceHorizontal(
@@ -194,27 +196,27 @@ func formatDuration(d time.Duration) string {
 }
 
 func formatLineRate(label string, value uint64, rate float64) string {
-	return fmt.Sprintf(
-		"%-*s %-*s %-*s",
-		labelWidth, labelStyle.Render(label),
-		valueWidth, valueStyle.Render(formatBytes(value)),
-		rateWidth, rateStyle.Render(fmt.Sprintf("(%s/s)", formatBytes(uint64(rate)))),
-	)
+	labelText := fmt.Sprintf("%-*s", labelWidth, label)
+	valueText := fmt.Sprintf("%-*s", valueWidth, formatBytes(value))
+	rateText := fmt.Sprintf("%-*s", rateWidth, fmt.Sprintf("(%s/s)", formatBytes(uint64(rate))))
+
+	return labelStyle.Render(labelText) +
+		valueStyle.Render(valueText) +
+		rateStyle.Render(rateText)
 }
 
 func formatLine(label string, value string) string {
-	return fmt.Sprintf(
-		"%-*s %-*s",
-		labelWidth, labelStyle.Render(label),
-		valueWidth, valueStyle.Render(value),
-	)
+	labelText := fmt.Sprintf("%-*s", labelWidth, label)
+	valueText := fmt.Sprintf("%-*s", valueWidth, value)
+
+	return labelStyle.Render(labelText) + valueStyle.Render(valueText)
 }
 
 // StartMetricsDisplay starts the metrics display UI.
-func StartMetricsDisplay() (*tea.Program, chan<- MetricsMsg) {
+func StartMetricsDisplay(name string) (*tea.Program, chan<- MetricsMsg) {
 	metricsChan := make(chan MetricsMsg, 10)
 
-	p := tea.NewProgram(newMetricsModel())
+	p := tea.NewProgram(newMetricsModel(name))
 
 	go func() {
 		for metrics := range metricsChan {
