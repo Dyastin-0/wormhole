@@ -172,12 +172,14 @@ func http(ctx context.Context, cmd *cli.Command) error {
 	name := cmd.String("name")
 	addr := cmd.String("addr")
 	targetAddr := cmd.String("targetAddr")
+	metrics := cmd.Bool("metrics")
 
 	wormholeClient, err := wclient.New(
 		wclient.WithProtoHTTP,
 		wclient.WithName(name),
 		wclient.WithAddr(addr),
 		wclient.WithTargetAddr(targetAddr),
+		wclient.WithMetrics(metrics),
 	)
 	if err != nil {
 		return fmt.Errorf("failed to initialize wormhole client: %w", err)
@@ -204,12 +206,14 @@ func tcp(ctx context.Context, cmd *cli.Command) error {
 	name := cmd.String("name")
 	addr := cmd.String("addr")
 	targetAddr := cmd.String("targetAddr")
+	metrics := cmd.Bool("metrics")
 
 	wormholeClient, err := wclient.New(
 		wclient.WithProtoTCP,
 		wclient.WithName(name),
 		wclient.WithAddr(addr),
 		wclient.WithTargetAddr(targetAddr),
+		wclient.WithMetrics(metrics),
 	)
 	if err != nil {
 		return fmt.Errorf("failed to initialize wormhole client: %w", err)
@@ -242,7 +246,12 @@ func baseClientFlags(flags ...cli.Flag) []cli.Flag {
 			Name:    "address",
 			Aliases: []string{"addr"},
 			Usage:   "set the wormhole server address",
-			Value:   "wormhole.dyastin.dev:8443",
+			Value:   "wormhole.dyastin.dev:443",
+		},
+		&cli.BoolFlag{
+			Name:    "metrics",
+			Aliases: []string{"m"},
+			Value:   false,
 		},
 	)
 }
@@ -255,7 +264,7 @@ func LogPath(base string) (string, error) {
 
 	logDir := filepath.Join(homeDir, "wormhole-logs", base)
 
-	if err := os.MkdirAll(logDir, 0755); err != nil {
+	if err := os.MkdirAll(logDir, 0o755); err != nil {
 		return "", fmt.Errorf("failed to create log directory: %w", err)
 	}
 

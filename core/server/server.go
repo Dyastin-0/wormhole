@@ -86,7 +86,7 @@ func (s *Server) RunTunneler(ctx context.Context) error {
 
 	go func() {
 		<-ctx.Done()
-		time.Sleep(5 * time.Second)
+		time.Sleep(2 * time.Second)
 		ln.Close()
 	}()
 
@@ -118,7 +118,7 @@ func (s *Server) RunWithListener(ctx context.Context, ln net.Listener) error {
 func (s *Server) RunTunnelerWithListener(ctx context.Context, ln net.Listener) error {
 	go func() {
 		<-ctx.Done()
-		time.Sleep(5 * time.Second)
+		time.Sleep(2 * time.Second)
 		ln.Close()
 	}()
 
@@ -164,7 +164,7 @@ func (s *Server) tunnel(ctx context.Context, conn net.Conn) error {
 func (s *Server) handleConnections(ctx context.Context, ln net.Listener) error {
 	go func() {
 		<-ctx.Done()
-		time.Sleep(5 * time.Second)
+		time.Sleep(2 * time.Second)
 		ln.Close()
 	}()
 
@@ -187,7 +187,10 @@ func (s *Server) handleConnections(ctx context.Context, ln net.Listener) error {
 
 // handleMessages processes messages from a client connection using a yamux session.
 func (s *Server) handleMessages(ctx context.Context, conn net.Conn) error {
-	session, err := yamux.Server(conn, nil)
+	yamuxConfig := yamux.DefaultConfig()
+	yamuxConfig.KeepAliveInterval = 1 * time.Second
+
+	session, err := yamux.Server(conn, yamuxConfig)
 	if err != nil {
 		return fmt.Errorf("failed to create yamux server: %w", err)
 	}
@@ -287,9 +290,19 @@ func (s *Server) handleRequest(ctx context.Context, stream net.Conn, session *ya
 		return err
 	}
 
+	if header.HasFlag(proto.FlagMetrics) {
+		go func(ctx context.Context, tunnel *Tunnel) {
+			er := s.streamMetrics(ctx, tunnel)
+			if er != nil {
+				log.Error().Err(er).Str("domain", domain).Msg("metrics stream stopped")
+			}
+		}(ctx, tunnel)
+	}
+
 	select {
 	case <-ctx.Done():
 	case <-session.CloseChan():
+		log.Info().Str("domain", domain).Msg("session closed")
 	case <-time.After(tunnel.dnsRecord.TTL):
 		log.Info().Str("domain", domain).Msg("tunnel timed out")
 	}
@@ -372,6 +385,62 @@ func (s *Server) sendErr(stream net.Conn, message string) error {
 	_, err = stream.Write(data)
 	if err != nil {
 		return fmt.Errorf("failed to write error response: %w", err)
+	}
+
+	return nil
+}
+
+// streamMetrics streams the tunnel metrics to the tunnel on interval.
+func (s *Server) streamMetrics(ctx context.Context, tunnel *Tunnel) error {
+	stream, err := tunnel.session.Open()
+	if err != nil {
+		return fmt.Errorf("failed to open yamux stream: %w", err)
+	}
+	defer stream.Close()
+
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+			if err := s.sendMetrics(stream, tunnel); err != nil {
+				return fmt.Errorf("failed to send metrics: %w", err)
+			}
+		}
+	}
+}
+
+// sendMetrics sends the latest metrics of the specified tunnel.
+func (s *Server) sendMetrics(stream net.Conn, tunnel *Tunnel) error {
+	metrics := proto.NewMetrics(
+		tunnel.metrics.GetIngressBytes(),
+		tunnel.metrics.GetEgressBytes(),
+		uint64(tunnel.metrics.GetUptime()),
+		tunnel.metrics.GetConnectionCount(),
+		uint32(tunnel.metrics.GetActiveConnections()),
+	)
+	serializedMetrics, err := proto.SerializeMetrics(metrics)
+	if err != nil {
+		return fmt.Errorf("failed to serialize metrics: %w", err)
+	}
+
+	header := proto.NewHeader(proto.TypeMetrics, uint64(len(serializedMetrics)))
+	serializedHeader, err := proto.SerializeHeader(header)
+	if err != nil {
+		return fmt.Errorf("failed to serialize header: %w", err)
+	}
+
+	_, err = stream.Write(serializedHeader)
+	if err != nil {
+		return fmt.Errorf("failed to write header: %w", err)
+	}
+
+	_, err = stream.Write(serializedMetrics)
+	if err != nil {
+		return fmt.Errorf("failed to write metrics: %w", err)
 	}
 
 	return nil

@@ -37,3 +37,9 @@ func WithProtoTCP(c *Client) {
 func WithProtoHTTP(c *Client) {
 	c.proto = proto.ProtoHTTP
 }
+
+func WithMetrics(metrics bool) OptFunc {
+	return func(c *Client) {
+		c.metrics = metrics
+	}
+}

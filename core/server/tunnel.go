@@ -64,12 +64,18 @@ func (t *Tunnel) From(ctx context.Context, stream net.Conn) error {
 	defer proxyCancel()
 
 	go func() {
-		<-ctx.Done()
-		time.Sleep(5 * time.Second)
+		select {
+		case <-ctx.Done():
+		case <-t.session.CloseChan():
+		}
+		time.Sleep(2 * time.Second)
 		proxyCancel()
 	}()
 
 	proxyStream := t.metrics.NewProxyReadWriter(stream)
+
+	t.metrics.IncrementConnections()
+	defer t.metrics.DecrementActiveConnections()
 
 	return proxy.StreamWithContext(proxyCtx, proxyStream, remoteStream)
 }

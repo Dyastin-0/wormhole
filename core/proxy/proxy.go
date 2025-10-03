@@ -5,7 +5,6 @@ import (
 	"context"
 	"io"
 	"net"
-	"sync"
 	"time"
 )
 
@@ -14,36 +13,27 @@ func Stream(src, dst io.ReadWriter) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	var wg sync.WaitGroup
-	var once sync.Once
-	var err error
-
-	setError := func(e error) {
-		once.Do(func() {
-			err = e
-			cancel()
-		})
-	}
+	errch := make(chan error, 1)
 
 	// Copy src -> dst
-	wg.Add(1)
 	go func() {
-		defer wg.Done()
-		if copyErr := copyWithContext(ctx, dst, src); copyErr != nil {
-			setError(copyErr)
+		err := CopyWithContext(ctx, dst, src)
+		select {
+		case errch <- err:
+		default:
 		}
 	}()
 
 	// Copy dst -> src
-	wg.Add(1)
 	go func() {
-		defer wg.Done()
-		if copyErr := copyWithContext(ctx, src, dst); copyErr != nil {
-			setError(copyErr)
+		err := CopyWithContext(ctx, src, dst)
+		select {
+		case errch <- err:
+		default:
 		}
 	}()
 
-	wg.Wait()
+	err := <-errch
 
 	closeConnection(src)
 	closeConnection(dst)
@@ -53,61 +43,51 @@ func Stream(src, dst io.ReadWriter) error {
 
 // StreamWithContext is Stream with context.
 func StreamWithContext(ctx context.Context, src, dst io.ReadWriter) error {
-	var wg sync.WaitGroup
-	var once sync.Once
-	var err error
+	errch := make(chan error, 1)
 
 	localCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	setError := func(e error) {
-		once.Do(func() {
-			err = e
-			cancel()
-		})
-	}
-
 	// Copy src -> dst
-	wg.Add(1)
 	go func() {
-		defer wg.Done()
-		if copyErr := copyWithContext(localCtx, dst, src); copyErr != nil {
-			setError(copyErr)
+		err := CopyWithContext(localCtx, dst, src)
+		select {
+		case errch <- err:
+		default:
 		}
 	}()
 
 	// Copy dst -> src
-	wg.Add(1)
 	go func() {
-		defer wg.Done()
-		if copyErr := copyWithContext(localCtx, src, dst); copyErr != nil {
-			setError(copyErr)
+		err := CopyWithContext(localCtx, src, dst)
+		select {
+		case errch <- err:
+		default:
 		}
 	}()
 
-	done := make(chan struct{})
-	go func() {
-		wg.Wait()
-		close(done)
-	}()
-
 	select {
-	case <-done:
+	case <-errch:
 	case <-ctx.Done():
-		setError(ctx.Err())
-		cancel()
-		<-done
 	}
 
+	cancel()
 	closeConnection(src)
 	closeConnection(dst)
 
-	return err
+	return <-errch
 }
 
-// copyWithContext performs io.Copy with context cancellation.
-func copyWithContext(ctx context.Context, dst io.Writer, src io.Reader) error {
-	buf := make([]byte, 32*1024) // 32KB buffer
+// CopyWithContext performs io.Copy with context cancellation.
+func CopyWithContext(ctx context.Context, dst, src io.ReadWriter) error {
+	buf := make([]byte, 32*1024)
+
+	if conn, ok := src.(net.Conn); ok {
+		go func() {
+			<-ctx.Done()
+			conn.Close()
+		}()
+	}
 
 	for {
 		select {
@@ -117,15 +97,22 @@ func copyWithContext(ctx context.Context, dst io.Writer, src io.Reader) error {
 		}
 
 		if conn, ok := src.(net.Conn); ok {
-			conn.SetReadDeadline(time.Now().Add(1 * time.Second))
+			if deadline, ok := ctx.Deadline(); ok {
+				conn.SetReadDeadline(deadline)
+			} else {
+				conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+			}
 		}
 
 		n, readErr := src.Read(buf)
 		if n > 0 {
 			if conn, ok := dst.(net.Conn); ok {
-				conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
+				if deadline, ok := ctx.Deadline(); ok {
+					conn.SetWriteDeadline(deadline)
+				} else {
+					conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
+				}
 			}
-
 			_, writeErr := dst.Write(buf[:n])
 			if writeErr != nil {
 				return writeErr
@@ -142,9 +129,6 @@ func copyWithContext(ctx context.Context, dst io.Writer, src io.Reader) error {
 				}
 			}
 
-			if readErr == io.EOF {
-				return nil
-			}
 			return readErr
 		}
 	}

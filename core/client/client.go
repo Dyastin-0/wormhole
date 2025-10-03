@@ -30,6 +30,8 @@ type Client struct {
 	proto uint8
 	// name is the desired subdomain for the tunnel (e.g., "example" for "example.domain.com").
 	name string
+	// metrics specifies if the client want to stream the tunnel metrics.
+	metrics bool
 }
 
 // New creates a new Client with the specified configuration options.
@@ -64,7 +66,10 @@ func (c *Client) RunWithTCP(ctx context.Context) error {
 	}
 	defer conn.Close()
 
-	session, err := yamux.Client(conn, nil)
+	yamuxConfig := yamux.DefaultConfig()
+	yamuxConfig.KeepAliveInterval = 1 * time.Second
+
+	session, err := yamux.Client(conn, yamuxConfig)
 	if err != nil {
 		return fmt.Errorf("failed to create yamux client: %w", err)
 	}
@@ -109,10 +114,10 @@ func (c *Client) RunWithTCP(ctx context.Context) error {
 	switch response.Status {
 	case proto.StatusNameTaken:
 		prettyPrint("err", fmt.Sprintf("subdomain '%s' is already in use", c.name))
-		return fmt.Errorf("subdomain '%s' is already in use", c.name)
+		return nil
 	case proto.StatusUnsupportedProto:
 		prettyPrint("err", fmt.Sprintf("protocol '%v' is not supported", c.proto))
-		return fmt.Errorf("protocol '%v' is not supported", c.proto)
+		return nil
 	case proto.StatusOK:
 	default:
 		prettyPrint("err", fmt.Sprintf("unexpected response status: %v", response.Status))
@@ -138,8 +143,7 @@ func (c *Client) Run(ctx context.Context) error {
 	}
 
 	tlsConfig := &tls.Config{
-		ServerName:         host,
-		InsecureSkipVerify: true,
+		ServerName: host,
 	}
 
 	dialer := &tls.Dialer{
@@ -197,10 +201,10 @@ func (c *Client) Run(ctx context.Context) error {
 	switch response.Status {
 	case proto.StatusNameTaken:
 		prettyPrint("err", fmt.Sprintf("subdomain '%s' is already in use", c.name))
-		return fmt.Errorf("subdomain '%s' is already in use", c.name)
+		return nil
 	case proto.StatusUnsupportedProto:
 		prettyPrint("err", fmt.Sprintf("protocol '%v' is not supported", c.proto))
-		return fmt.Errorf("protocol '%v' is not supported", c.proto)
+		return nil
 	case proto.StatusOK:
 	default:
 		prettyPrint("err", fmt.Sprintf("unexpected response status: %v", response.Status))
@@ -233,6 +237,10 @@ func (c *Client) sendRequest(ctx context.Context, stream net.Conn) (*proto.Heade
 	}
 
 	header := proto.NewHeader(proto.TypeRequest, uint64(len(serializedRequest)))
+	if c.metrics {
+		header.SetFlag(proto.FlagMetrics)
+	}
+
 	serializedHeader, err := proto.SerializeHeader(header)
 	if err != nil {
 		return nil, fmt.Errorf("failed to serialize header: %w", err)
@@ -284,12 +292,6 @@ func (c *Client) ForwardStream(ctx context.Context, stream net.Conn) error {
 
 // handleMessages processes incoming multiplexed streams (control streams) from the server.
 func (c *Client) handleMessages(ctx context.Context, session *yamux.Session) error {
-	go func() {
-		<-ctx.Done()
-		time.Sleep(5 * time.Second)
-		session.Close()
-	}()
-
 	for {
 		stream, err := session.Accept()
 		if err != nil {
@@ -333,18 +335,90 @@ func (c *Client) handleMessages(ctx context.Context, session *yamux.Session) err
 					log.Error().Err(err).Msg("failed to send ack")
 					return
 				}
-				if err := c.ForwardStream(ctx, stream); err != nil {
-					log.Error().Err(err).Msg("stream stopped")
-				}
+				c.ForwardStream(ctx, stream)
 			}(ctx, stream)
+		case proto.TypeMetrics:
+			go c.handleMetrics(ctx, header, stream)
 		case proto.TypeEnd:
 			stream.Close()
 			prettyPrint("inf", "tunnel timed out")
 			return nil
-
 		default:
 			log.Debug().Msgf("unexpected header type: %v", header.Type)
 			stream.Close()
+		}
+	}
+}
+
+// handleMetrics handles metrics display.
+func (c *Client) handleMetrics(ctx context.Context, header *proto.Header, stream net.Conn) error {
+	defer stream.Close()
+
+	program, metricsChan := StartMetricsDisplay()
+	defer close(metricsChan)
+
+	go func() {
+		if _, err := program.Run(); err != nil {
+			log.Error().Err(err).Msg("metrics display error")
+		}
+	}()
+
+	buf := make([]byte, header.Length)
+	_, err := io.ReadFull(stream, buf)
+	if err != nil {
+		return fmt.Errorf("failed to read metrics: %w", err)
+	}
+
+	deserializedMetrics, err := proto.DeserializeMetrics(buf)
+	if err != nil {
+		return fmt.Errorf("failed to deserialize metrics: %w", err)
+	}
+
+	metricsChan <- MetricsMsg{
+		Ingress:           deserializedMetrics.Ingress,
+		Egress:            deserializedMetrics.Egress,
+		Uptime:            deserializedMetrics.Uptime,
+		ConnectionCount:   deserializedMetrics.ConnectionCount,
+		ActiveConnections: deserializedMetrics.ActiveConnections,
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+			headerBuf := make([]byte, proto.HeaderSize)
+			_, err := io.ReadFull(stream, headerBuf)
+			if err != nil {
+				if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+					return nil
+				}
+				return fmt.Errorf("failed to read metrics header: %w", err)
+			}
+
+			h, err := proto.DeserializeHeader(headerBuf)
+			if err != nil {
+				return fmt.Errorf("failed to deserialize header: %w", err)
+			}
+
+			metricsBuf := make([]byte, h.Length)
+			_, err = io.ReadFull(stream, metricsBuf)
+			if err != nil {
+				return fmt.Errorf("failed to read metrics: %w", err)
+			}
+
+			deserializedMetrics, err := proto.DeserializeMetrics(metricsBuf)
+			if err != nil {
+				return fmt.Errorf("failed to deserialize metrics: %w", err)
+			}
+
+			metricsChan <- MetricsMsg{
+				Ingress:           deserializedMetrics.Ingress,
+				Egress:            deserializedMetrics.Egress,
+				Uptime:            deserializedMetrics.Uptime,
+				ConnectionCount:   deserializedMetrics.ConnectionCount,
+				ActiveConnections: deserializedMetrics.ActiveConnections,
+			}
 		}
 	}
 }
