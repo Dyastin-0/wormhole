@@ -1,10 +1,5 @@
 # Wormhole
-A simple TCP-based reverse tunnel service written in `Go`.
+A TCP-based reverse tunnel service written in `Go`.
 
-### Demos
+![Demo](snapshots/demo.gif)
 
-#### HTTP
-![Demo](snapshots/http.gif)
-
-#### TCP
-![Demo](snapshots/tcp.gif)
