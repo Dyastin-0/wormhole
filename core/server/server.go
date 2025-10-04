@@ -291,12 +291,15 @@ func (s *Server) handleRequest(ctx context.Context, stream net.Conn, session *ya
 	}
 
 	if header.HasFlag(proto.FlagMetrics) {
+		metricsCtx, metricsCancel := context.WithCancel(ctx)
+		defer metricsCancel()
+
 		go func(ctx context.Context, tunnel *Tunnel) {
 			er := s.streamMetrics(ctx, tunnel)
 			if er != nil {
 				log.Error().Err(er).Str("domain", domain).Msg("metrics stream stopped")
 			}
-		}(ctx, tunnel)
+		}(metricsCtx, tunnel)
 	}
 
 	select {

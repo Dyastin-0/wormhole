@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"time"
+	"runtime"
 
 	"github.com/Dyastin-0/wormhole/core/metrics"
 	"github.com/Dyastin-0/wormhole/core/proto"
@@ -28,6 +28,12 @@ type Tunnel struct {
 
 // From opens a stream (remoteStream) from the session then forwards the stream to it.
 func (t *Tunnel) From(ctx context.Context, stream net.Conn) error {
+	defer func() {
+		if t.metrics.GetConnectionCount()%100 == 0 {
+			runtime.GC()
+		}
+	}()
+
 	remoteStream, err := t.session.Open()
 	if err != nil {
 		return fmt.Errorf("failed to open yamux session: %w", err)
@@ -68,7 +74,6 @@ func (t *Tunnel) From(ctx context.Context, stream net.Conn) error {
 		case <-ctx.Done():
 		case <-t.session.CloseChan():
 		}
-		time.Sleep(2 * time.Second)
 		proxyCancel()
 	}()
 
