@@ -5,82 +5,92 @@ import (
 	"context"
 	"io"
 	"net"
+	"sync"
 	"time"
 )
+
+var bufferPool = sync.Pool{
+	New: func() any {
+		buf := make([]byte, 32*1024)
+		return &buf
+	},
+}
 
 // Stream handles bidirectional stream between src and dst.
 func Stream(src, dst io.ReadWriter) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	errch := make(chan error, 1)
+	errch := make(chan error, 2)
 
 	// Copy src -> dst
 	go func() {
 		err := CopyWithContext(ctx, dst, src)
-		select {
-		case errch <- err:
-		default:
-		}
+		errch <- err
 	}()
 
 	// Copy dst -> src
 	go func() {
 		err := CopyWithContext(ctx, src, dst)
-		select {
-		case errch <- err:
-		default:
-		}
+		errch <- err
 	}()
 
 	err := <-errch
-
+	cancel()
 	closeConnection(src)
 	closeConnection(dst)
+
+	<-errch
 
 	return err
 }
 
 // StreamWithContext is Stream with context.
 func StreamWithContext(ctx context.Context, src, dst io.ReadWriter) error {
-	errch := make(chan error, 1)
-
+	errch := make(chan error, 2)
 	localCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	// Copy src -> dst
 	go func() {
 		err := CopyWithContext(localCtx, dst, src)
-		select {
-		case errch <- err:
-		default:
-		}
+		errch <- err
 	}()
 
 	// Copy dst -> src
 	go func() {
 		err := CopyWithContext(localCtx, src, dst)
-		select {
-		case errch <- err:
-		default:
-		}
+		errch <- err
 	}()
 
+	var firstErr error
+
 	select {
-	case <-errch:
+	case firstErr = <-errch:
+		cancel()
 	case <-ctx.Done():
+		cancel()
+		firstErr = ctx.Err()
 	}
 
-	cancel()
 	closeConnection(src)
 	closeConnection(dst)
 
-	return <-errch
+	<-errch
+	if firstErr == nil {
+		firstErr = <-errch
+	} else {
+		<-errch
+	}
+
+	return firstErr
 }
 
 // CopyWithContext performs io.Copy with context cancellation.
 func CopyWithContext(ctx context.Context, dst, src io.ReadWriter) error {
-	buf := make([]byte, 32*1024)
+	bufPtr := bufferPool.Get().(*[]byte)
+	defer bufferPool.Put(bufPtr)
+	buf := *bufPtr
 
 	if conn, ok := src.(net.Conn); ok {
 		go func() {
@@ -128,7 +138,6 @@ func CopyWithContext(ctx context.Context, dst, src io.ReadWriter) error {
 					continue
 				}
 			}
-
 			return readErr
 		}
 	}
