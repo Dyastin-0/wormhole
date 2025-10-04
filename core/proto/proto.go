@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"sync"
 )
 
 // Constants definition of message types for the Wormhole protocol.
@@ -37,9 +38,9 @@ const (
 	MaxStringLength uint32 = 4096
 	// HeaderSize is the fixed size of a protocol header in bytes (12 bytes).
 	HeaderSize uint8 = 12
-	// RequestSize is the fixed size of a request’s non-string fields in bytes (5 bytes).
+	// RequestSize is the fixed size of a request's non-string fields in bytes (5 bytes).
 	RequestSize uint8 = 5
-	// ResponseSize is the fixed size of a response’s non-string fields in bytes (13 bytes).
+	// ResponseSize is the fixed size of a response's non-string fields in bytes (13 bytes).
 	ResponseSize uint8 = 13
 	// MetricsSize is the fixed size of a metrics' fields in bytes (36).
 	MetricsSize uint8 = 36
@@ -103,6 +104,37 @@ var (
 	ErrInvalidStatus = errors.New("invalid status code")
 )
 
+// Buffer pools for reusing byte slices across serialization calls
+var (
+	headerBufferPool = sync.Pool{
+		New: func() interface{} {
+			buf := make([]byte, 0, HeaderSize)
+			return &buf
+		},
+	}
+
+	requestBufferPool = sync.Pool{
+		New: func() interface{} {
+			buf := make([]byte, 0, 512)
+			return &buf
+		},
+	}
+
+	responseBufferPool = sync.Pool{
+		New: func() interface{} {
+			buf := make([]byte, 0, 512)
+			return &buf
+		},
+	}
+
+	metricsBufferPool = sync.Pool{
+		New: func() interface{} {
+			buf := make([]byte, 0, MetricsSize)
+			return &buf
+		},
+	}
+)
+
 // Header represents a Wormhole protocol message header.
 type Header struct {
 	// Version specifies the protocol version (must be Version).
@@ -132,7 +164,7 @@ func (h *Header) ClearFlag(flag uint8) {
 	h.Flags &^= flag
 }
 
-// Request represents a client’s request to establish a tunnel.
+// Request represents a client's request to establish a tunnel.
 type Request struct {
 	// Proto specifies the tunnel protocol (e.g., ProtoHTTP, ProtoTCP).
 	Proto uint8
@@ -142,11 +174,11 @@ type Request struct {
 	Name string
 }
 
-// Response represents the server’s response to a tunnel request.
+// Response represents the server's response to a tunnel request.
 type Response struct {
 	// Status indicates the result of the request (e.g., StatusOK, StatusNameTaken).
 	Status uint8
-	// TTLHours specifies the tunnel’s lifetime in hours.
+	// TTLHours specifies the tunnel's lifetime in hours.
 	TTLHours uint64
 	// DomainLength is the length of the Domain field in bytes (must not exceed MaxStringLength).
 	DomainLength uint32
@@ -168,13 +200,17 @@ type Metrics struct {
 	ActiveConnections int32
 }
 
-// SerializeHeader serializes a Header to a byte slice.
+// SerializeHeader serializes a Header to a byte slice using a pooled buffer.
 func SerializeHeader(header *Header) ([]byte, error) {
 	if err := validateHeader(header); err != nil {
 		return nil, fmt.Errorf("header validation failed: %w", err)
 	}
 
-	buf := bytes.NewBuffer(make([]byte, 0, HeaderSize))
+	bufPtr := headerBufferPool.Get().(*[]byte)
+	defer headerBufferPool.Put(bufPtr)
+
+	*bufPtr = (*bufPtr)[:0]
+	buf := bytes.NewBuffer(*bufPtr)
 
 	if err := binary.Write(buf, binary.BigEndian, header.Version); err != nil {
 		return nil, fmt.Errorf("failed to write version: %w", err)
@@ -192,7 +228,9 @@ func SerializeHeader(header *Header) ([]byte, error) {
 		return nil, fmt.Errorf("failed to write reserved: %w", err)
 	}
 
-	return buf.Bytes(), nil
+	result := make([]byte, buf.Len())
+	copy(result, buf.Bytes())
+	return result, nil
 }
 
 // DeserializeHeader deserializes a byte slice into a Header.
@@ -215,14 +253,21 @@ func DeserializeHeader(data []byte) (*Header, error) {
 	return &header, nil
 }
 
-// SerializeRequest serializes a Request to a byte slice.
+// SerializeRequest serializes a Request to a byte slice using a pooled buffer.
 func SerializeRequest(req *Request) ([]byte, error) {
 	if err := validateRequest(req); err != nil {
 		return nil, fmt.Errorf("request validation failed: %w", err)
 	}
 
+	bufPtr := requestBufferPool.Get().(*[]byte)
+	defer requestBufferPool.Put(bufPtr)
+
+	*bufPtr = (*bufPtr)[:0]
 	totalSize := int(RequestSize) + len(req.Name)
-	buf := bytes.NewBuffer(make([]byte, 0, totalSize))
+	if cap(*bufPtr) < totalSize {
+		*bufPtr = make([]byte, 0, totalSize)
+	}
+	buf := bytes.NewBuffer(*bufPtr)
 
 	if err := binary.Write(buf, binary.BigEndian, req.Proto); err != nil {
 		return nil, fmt.Errorf("failed to write protocol: %w", err)
@@ -234,7 +279,9 @@ func SerializeRequest(req *Request) ([]byte, error) {
 		return nil, fmt.Errorf("failed to write name: %w", err)
 	}
 
-	return buf.Bytes(), nil
+	result := make([]byte, buf.Len())
+	copy(result, buf.Bytes())
+	return result, nil
 }
 
 // DeserializeRequest deserializes a byte slice into a Request.
@@ -272,14 +319,21 @@ func DeserializeRequest(data []byte) (*Request, error) {
 	return &req, nil
 }
 
-// SerializeResponse serializes a Response to a byte slice.
+// SerializeResponse serializes a Response to a byte slice using a pooled buffer.
 func SerializeResponse(resp *Response) ([]byte, error) {
 	if err := validateResponse(resp); err != nil {
 		return nil, fmt.Errorf("response validation failed: %w", err)
 	}
 
+	bufPtr := responseBufferPool.Get().(*[]byte)
+	defer responseBufferPool.Put(bufPtr)
+
+	*bufPtr = (*bufPtr)[:0]
 	totalSize := int(ResponseSize) + len(resp.Domain)
-	buf := bytes.NewBuffer(make([]byte, 0, totalSize))
+	if cap(*bufPtr) < totalSize {
+		*bufPtr = make([]byte, 0, totalSize)
+	}
+	buf := bytes.NewBuffer(*bufPtr)
 
 	if err := binary.Write(buf, binary.BigEndian, resp.Status); err != nil {
 		return nil, fmt.Errorf("failed to write status: %w", err)
@@ -294,7 +348,9 @@ func SerializeResponse(resp *Response) ([]byte, error) {
 		return nil, fmt.Errorf("failed to write domain: %w", err)
 	}
 
-	return buf.Bytes(), nil
+	result := make([]byte, buf.Len())
+	copy(result, buf.Bytes())
+	return result, nil
 }
 
 // DeserializeResponse deserializes a byte slice into a Response.
@@ -334,9 +390,13 @@ func DeserializeResponse(data []byte) (*Response, error) {
 	return &resp, nil
 }
 
-// SerializeMetrics serializes Metrics into byte slice.
+// SerializeMetrics serializes Metrics into byte slice using a pooled buffer.
 func SerializeMetrics(metrics *Metrics) ([]byte, error) {
-	buf := bytes.NewBuffer(make([]byte, 0, MetricsSize))
+	bufPtr := metricsBufferPool.Get().(*[]byte)
+	defer metricsBufferPool.Put(bufPtr)
+
+	*bufPtr = (*bufPtr)[:0]
+	buf := bytes.NewBuffer(*bufPtr)
 
 	if err := binary.Write(buf, binary.BigEndian, metrics.Ingress); err != nil {
 		return nil, fmt.Errorf("failed to write ingress: %w", err)
@@ -354,7 +414,9 @@ func SerializeMetrics(metrics *Metrics) ([]byte, error) {
 		return nil, fmt.Errorf("failed to write active connections: %w", err)
 	}
 
-	return buf.Bytes(), nil
+	result := make([]byte, buf.Len())
+	copy(result, buf.Bytes())
+	return result, nil
 }
 
 // DeserializeMetrics deserializes a byte slice into Metrics.
@@ -373,7 +435,7 @@ func DeserializeMetrics(data []byte) (*Metrics, error) {
 	return &metrics, nil
 }
 
-// validateHeader validates a Header’s fields.
+// validateHeader validates a Header's fields.
 func validateHeader(header *Header) error {
 	if header.Version != Version {
 		return ErrInvalidVersion
@@ -394,7 +456,7 @@ func validateHeader(header *Header) error {
 	return nil
 }
 
-// validateRequest validates a Request’s fields.
+// validateRequest validates a Request's fields.
 func validateRequest(req *Request) error {
 	if req.Proto != ProtoHTTP && req.Proto != ProtoTCP {
 		return ErrInvalidProtocol
@@ -415,7 +477,7 @@ func validateRequest(req *Request) error {
 	return nil
 }
 
-// validateResponse validates a Response’s fields.
+// validateResponse validates a Response's fields.
 func validateResponse(resp *Response) error {
 	switch resp.Status {
 	case StatusOK, StatusNameTaken, StatusUnsupportedProto:
