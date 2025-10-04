@@ -5,16 +5,8 @@ import (
 	"context"
 	"io"
 	"net"
-	"sync"
 	"time"
 )
-
-var bufferPool = sync.Pool{
-	New: func() any {
-		buf := make([]byte, 32*1024)
-		return &buf
-	},
-}
 
 // Stream handles bidirectional stream between src and dst.
 func Stream(src, dst io.ReadWriter) error {
@@ -88,10 +80,6 @@ func StreamWithContext(ctx context.Context, src, dst io.ReadWriter) error {
 
 // CopyWithContext performs io.Copy with context cancellation.
 func CopyWithContext(ctx context.Context, dst, src io.ReadWriter) error {
-	bufPtr := bufferPool.Get().(*[]byte)
-	defer bufferPool.Put(bufPtr)
-	buf := *bufPtr
-
 	if conn, ok := src.(net.Conn); ok {
 		go func() {
 			<-ctx.Done()
@@ -99,47 +87,29 @@ func CopyWithContext(ctx context.Context, dst, src io.ReadWriter) error {
 		}()
 	}
 
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
+	if conn, ok := src.(net.Conn); ok {
+		if deadline, ok := ctx.Deadline(); ok {
+			conn.SetReadDeadline(deadline)
+		} else {
+			conn.SetReadDeadline(time.Now().Add(30 * time.Second))
 		}
+	}
 
-		if conn, ok := src.(net.Conn); ok {
-			if deadline, ok := ctx.Deadline(); ok {
-				conn.SetReadDeadline(deadline)
-			} else {
-				conn.SetReadDeadline(time.Now().Add(5 * time.Second))
-			}
+	if conn, ok := dst.(net.Conn); ok {
+		if deadline, ok := ctx.Deadline(); ok {
+			conn.SetWriteDeadline(deadline)
+		} else {
+			conn.SetWriteDeadline(time.Now().Add(30 * time.Second))
 		}
+	}
 
-		n, readErr := src.Read(buf)
-		if n > 0 {
-			if conn, ok := dst.(net.Conn); ok {
-				if deadline, ok := ctx.Deadline(); ok {
-					conn.SetWriteDeadline(deadline)
-				} else {
-					conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
-				}
-			}
-			_, writeErr := dst.Write(buf[:n])
-			if writeErr != nil {
-				return writeErr
-			}
-		}
+	_, err := io.Copy(dst, src)
 
-		if readErr != nil {
-			if netErr, ok := readErr.(net.Error); ok && netErr.Timeout() {
-				select {
-				case <-ctx.Done():
-					return ctx.Err()
-				default:
-					continue
-				}
-			}
-			return readErr
-		}
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+		return err
 	}
 }
 
