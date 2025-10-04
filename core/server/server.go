@@ -157,7 +157,10 @@ func (s *Server) tunnel(ctx context.Context, conn net.Conn) error {
 		return fmt.Errorf("no tunnel for %s", sni)
 	}
 
-	return tunnel.From(ctx, conn)
+	tCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	return tunnel.From(tCtx, conn)
 }
 
 // handleConnections accepts incoming client control connections and processes them concurrently.
