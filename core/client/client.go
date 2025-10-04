@@ -69,6 +69,7 @@ func (c *Client) RunWithTCP(ctx context.Context) error {
 	defer conn.Close()
 
 	yamuxConfig := yamux.DefaultConfig()
+	yamuxConfig.MaxStreamWindowSize = 16 * 1024 * 1024
 	yamuxConfig.KeepAliveInterval = 1 * time.Second
 
 	session, err := yamux.Client(conn, yamuxConfig)
