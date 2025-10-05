@@ -80,12 +80,20 @@ func CopyWithContext(ctx context.Context, dst, src io.ReadWriter) error {
 	defer bufferPool.Put(bufPtr)
 	buf := *bufPtr
 
+	done := make(chan struct{})
+	defer close(done)
+
 	if conn, ok := src.(net.Conn); ok {
 		go func() {
-			<-ctx.Done()
-			conn.Close()
+			select {
+			case <-ctx.Done():
+				conn.Close()
+			case <-done:
+				return
+			}
 		}()
 	}
+
 	for {
 		select {
 		case <-ctx.Done():

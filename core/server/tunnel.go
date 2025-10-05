@@ -33,6 +33,7 @@ func (t *Tunnel) From(ctx context.Context, stream net.Conn) error {
 		runtime.GC()
 		log.Debug().Msg(fmt.Sprintf("GO: %d", runtime.NumGoroutine()))
 	}()
+
 	remoteStream, err := t.session.Open()
 	if err != nil {
 		return fmt.Errorf("failed to open yamux session: %w", err)
