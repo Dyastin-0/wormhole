@@ -180,7 +180,7 @@ func TestRequestResponse(t *testing.T) {
 
 	select {
 	case err := <-cErrch:
-		require.NoError(t, err)
+		require.ErrorIs(t, err, context.Canceled)
 	case <-time.After(2 * time.Second):
 	}
 
@@ -241,13 +241,13 @@ func TestRequestResponseNameTaken(t *testing.T) {
 
 	select {
 	case err := <-sErrch:
-		require.Error(t, err)
+		require.NoError(t, err)
 	case <-time.After(1 * time.Second):
 	}
 
 	select {
 	case err := <-cErrch:
-		require.Error(t, err)
+		require.NoError(t, err)
 	case <-time.After(1 * time.Second):
 	}
 

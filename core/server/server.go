@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"sync"
 	"time"
 
 	"github.com/Dyastin-0/wormhole/core/metrics"
@@ -23,6 +24,22 @@ import (
 
 // DefaultTunnelTTL is the default time-to-live for tunnels (1 hour).
 const DefaultTunnelTTL = 1 * time.Hour
+
+var (
+	headerBufferPool = sync.Pool{
+		New: func() any {
+			buf := make([]byte, proto.HeaderSize)
+			return &buf
+		},
+	}
+
+	payloadBufferPool = sync.Pool{
+		New: func() any {
+			buf := make([]byte, 4096)
+			return &buf
+		},
+	}
+)
 
 // Server manages the Wormhole tunneling service.
 type Server struct {
@@ -205,15 +222,17 @@ func (s *Server) handleMessages(ctx context.Context, conn net.Conn) error {
 	}
 	defer stream.Close()
 
-	buf := make([]byte, proto.HeaderSize)
-	_, err = io.ReadFull(stream, buf)
+	bufPtr := headerBufferPool.Get().(*[]byte)
+	defer headerBufferPool.Put(bufPtr)
+
+	_, err = io.ReadFull(stream, *bufPtr)
 	if err != nil {
 		return fmt.Errorf("failed to read header: %w", err)
 	}
 
-	header, err := proto.DeserializeHeader(buf)
+	header, err := proto.DeserializeHeader(*bufPtr)
 	if err != nil {
-		return fmt.Errorf("failed to deserialize header: %w", err)
+		return fmt.Errorf("failed to read header: %w", err)
 	}
 
 	switch header.Type {
@@ -226,13 +245,17 @@ func (s *Server) handleMessages(ctx context.Context, conn net.Conn) error {
 
 // handleRequest processes a client’s tunnel request.
 func (s *Server) handleRequest(ctx context.Context, stream net.Conn, session *yamux.Session, header *proto.Header) error {
-	buf := make([]byte, header.Length)
-	_, err := io.ReadFull(stream, buf)
+	bufPtr := payloadBufferPool.Get().(*[]byte)
+	defer payloadBufferPool.Put(bufPtr)
+
+	*bufPtr = (*bufPtr)[:header.Length]
+
+	_, err := io.ReadFull(stream, *bufPtr)
 	if err != nil {
 		return fmt.Errorf("failed to read request: %w", err)
 	}
 
-	req, err := proto.DeserializeRequest(buf)
+	req, err := proto.DeserializeRequest(*bufPtr)
 	if err != nil {
 		sendErr := s.sendErr(stream, "failed to deserialize request")
 		if sendErr != nil {
