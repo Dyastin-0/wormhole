@@ -30,7 +30,7 @@ type Tunnel struct {
 // From opens a stream (remoteStream) from the session then forwards the stream to it.
 func (t *Tunnel) From(ctx context.Context, stream net.Conn) error {
 	defer func() {
-		log.Debug().Msg(fmt.Sprint("GO: %d", runtime.NumGoroutine()))
+		log.Debug().Msg(fmt.Sprintf("GO: %d", runtime.NumGoroutine()))
 	}()
 
 	t.metrics.IncrementConnections()
