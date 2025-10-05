@@ -22,6 +22,7 @@ func Stream(src, dst io.ReadWriter) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	errch := make(chan error, 1)
+
 	// Copy src -> dst
 	go func() {
 		err := CopyWithContext(ctx, dst, src)
@@ -38,9 +39,11 @@ func Stream(src, dst io.ReadWriter) error {
 		default:
 		}
 	}()
+
 	err := <-errch
 	closeConnection(src)
 	closeConnection(dst)
+
 	return err
 }
 
@@ -49,6 +52,7 @@ func StreamWithContext(ctx context.Context, src, dst io.ReadWriter) error {
 	errch := make(chan error, 1)
 	localCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
+
 	// Copy src -> dst
 	go func() {
 		err := CopyWithContext(localCtx, dst, src)
@@ -65,14 +69,20 @@ func StreamWithContext(ctx context.Context, src, dst io.ReadWriter) error {
 		default:
 		}
 	}()
-	select {
-	case <-errch:
-	case <-ctx.Done():
-	}
-	cancel()
+
+	go func() {
+		err := CopyWithContext(ctx, src, dst)
+		select {
+		case errch <- err:
+		default:
+		}
+	}()
+
+	err := <-errch
 	closeConnection(src)
 	closeConnection(dst)
-	return <-errch
+
+	return err
 }
 
 // CopyWithContext performs io.Copy with context cancellation.
@@ -101,6 +111,22 @@ func CopyWithContext(ctx context.Context, dst, src io.ReadWriter) error {
 	maxRetries := 5
 	consecutiveTimeouts := 0
 
+	if conn, ok := src.(net.Conn); ok {
+		if deadline, ok := ctx.Deadline(); ok {
+			conn.SetReadDeadline(deadline)
+		} else {
+			conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+		}
+	}
+
+	if conn, ok := dst.(net.Conn); ok {
+		if deadline, ok := ctx.Deadline(); ok {
+			conn.SetWriteDeadline(deadline)
+		} else {
+			conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
+		}
+	}
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -108,26 +134,11 @@ func CopyWithContext(ctx context.Context, dst, src io.ReadWriter) error {
 		default:
 		}
 
-		if conn, ok := src.(net.Conn); ok {
-			if deadline, ok := ctx.Deadline(); ok {
-				conn.SetReadDeadline(deadline)
-			} else {
-				conn.SetReadDeadline(time.Now().Add(5 * time.Second))
-			}
-		}
-
 		n, readErr := src.Read(buf)
 		if n > 0 {
 			consecutiveTimeouts = 0
 			backoff = 10 * time.Millisecond
 
-			if conn, ok := dst.(net.Conn); ok {
-				if deadline, ok := ctx.Deadline(); ok {
-					conn.SetWriteDeadline(deadline)
-				} else {
-					conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
-				}
-			}
 			_, writeErr := dst.Write(buf[:n])
 			if writeErr != nil {
 				return writeErr
