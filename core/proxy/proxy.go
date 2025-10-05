@@ -3,6 +3,7 @@ package proxy
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net"
 	"sync"
@@ -94,12 +95,19 @@ func CopyWithContext(ctx context.Context, dst, src io.ReadWriter) error {
 		}()
 	}
 
+	// Exponential backoff
+	backoff := 10 * time.Millisecond
+	maxBackoff := 1 * time.Second
+	maxRetries := 5
+	consecutiveTimeouts := 0
+
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
 		}
+
 		if conn, ok := src.(net.Conn); ok {
 			if deadline, ok := ctx.Deadline(); ok {
 				conn.SetReadDeadline(deadline)
@@ -107,8 +115,12 @@ func CopyWithContext(ctx context.Context, dst, src io.ReadWriter) error {
 				conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 			}
 		}
+
 		n, readErr := src.Read(buf)
 		if n > 0 {
+			consecutiveTimeouts = 0
+			backoff = 10 * time.Millisecond
+
 			if conn, ok := dst.(net.Conn); ok {
 				if deadline, ok := ctx.Deadline(); ok {
 					conn.SetWriteDeadline(deadline)
@@ -121,12 +133,23 @@ func CopyWithContext(ctx context.Context, dst, src io.ReadWriter) error {
 				return writeErr
 			}
 		}
+
 		if readErr != nil {
 			if netErr, ok := readErr.(net.Error); ok && netErr.Timeout() {
+				consecutiveTimeouts++
+
+				if consecutiveTimeouts >= maxRetries {
+					return fmt.Errorf("max timeout retries exceeded: %w", readErr)
+				}
+
 				select {
 				case <-ctx.Done():
 					return ctx.Err()
-				default:
+				case <-time.After(backoff):
+					backoff *= 2
+					if backoff > maxBackoff {
+						backoff = maxBackoff
+					}
 					continue
 				}
 			}
