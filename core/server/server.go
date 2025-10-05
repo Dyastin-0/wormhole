@@ -191,7 +191,6 @@ func (s *Server) handleConnections(ctx context.Context, ln net.Listener) error {
 // handleMessages processes messages from a client connection using a yamux session.
 func (s *Server) handleMessages(ctx context.Context, conn net.Conn) error {
 	yamuxConfig := yamux.DefaultConfig()
-	yamuxConfig.MaxStreamWindowSize = 16 * 1024 * 1024
 	yamuxConfig.KeepAliveInterval = 1 * time.Second
 
 	session, err := yamux.Server(conn, yamuxConfig)
