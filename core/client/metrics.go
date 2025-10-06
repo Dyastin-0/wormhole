@@ -14,7 +14,7 @@ type MetricsMsg struct {
 	Egress            uint64
 	Uptime            uint64
 	ConnectionCount   uint64
-	ActiveConnections int32
+	ActiveConnections uint32
 }
 
 type metricsModel struct {

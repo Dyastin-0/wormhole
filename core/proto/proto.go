@@ -104,31 +104,31 @@ var (
 	ErrInvalidStatus = errors.New("invalid status code")
 )
 
-// Buffer pools for reusing byte slices across serialization calls
+// Buffer pools for reusing byte slices across serialization calls.
 var (
 	headerBufferPool = sync.Pool{
-		New: func() interface{} {
+		New: func() any {
 			buf := make([]byte, 0, HeaderSize)
 			return &buf
 		},
 	}
 
 	requestBufferPool = sync.Pool{
-		New: func() interface{} {
+		New: func() any {
 			buf := make([]byte, 0, 512)
 			return &buf
 		},
 	}
 
 	responseBufferPool = sync.Pool{
-		New: func() interface{} {
+		New: func() any {
 			buf := make([]byte, 0, 512)
 			return &buf
 		},
 	}
 
 	metricsBufferPool = sync.Pool{
-		New: func() interface{} {
+		New: func() any {
 			buf := make([]byte, 0, MetricsSize)
 			return &buf
 		},
@@ -186,7 +186,7 @@ type Response struct {
 	Domain string
 }
 
-// Metrics represets the tunnel's incoming and outgoing bytes metrics.
+// Metrics represents the tunnel's incoming and outgoing bytes metrics.
 type Metrics struct {
 	// Ingress represents the incoming bytes.
 	Ingress uint64
@@ -197,7 +197,7 @@ type Metrics struct {
 	// ConnectionCount specifies the total number of connections.
 	ConnectionCount uint64
 	// ActiveConnections represents current active connections.
-	ActiveConnections int32
+	ActiveConnections uint32
 }
 
 // SerializeHeader serializes a Header to a byte slice using a pooled buffer.
@@ -534,10 +534,10 @@ func NewRequest(proto uint8, name string) *Request {
 }
 
 // NewResponse creates a new Response with the specified status, TTL, and domain.
-func NewResponse(status uint8, ttlSeconds uint64, domain string) *Response {
+func NewResponse(status uint8, ttlHours uint64, domain string) *Response {
 	return &Response{
 		Status:       status,
-		TTLHours:     ttlSeconds,
+		TTLHours:     ttlHours,
 		DomainLength: uint32(len(domain)),
 		Domain:       domain,
 	}
@@ -550,7 +550,7 @@ func NewMetrics(ingress, egress, uptime, connectionCount uint64, activeConnectio
 		Egress:            egress,
 		Uptime:            uptime,
 		ConnectionCount:   connectionCount,
-		ActiveConnections: int32(activeConnections),
+		ActiveConnections: activeConnections,
 	}
 }
 
