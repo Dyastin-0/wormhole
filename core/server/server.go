@@ -164,7 +164,7 @@ func (s *Server) RunTunnelerWithListener(ctx context.Context, ln net.Listener) e
 func (s *Server) tunnel(ctx context.Context, conn net.Conn) error {
 	defer conn.Close()
 
-	sni := getSNI(conn)
+	sni, tlsConn := getSNI(conn)
 	if sni == "" {
 		return fmt.Errorf("missing sni")
 	}
@@ -177,7 +177,7 @@ func (s *Server) tunnel(ctx context.Context, conn net.Conn) error {
 	tCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	return tunnel.From(tCtx, conn)
+	return tunnel.From(tCtx, tlsConn)
 }
 
 // handleConnections accepts incoming client control connections and processes them concurrently.
@@ -476,12 +476,22 @@ func (s *Server) sendMetrics(stream net.Conn, tunnel *Tunnel) error {
 }
 
 // getSNI extracts the Server Name Indication (SNI) from a TLS connection.
-func getSNI(conn net.Conn) string {
+func getSNI(conn net.Conn) (string, *tls.Conn) {
 	tlsConn, ok := conn.(*tls.Conn)
 	if !ok {
-		return ""
+		return "", nil
+	}
+
+	if err := tlsConn.Handshake(); err != nil {
+		state := tlsConn.ConnectionState()
+		return state.ServerName, tlsConn
 	}
 
 	state := tlsConn.ConnectionState()
-	return state.ServerName
+	log.Info().
+		Bool("handshake_complete", state.HandshakeComplete).
+		Str("server_name", state.ServerName).
+		Msg("TLS connection state")
+
+	return state.ServerName, tlsConn
 }
