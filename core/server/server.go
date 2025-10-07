@@ -482,11 +482,6 @@ func getSNI(conn net.Conn) string {
 		return ""
 	}
 
-	if err := tlsConn.Handshake(); err != nil {
-		state := tlsConn.ConnectionState()
-		return state.ServerName
-	}
-
 	state := tlsConn.ConnectionState()
 	return state.ServerName
 }
