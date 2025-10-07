@@ -61,7 +61,7 @@ var (
 const (
 	labelWidth = 10
 	valueWidth = 10
-	rateWidth  = 12
+	rateWidth  = 13
 )
 
 func newMetricsModel(name string) metricsModel {

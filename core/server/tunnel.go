@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"time"
 
 	"github.com/Dyastin-0/wormhole/core/metrics"
 	"github.com/Dyastin-0/wormhole/core/proto"
@@ -81,6 +82,7 @@ func (t *Tunnel) From(ctx context.Context, stream net.Conn) error {
 		}
 	}()
 
+	stream.SetReadDeadline(time.Now().Add(5 * time.Second))
 	proxyStream := t.metrics.NewProxyReadWriter(stream)
 
 	return proxy.StreamWithContext(proxyCtx, proxyStream, remoteStream)

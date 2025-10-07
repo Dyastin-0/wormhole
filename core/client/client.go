@@ -279,7 +279,11 @@ func (c *Client) ForwardStream(ctx context.Context, stream net.Conn) error {
 	var err error
 
 	if c.withTLS {
-		localConn, err = (&tls.Dialer{}).DialContext(ctx, "tcp", c.targetAddr)
+		localConn, err = (&tls.Dialer{
+			Config: &tls.Config{
+				InsecureSkipVerify: true,
+			},
+		}).DialContext(ctx, "tcp", c.targetAddr)
 		if err != nil {
 			return fmt.Errorf("failed to dial tls target address: %w", err)
 		}
