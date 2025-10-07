@@ -16,6 +16,9 @@ import (
 	"github.com/common-nighthawk/go-figure"
 	"github.com/urfave/cli/v3"
 	"golang.org/x/sync/errgroup"
+
+	nethttp "net/http"
+	_ "net/http/pprof"
 )
 
 var (
@@ -25,6 +28,9 @@ var (
 )
 
 func main() {
+	go func() {
+		log.Println(nethttp.ListenAndServe("localhost:7060", nil))
+	}()
 	w := New()
 
 	ctx, cancel := context.WithCancel(context.Background())
