@@ -168,6 +168,7 @@ func (s *Server) tunnel(ctx context.Context, conn net.Conn) error {
 	if sni == "" {
 		return fmt.Errorf("missing sni")
 	}
+	defer tlsConn.Close()
 
 	tunnel, ok := s.tunnels.Get(sni)
 	if !ok {
