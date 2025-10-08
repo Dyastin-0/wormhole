@@ -28,6 +28,11 @@ type Tunnel struct {
 
 // From opens a stream (remoteStream) from the session then forwards the stream to it.
 func (t *Tunnel) From(ctx context.Context, stream net.Conn) error {
+	if t.metrics != nil {
+		t.metrics.IncrementConnections()
+		defer t.metrics.DecrementActiveConnections()
+	}
+
 	remoteStream, err := t.session.Open()
 	if err != nil {
 		return fmt.Errorf("failed to open yamux session: %w", err)
@@ -63,19 +68,22 @@ func (t *Tunnel) From(ctx context.Context, stream net.Conn) error {
 	proxyCtx, proxyCancel := context.WithCancel(context.Background())
 	defer proxyCancel()
 
+	done := make(chan struct{})
+	defer close(done)
+
 	go func() {
 		select {
 		case <-ctx.Done():
+			proxyCancel()
 		case <-t.session.CloseChan():
+			proxyCancel()
+		case <-done:
+			return
 		}
-		time.Sleep(2 * time.Second)
-		proxyCancel()
 	}()
 
+	stream.SetReadDeadline(time.Now().Add(5 * time.Second))
 	proxyStream := t.metrics.NewProxyReadWriter(stream)
-
-	t.metrics.IncrementConnections()
-	defer t.metrics.DecrementActiveConnections()
 
 	return proxy.StreamWithContext(proxyCtx, proxyStream, remoteStream)
 }

@@ -14,7 +14,7 @@ type MetricsMsg struct {
 	Egress            uint64
 	Uptime            uint64
 	ConnectionCount   uint64
-	ActiveConnections int32
+	ActiveConnections uint32
 }
 
 type metricsModel struct {
@@ -61,7 +61,7 @@ var (
 const (
 	labelWidth = 10
 	valueWidth = 10
-	rateWidth  = 12
+	rateWidth  = 13
 )
 
 func newMetricsModel(name string) metricsModel {
