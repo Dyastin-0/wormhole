@@ -489,10 +489,6 @@ func getSNI(conn net.Conn) (string, *tls.Conn) {
 	}
 
 	state := tlsConn.ConnectionState()
-	log.Info().
-		Bool("handshake_complete", state.HandshakeComplete).
-		Str("server_name", state.ServerName).
-		Msg("TLS connection state")
 
 	return state.ServerName, tlsConn
 }

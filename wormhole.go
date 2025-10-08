@@ -28,9 +28,6 @@ var (
 )
 
 func main() {
-	go func() {
-		log.Println(nethttp.ListenAndServe("localhost:7060", nil))
-	}()
 	w := New()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -117,6 +114,16 @@ func startCommand() *cli.Command {
 				Usage:    "set ipv4 target for dns",
 				Required: true,
 			},
+			&cli.BoolFlag{
+				Name:  "pprof",
+				Usage: "run wormhole with pprof",
+				Value: false,
+			},
+			&cli.StringFlag{
+				Name:  "pprofAddr",
+				Usage: "address used for pprof",
+				Value: ":7060",
+			},
 		},
 		Action: start,
 	}
@@ -129,6 +136,12 @@ func start(ctx context.Context, cmd *cli.Command) error {
 	token := cmd.String("token")
 	domain := cmd.String("domain")
 	ipV4 := cmd.String("ipv4")
+	pprofAddr := cmd.String("pprofAddr")
+	runPprof := cmd.Bool("pprof")
+
+	if runPprof {
+		nethttp.ListenAndServe(pprofAddr, nil)
+	}
 
 	dnsManager, err := dnsmanager.NewCloudflare(
 		dnsmanager.WithBaseDomain(domain),
