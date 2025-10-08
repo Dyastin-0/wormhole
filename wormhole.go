@@ -259,7 +259,7 @@ func baseClientFlags(flags ...cli.Flag) []cli.Flag {
 		&cli.StringFlag{
 			Name:     "targetAddress",
 			Aliases:  []string{"targetAddr", "t"},
-			Usage:    "set the address where the request will be tunneled to (eg., :3000)",
+			Usage:    "set the address where connections will be tunneled to (eg., :3000)",
 			Required: true,
 		},
 		&cli.StringFlag{
