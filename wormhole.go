@@ -140,7 +140,7 @@ func start(ctx context.Context, cmd *cli.Command) error {
 	runPprof := cmd.Bool("pprof")
 
 	if runPprof {
-		nethttp.ListenAndServe(pprofAddr, nil)
+		go nethttp.ListenAndServe(pprofAddr, nil)
 	}
 
 	dnsManager, err := dnsmanager.NewCloudflare(
