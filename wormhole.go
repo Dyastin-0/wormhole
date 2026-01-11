@@ -31,7 +31,7 @@ var (
 	ErrMissingAddress = errors.New("missing address")
 )
 
-const DefaultConfigPath = "~/.wormhole/config.yaml"
+const DefaultConfigPath = "/etc/wormhole/config.yaml"
 
 type Config struct {
 	Secret string `yaml:"secret"`
