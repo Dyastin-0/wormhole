@@ -17,6 +17,7 @@ import (
 	wserver "github.com/Dyastin-0/wormhole/core/server"
 	"github.com/Dyastin-0/wormhole/dnsmanager"
 	"github.com/common-nighthawk/go-figure"
+	"github.com/joho/godotenv"
 	"github.com/urfave/cli/v3"
 	"golang.org/x/sync/errgroup"
 
@@ -343,6 +344,11 @@ func issueTokenCommand() *cli.Command {
 }
 
 func issueToken(ctx context.Context, cmd *cli.Command) error {
+	err := godotenv.Load()
+	if err != nil {
+		return err
+	}
+
 	secretStr := os.Getenv("WORMHOLE_SECRET")
 	if secretStr == "" {
 		return fmt.Errorf("secret not set")
