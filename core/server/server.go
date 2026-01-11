@@ -279,7 +279,7 @@ func (s *Server) handleRequest(ctx context.Context, stream net.Conn, session *ya
 	if req.APIKey != "" {
 		claims, err := s.apiKeyIssuer.Validate(req.APIKey)
 		if err == nil {
-			ttl = time.Duration(claims.TTL)
+			ttl = time.Duration(claims.TTL) * time.Hour
 		}
 	}
 
@@ -316,7 +316,7 @@ func (s *Server) handleRequest(ctx context.Context, stream net.Conn, session *ya
 
 	s.tunnels.Set(domain, tunnel)
 
-	resp := proto.NewResponse(proto.StatusOK, uint64(DefaultTunnelTTL), domain)
+	resp := proto.NewResponse(proto.StatusOK, uint64(ttl), domain)
 	err = s.sendResp(stream, resp)
 	if err != nil {
 		err = fmt.Errorf("failed to send response: %w", err)

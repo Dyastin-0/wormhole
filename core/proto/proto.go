@@ -508,6 +508,14 @@ func validateRequest(req *Request) error {
 		return ErrStringTooLong
 	}
 
+	if req.APIKeyLength != uint32(len(req.APIKey)) {
+		return ErrInvalidLength
+	}
+
+	if req.APIKeyLength > MaxStringLength {
+		return ErrStringTooLong
+	}
+
 	return nil
 }
 
