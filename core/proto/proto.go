@@ -269,7 +269,7 @@ func SerializeRequest(req *Request) ([]byte, error) {
 	defer requestBufferPool.Put(bufPtr)
 
 	*bufPtr = (*bufPtr)[:0]
-	totalSize := int(RequestSize) + len(req.Name)
+	totalSize := int(RequestSize) + len(req.Name) + len(req.APIKey)
 	if cap(*bufPtr) < totalSize {
 		*bufPtr = make([]byte, 0, totalSize)
 	}
