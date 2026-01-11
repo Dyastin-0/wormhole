@@ -191,6 +191,9 @@ func start(ctx context.Context, cmd *cli.Command) error {
 	}
 
 	secret, err := getSecret()
+	if err != nil {
+		return err
+	}
 
 	apiKeyIssuer, err := wserver.NewAPIKeyIssuer([]byte(secret))
 	if err != nil {
