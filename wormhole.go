@@ -51,11 +51,7 @@ func loadConfig(path string) (*Config, error) {
 	return &cfg, nil
 }
 
-func getSecret(cmd *cli.Command) (string, error) {
-	if secret := cmd.String("secret"); secret != "" {
-		return secret, nil
-	}
-
+func getSecret() (string, error) {
 	if cfg, err := loadConfig(DefaultConfigPath); err == nil && cfg.Secret != "" {
 		return cfg.Secret, nil
 	}
@@ -194,10 +190,7 @@ func start(ctx context.Context, cmd *cli.Command) error {
 		return fmt.Errorf("failed to initialize dns manager: %w", err)
 	}
 
-	secret := os.Getenv("WORMHOLE_SECRET")
-	if secret == "" {
-		return fmt.Errorf("secret is not set")
-	}
+	secret, err := getSecret()
 
 	apiKeyIssuer, err := wserver.NewAPIKeyIssuer([]byte(secret))
 	if err != nil {
@@ -380,7 +373,7 @@ func issueTokenCommand() *cli.Command {
 }
 
 func issueToken(ctx context.Context, cmd *cli.Command) error {
-	secretStr, err := getSecret(cmd)
+	secretStr, err := getSecret()
 	if err != nil {
 		return err
 	}
