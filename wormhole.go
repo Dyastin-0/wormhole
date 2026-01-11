@@ -17,9 +17,9 @@ import (
 	wserver "github.com/Dyastin-0/wormhole/core/server"
 	"github.com/Dyastin-0/wormhole/dnsmanager"
 	"github.com/common-nighthawk/go-figure"
-	"github.com/joho/godotenv"
 	"github.com/urfave/cli/v3"
 	"golang.org/x/sync/errgroup"
+	"gopkg.in/yaml.v3"
 
 	nethttp "net/http"
 	_ "net/http/pprof"
@@ -30,6 +30,42 @@ var (
 	ErrMissingTarget  = errors.New("missing target")
 	ErrMissingAddress = errors.New("missing address")
 )
+
+const DefaultConfigPath = "~/.wormhole/config.yaml"
+
+type Config struct {
+	Secret string `yaml:"secret"`
+}
+
+func loadConfig(path string) (*Config, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+
+	var cfg Config
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return nil, err
+	}
+
+	return &cfg, nil
+}
+
+func getSecret(cmd *cli.Command) (string, error) {
+	if secret := cmd.String("secret"); secret != "" {
+		return secret, nil
+	}
+
+	if cfg, err := loadConfig(DefaultConfigPath); err == nil && cfg.Secret != "" {
+		return cfg.Secret, nil
+	}
+
+	if secret := os.Getenv("WORMHOLE_SECRET"); secret != "" {
+		return secret, nil
+	}
+
+	return "", fmt.Errorf("secret not found. Set via --secret flag, config file, or WORMHOLE_SECRET env var")
+}
 
 func main() {
 	w := New()
@@ -344,14 +380,9 @@ func issueTokenCommand() *cli.Command {
 }
 
 func issueToken(ctx context.Context, cmd *cli.Command) error {
-	err := godotenv.Load()
+	secretStr, err := getSecret(cmd)
 	if err != nil {
 		return err
-	}
-
-	secretStr := os.Getenv("WORMHOLE_SECRET")
-	if secretStr == "" {
-		return fmt.Errorf("secret not set")
 	}
 
 	secret, err := base64.StdEncoding.DecodeString(secretStr)
