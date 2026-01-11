@@ -260,7 +260,7 @@ func (s *Server) handleRequest(ctx context.Context, stream net.Conn, session *ya
 
 	req, err := proto.DeserializeRequest(*bufPtr)
 	if err != nil {
-		sendErr := s.sendErr(stream, "failed to deserialize request")
+		sendErr := s.sendErr(stream, fmt.Sprintf("failed to deserialize request: %w", err))
 		if sendErr != nil {
 			return errors.Join(err, sendErr)
 		}
