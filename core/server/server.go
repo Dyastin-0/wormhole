@@ -278,6 +278,7 @@ func (s *Server) handleRequest(ctx context.Context, stream net.Conn, session *ya
 
 	if req.APIKey != "" {
 		claims, err := s.apiKeyIssuer.Validate(req.APIKey)
+		log.Error().Err(err).Msg("api key validation")
 		if err == nil {
 			ttl = time.Duration(claims.TTL) * time.Hour
 		}
