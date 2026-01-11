@@ -51,6 +51,8 @@ type Server struct {
 	dnsManager dnsmanager.DNSManager
 	// tunnels map domain names (e.g., "example.domain.com") to active tunnel sessions.
 	tunnels *cmap.ConcurrentMap[string, *Tunnel]
+	// apiKeyIssuer is used to validate api key from requests.
+	apiKeyIssuer *APIKeyIssuer
 }
 
 // New creates a new Server with the specified configuration options.
@@ -272,6 +274,15 @@ func (s *Server) handleRequest(ctx context.Context, stream net.Conn, session *ya
 		return s.sendResp(stream, resp)
 	}
 
+	ttl := DefaultTunnelTTL
+
+	if req.APIKey != "" {
+		claims, err := s.apiKeyIssuer.Validate(req.APIKey)
+		if err == nil {
+			ttl = time.Duration(claims.TTL)
+		}
+	}
+
 	record := &dnsmanager.Record{
 		Type:    dnsmanager.RecordTypeA,
 		Name:    req.Name,
@@ -283,7 +294,7 @@ func (s *Server) handleRequest(ctx context.Context, stream net.Conn, session *ya
 	if err != nil {
 		var sendErr error
 		if errors.Is(err, dnsmanager.ErrRecordAlreadyExists) {
-			resp := proto.NewResponse(proto.StatusNameTaken, uint64(DefaultTunnelTTL), domain)
+			resp := proto.NewResponse(proto.StatusNameTaken, uint64(ttl), domain)
 			sendErr = s.sendResp(stream, resp)
 			if sendErr != nil {
 				return errors.Join(err, sendErr)

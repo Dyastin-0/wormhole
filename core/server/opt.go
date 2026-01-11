@@ -21,3 +21,9 @@ func WithDNSManager(dnsManager dnsmanager.DNSManager) OptFunc {
 		s.dnsManager = dnsManager
 	}
 }
+
+func WithAPIKeyIssuer(apiKeyIssuer *APIKeyIssuer) OptFunc {
+	return func(s *Server) {
+		s.apiKeyIssuer = apiKeyIssuer
+	}
+}

@@ -8,6 +8,7 @@ require (
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/common-nighthawk/go-figure v0.0.0-20210622060536-734e95fb86be
+	github.com/golang-jwt/jwt/v5 v5.3.0
 	github.com/hashicorp/yamux v0.1.2
 	github.com/orcaman/concurrent-map/v2 v2.0.1
 	github.com/rs/zerolog v1.34.0

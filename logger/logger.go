@@ -32,7 +32,7 @@ func Init(path string) {
 // InitMultiWriter initializes the global logger with both file and stdout.
 func InitMultiWriter(path string) {
 	if path == "" {
-		path = "./logs/log.txt"
+		path = "./logs/wormhole.log"
 	}
 
 	fileWriter := &lumberjack.Logger{

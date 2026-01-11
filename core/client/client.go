@@ -34,6 +34,10 @@ type Client struct {
 	metrics bool
 	// domain specifies the approved requested domain name.
 	domain string
+	// apiKey specifies the server-issued JWT token.
+	apiKey string
+	// ttl specifies the time-to-live of this client.
+	ttl uint64
 }
 
 // New creates a new Client with the specified configuration options.
@@ -233,7 +237,7 @@ func (c *Client) sendRequest(ctx context.Context, stream net.Conn) (*proto.Heade
 		stream.SetDeadline(time.Now().Add(5 * time.Second))
 	}
 
-	request := proto.NewRequest(c.proto, c.name)
+	request := proto.NewRequest(c.proto, c.name, c.ttl, c.apiKey)
 	serializedRequest, err := proto.SerializeRequest(request)
 	if err != nil {
 		return nil, fmt.Errorf("failed to serialize request: %w", err)

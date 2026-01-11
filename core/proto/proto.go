@@ -38,8 +38,8 @@ const (
 	MaxStringLength uint32 = 4096
 	// HeaderSize is the fixed size of a protocol header in bytes (12 bytes).
 	HeaderSize uint8 = 12
-	// RequestSize is the fixed size of a request's non-string fields in bytes (5 bytes).
-	RequestSize uint8 = 5
+	// RequestSize is the fixed size of a request's non-string fields in bytes (17 bytes).
+	RequestSize uint8 = 17
 	// ResponseSize is the fixed size of a response's non-string fields in bytes (13 bytes).
 	ResponseSize uint8 = 13
 	// MetricsSize is the fixed size of a metrics' fields in bytes (36).
@@ -168,10 +168,16 @@ func (h *Header) ClearFlag(flag uint8) {
 type Request struct {
 	// Proto specifies the tunnel protocol (e.g., ProtoHTTP, ProtoTCP).
 	Proto uint8
+	// TTL is the desired tunnel time-to-live, ignored when APIKey is not present.
+	TTL uint64
 	// NameLength is the length of the Name field in bytes (must not exceed MaxStringLength).
 	NameLength uint32
 	// Name is the desired subdomain name for the tunnel (e.g., "example" for "example.domain.com").
 	Name string
+	// APIKeyLength is the length of the APIKey field in bytes (must not exceed MaxStringLength).
+	APIKeyLength uint32
+	// APIKey is the server-issued JWT token.
+	APIKey string
 }
 
 // Response represents the server's response to a tunnel request.
@@ -272,11 +278,20 @@ func SerializeRequest(req *Request) ([]byte, error) {
 	if err := binary.Write(buf, binary.BigEndian, req.Proto); err != nil {
 		return nil, fmt.Errorf("failed to write protocol: %w", err)
 	}
+	if err := binary.Write(buf, binary.BigEndian, req.TTL); err != nil {
+		return nil, fmt.Errorf("failed to write ttl: %w", err)
+	}
 	if err := binary.Write(buf, binary.BigEndian, req.NameLength); err != nil {
 		return nil, fmt.Errorf("failed to write name length: %w", err)
 	}
 	if _, err := buf.WriteString(req.Name); err != nil {
 		return nil, fmt.Errorf("failed to write name: %w", err)
+	}
+	if err := binary.Write(buf, binary.BigEndian, req.APIKeyLength); err != nil {
+		return nil, fmt.Errorf("failed to write api key length: %w", err)
+	}
+	if _, err := buf.WriteString(req.APIKey); err != nil {
+		return nil, fmt.Errorf("failed to write api key: %w", err)
 	}
 
 	result := make([]byte, buf.Len())
@@ -297,6 +312,10 @@ func DeserializeRequest(data []byte) (*Request, error) {
 		return nil, fmt.Errorf("failed to read protocol: %w", err)
 	}
 
+	if err := binary.Read(reader, binary.BigEndian, &req.TTL); err != nil {
+		return nil, fmt.Errorf("failed to read ttl: %w", err)
+	}
+
 	if err := binary.Read(reader, binary.BigEndian, &req.NameLength); err != nil {
 		return nil, fmt.Errorf("failed to read name length: %w", err)
 	}
@@ -311,6 +330,21 @@ func DeserializeRequest(data []byte) (*Request, error) {
 		return nil, fmt.Errorf("failed to read name: %w", err)
 	}
 	req.Name = string(nameBytes)
+
+	if err := binary.Read(reader, binary.BigEndian, &req.APIKeyLength); err != nil {
+		return nil, fmt.Errorf("failed to read name length: %w", err)
+	}
+
+	expectedSize = int(RequestSize) + int(req.NameLength) + int(req.APIKeyLength)
+	if len(data) < expectedSize {
+		return nil, ErrInsufficientData
+	}
+
+	apiKeyBytes := make([]byte, req.APIKeyLength)
+	if n, err := reader.Read(apiKeyBytes); err != nil || n != int(req.APIKeyLength) {
+		return nil, fmt.Errorf("failed to read name: %w", err)
+	}
+	req.APIKey = string(apiKeyBytes)
 
 	if err := validateRequest(&req); err != nil {
 		return nil, fmt.Errorf("request validation failed: %w", err)
@@ -525,11 +559,14 @@ func NewHeader(msgType uint8, length uint64) *Header {
 }
 
 // NewRequest creates a new Request with the specified protocol and subdomain name.
-func NewRequest(proto uint8, name string) *Request {
+func NewRequest(proto uint8, name string, ttl uint64, apiKey string) *Request {
 	return &Request{
-		Proto:      proto,
-		NameLength: uint32(len(name)),
-		Name:       name,
+		Proto:        proto,
+		TTL:          ttl,
+		NameLength:   uint32(len(name)),
+		Name:         name,
+		APIKeyLength: uint32(len(apiKey)),
+		APIKey:       apiKey,
 	}
 }
 

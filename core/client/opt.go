@@ -43,3 +43,15 @@ func WithMetrics(metrics bool) OptFunc {
 		c.metrics = metrics
 	}
 }
+
+func WithAPIKey(apiKey string) OptFunc {
+	return func(c *Client) {
+		c.apiKey = apiKey
+	}
+}
+
+func WithTTL(ttl uint64) OptFunc {
+	return func(c *Client) {
+		c.ttl = ttl
+	}
+}
