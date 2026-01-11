@@ -291,7 +291,7 @@ func (s *Server) handleRequest(ctx context.Context, stream net.Conn, session *ya
 		TTL:     1,
 	}
 
-	dnsRecord, err := s.dnsManager.CreateDNSRecord(ctx, DefaultTunnelTTL, record)
+	dnsRecord, err := s.dnsManager.CreateDNSRecord(ctx, ttl, record)
 	if err != nil {
 		var sendErr error
 		if errors.Is(err, dnsmanager.ErrRecordAlreadyExists) {
