@@ -14,7 +14,6 @@ import (
 
 	"github.com/Dyastin-0/wormhole/core"
 	wclient "github.com/Dyastin-0/wormhole/core/client"
-	"github.com/Dyastin-0/wormhole/core/server"
 	wserver "github.com/Dyastin-0/wormhole/core/server"
 	"github.com/Dyastin-0/wormhole/dnsmanager"
 	"github.com/common-nighthawk/go-figure"
@@ -163,7 +162,7 @@ func start(ctx context.Context, cmd *cli.Command) error {
 		return fmt.Errorf("secret is not set")
 	}
 
-	apiKeyIssuer, err := server.NewAPIKeyIssuer([]byte(secret))
+	apiKeyIssuer, err := wserver.NewAPIKeyIssuer([]byte(secret))
 	if err != nil {
 		return err
 	}
@@ -354,7 +353,7 @@ func issueToken(ctx context.Context, cmd *cli.Command) error {
 		return fmt.Errorf("failed to decode secret: %w", err)
 	}
 
-	issuer, err := server.NewAPIKeyIssuer(secret)
+	issuer, err := wserver.NewAPIKeyIssuer(secret)
 	if err != nil {
 		return fmt.Errorf("failed to create issuer: %w", err)
 	}
