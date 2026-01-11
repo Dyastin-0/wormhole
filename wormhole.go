@@ -190,12 +190,17 @@ func start(ctx context.Context, cmd *cli.Command) error {
 		return fmt.Errorf("failed to initialize dns manager: %w", err)
 	}
 
-	secret, err := getSecret()
+	secretStr, err := getSecret()
 	if err != nil {
 		return err
 	}
 
-	apiKeyIssuer, err := wserver.NewAPIKeyIssuer([]byte(secret))
+	secret, err := base64.StdEncoding.DecodeString(secretStr)
+	if err != nil {
+		return fmt.Errorf("failed to decode secret: %w", err)
+	}
+
+	apiKeyIssuer, err := wserver.NewAPIKeyIssuer(secret)
 	if err != nil {
 		return err
 	}
