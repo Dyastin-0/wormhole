@@ -30,6 +30,7 @@ var (
 	ErrMissingAddress = errors.New("missing address")
 )
 
+// If not using linux, config file path must be passed as a cli flag.
 const DefaultConfigPath = "/etc/wormhole/config.yaml"
 
 type Config struct {
@@ -52,18 +53,6 @@ func loadConfig(path string) (*Config, error) {
 	}
 
 	return &cfg, nil
-}
-
-func getSecret() (string, error) {
-	if cfg, err := loadConfig(DefaultConfigPath); err == nil && cfg.Secret != "" {
-		return cfg.Secret, nil
-	}
-
-	if secret := os.Getenv("WORMHOLE_SECRET"); secret != "" {
-		return secret, nil
-	}
-
-	return "", fmt.Errorf("secret not found. Set via config file or WORMHOLE_SECRET env var")
 }
 
 func getConfigValue(configVal, envVar, flagVal, fieldName string) (string, error) {
@@ -182,6 +171,11 @@ func startCommand() *cli.Command {
 				Usage: "address used for pprof",
 				Value: ":7060",
 			},
+			&cli.StringFlag{
+				Name:  "configPath",
+				Usage: "wormhole config path (override if config is somewhere else or not using linux)",
+				Value: DefaultConfigPath,
+			},
 		},
 		Action: start,
 	}
@@ -192,8 +186,9 @@ func start(ctx context.Context, cmd *cli.Command) error {
 	serveAddr := cmd.String("serveAddr")
 	pprofAddr := cmd.String("pprofAddr")
 	runPprof := cmd.Bool("pprof")
+	configPath := cmd.String("configPath")
 
-	cfg, err := loadConfig(DefaultConfigPath)
+	cfg, err := loadConfig(configPath)
 	if err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
@@ -231,7 +226,7 @@ func start(ctx context.Context, cmd *cli.Command) error {
 		return fmt.Errorf("failed to initialize dns manager: %w", err)
 	}
 
-	secretStr, err := getSecret()
+	secretStr, err := getConfigValue(cfg.Secret, os.Getenv("WORMHOLE_SECRET"), cmd.String("secret"), "secret")
 	if err != nil {
 		return err
 	}
@@ -422,13 +417,28 @@ func issueTokenCommand() *cli.Command {
 				Usage:   "token expiration duration (e.g., 720h, 30d, 1y)",
 				Value:   "2160h",
 			},
+			&cli.StringFlag{
+				Name:  "configPath",
+				Usage: "wormhole config path (override if config is somewhere else or not using linux)",
+				Value: DefaultConfigPath,
+			},
 		},
 		Action: issueToken,
 	}
 }
 
 func issueToken(ctx context.Context, cmd *cli.Command) error {
-	secretStr, err := getSecret()
+	configPath := cmd.String("configPath")
+
+	cfg, err := loadConfig(configPath)
+	if err != nil {
+		return err
+	}
+	if cfg == nil {
+		cfg = &Config{}
+	}
+
+	secretStr, err := getConfigValue(cfg.Secret, os.Getenv("WORMHOLE_SECRET"), cmd.String("secret"), "secret")
 	if err != nil {
 		return err
 	}
