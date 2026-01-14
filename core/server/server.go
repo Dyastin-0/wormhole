@@ -278,9 +278,27 @@ func (s *Server) handleRequest(ctx context.Context, stream net.Conn, session *ya
 
 	if req.APIKey != "" {
 		claims, err := s.apiKeyIssuer.Validate(req.APIKey)
-		log.Error().Err(err).Msg("api key validation")
 		if err == nil {
-			ttl = time.Duration(claims.TTL) * time.Hour
+			// if ttl from claims is zero (0), it is a priviledged api key.
+			// we will use the ttl from the client request if provided.
+			if claims.TTL == 0 {
+				if req.TTL > 0 {
+					ttl = time.Duration(req.TTL) * time.Hour
+					log.Info().Str("domain", domain).Uint64("ttl_hours", req.TTL).Msg("using client-specified ttl")
+				} else {
+					log.Debug().Str("domain", domain).Msg("privileged key with no ttl specified")
+				}
+			} else {
+				ttl = time.Duration(claims.TTL) * time.Hour
+			}
+		} else {
+			log.Error().Err(err).Str("domain", domain).Msg("api key validation")
+			var sendErr error
+			sendErr = s.sendErr(stream, err.Error())
+			if sendErr != nil {
+				return errors.Join(err, sendErr)
+			}
+			return err
 		}
 	}
 

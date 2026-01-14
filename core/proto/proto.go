@@ -62,6 +62,8 @@ const (
 	StatusNameTaken uint8 = 0x03
 	// StatusUnsupportedProto indicates the requested protocol is not supported.
 	StatusUnsupportedProto uint8 = 0x04
+	// StatusInvalidAPiKey indicates a request contains an invalid API key.
+	StatusInvalidAPiKey uint8 = 0x05
 )
 
 // Constants definition of the protocol version.
