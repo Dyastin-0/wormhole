@@ -30,14 +30,9 @@ type APIKeyIssuer struct {
 }
 
 // NewAPIKeyIssuer creates a new APIKeyIssuer with the provided secret.
-// If secret is nil or empty, a random secret will be generated.
 func NewAPIKeyIssuer(secret []byte) (*APIKeyIssuer, error) {
 	if len(secret) == 0 {
-		var err error
-		secret, err = generateSecret(32)
-		if err != nil {
-			return nil, fmt.Errorf("failed to generate secret: %w", err)
-		}
+		return nil, fmt.Errorf("nil secret")
 	}
 
 	return &APIKeyIssuer{

@@ -1,0 +1,5 @@
+secret: "your-api-key-issuer-secret"
+zoneID: "dns-zone-id"
+domain: "your.domain.com"
+ipv4: "123.45.67.89"
+token: "your-token-from-a-dns-provider"

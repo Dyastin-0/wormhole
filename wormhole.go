@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	nethttp "net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -21,7 +22,6 @@ import (
 	"golang.org/x/sync/errgroup"
 	"gopkg.in/yaml.v3"
 
-	nethttp "net/http"
 	_ "net/http/pprof"
 )
 
@@ -35,6 +35,10 @@ const DefaultConfigPath = "/etc/wormhole/config.yaml"
 
 type Config struct {
 	Secret string `yaml:"secret"`
+	ZoneID string `yaml:"zoneID"`
+	Domain string `yaml:"domain"`
+	Token  string `yaml:"token"`
+	IPv4   string `yaml:"ipv4"`
 }
 
 func loadConfig(path string) (*Config, error) {
@@ -60,7 +64,25 @@ func getSecret() (string, error) {
 		return secret, nil
 	}
 
-	return "", fmt.Errorf("secret not found. Set via --secret flag, config file, or WORMHOLE_SECRET env var")
+	return "", fmt.Errorf("secret not found. Set via config file or WORMHOLE_SECRET env var")
+}
+
+func getConfigValue(configVal, envVar, flagVal, fieldName string) (string, error) {
+	// Priority: environment variable > CLI flag > config file
+
+	if envVar != "" {
+		return envVar, nil
+	}
+
+	if flagVal != "" {
+		return flagVal, nil
+	}
+
+	if configVal != "" {
+		return configVal, nil
+	}
+
+	return "", fmt.Errorf("%s not found. Set via --%s flag, config file, or environment variable", fieldName, fieldName)
 }
 
 func main() {
@@ -128,28 +150,24 @@ func startCommand() *cli.Command {
 				Usage:   "set the address where wormhole tunnel handler will run",
 			},
 			&cli.StringFlag{
-				Name:     "zoneID",
-				Aliases:  []string{"z"},
-				Usage:    "set cloudflare zone",
-				Required: true,
+				Name:    "zoneID",
+				Aliases: []string{"z"},
+				Usage:   "set cloudflare zone (can be set via config file or WORMHOLE_ZONE_ID env var)",
 			},
 			&cli.StringFlag{
-				Name:     "token",
-				Aliases:  []string{"t"},
-				Usage:    "set cloudflare api token",
-				Required: true,
+				Name:    "token",
+				Aliases: []string{"t"},
+				Usage:   "set cloudflare api token (can be set via config file or WORMHOLE_TOKEN env var)",
 			},
 			&cli.StringFlag{
-				Name:     "domain",
-				Aliases:  []string{"d"},
-				Usage:    "set base domain for tunnels",
-				Required: true,
+				Name:    "domain",
+				Aliases: []string{"d"},
+				Usage:   "set base domain for tunnels (can be set via config file or WORMHOLE_DOMAIN env var)",
 			},
 			&cli.StringFlag{
-				Name:     "ipv4",
-				Aliases:  []string{"ip"},
-				Usage:    "set ipv4 target for dns",
-				Required: true,
+				Name:    "ipv4",
+				Aliases: []string{"ip"},
+				Usage:   "set ipv4 target for dns (can be set via config file or WORMHOLE_IPV4 env var)",
 			},
 			&cli.BoolFlag{
 				Name:  "pprof",
@@ -169,15 +187,35 @@ func startCommand() *cli.Command {
 func start(ctx context.Context, cmd *cli.Command) error {
 	addr := cmd.String("addr")
 	serveAddr := cmd.String("serveAddr")
-	zoneID := cmd.String("zoneID")
-	token := cmd.String("token")
-	domain := cmd.String("domain")
-	ipV4 := cmd.String("ipv4")
 	pprofAddr := cmd.String("pprofAddr")
 	runPprof := cmd.Bool("pprof")
 
-	if runPprof {
-		go nethttp.ListenAndServe(pprofAddr, nil)
+	cfg, err := loadConfig(DefaultConfigPath)
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to load config: %w", err)
+	}
+	if cfg == nil {
+		cfg = &Config{}
+	}
+
+	zoneID, err := getConfigValue(cfg.ZoneID, os.Getenv("WORMHOLE_ZONE_ID"), cmd.String("zoneID"), "zoneID")
+	if err != nil {
+		return err
+	}
+
+	token, err := getConfigValue(cfg.Token, os.Getenv("WORMHOLE_TOKEN"), cmd.String("token"), "token")
+	if err != nil {
+		return err
+	}
+
+	domain, err := getConfigValue(cfg.Domain, os.Getenv("WORMHOLE_DOMAIN"), cmd.String("domain"), "domain")
+	if err != nil {
+		return err
+	}
+
+	ipV4, err := getConfigValue(cfg.IPv4, os.Getenv("WORMHOLE_IPV4"), cmd.String("ipv4"), "ipv4")
+	if err != nil {
+		return err
 	}
 
 	dnsManager, err := dnsmanager.NewCloudflare(
@@ -216,6 +254,12 @@ func start(ctx context.Context, cmd *cli.Command) error {
 	}
 
 	g, gCtx := errgroup.WithContext(ctx)
+
+	if runPprof {
+		g.Go(func() error {
+			return nethttp.ListenAndServe(pprofAddr, nil)
+		})
+	}
 
 	g.Go(func() error {
 		return wormholeServer.Run(gCtx)
@@ -455,7 +499,6 @@ func generateSecret(ctx context.Context, cmd *cli.Command) error {
 	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	fmt.Printf("\nSecret (base64):\n%s\n", encoded)
 	fmt.Println("\nStore this securely! Set as WORMHOLE_SECRET environment variable.")
-	fmt.Printf("\nexport WORMHOLE_SECRET=\"%s\"\n", encoded)
 
 	return nil
 }
