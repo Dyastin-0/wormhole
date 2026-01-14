@@ -6,7 +6,6 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"log"
 	nethttp "net/http"
 	"os"
 	"os/signal"
@@ -99,7 +98,11 @@ func main() {
 	}()
 
 	if err := w.Run(ctx, os.Args); err != nil {
-		log.Fatal(err)
+		if errors.Is(context.Canceled, err) {
+			fmt.Printf("wormhole [inf] exited")
+			return
+		}
+		fmt.Printf("wormhole [err] %s", err.Error())
 	}
 }
 

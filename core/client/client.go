@@ -303,16 +303,19 @@ func (c *Client) ForwardStream(ctx context.Context, stream net.Conn) error {
 
 // handleMessages processes incoming multiplexed streams (control streams) from the server.
 func (c *Client) handleMessages(ctx context.Context, session *yamux.Session) error {
+	cancelCtx, cancel := context.WithCancel(ctx)
+
 	go func() {
-		<-ctx.Done()
+		<-cancelCtx.Done()
 		session.Close()
 	}()
 
 	for {
 		stream, err := session.Accept()
 		if err != nil {
-			if ctx.Err() != nil {
-				return ctx.Err()
+			cancel()
+			if cancelCtx.Err() != nil {
+				return cancelCtx.Err()
 			}
 			return err
 		}
@@ -345,12 +348,13 @@ func (c *Client) handleMessages(ctx context.Context, session *yamux.Session) err
 					log.Error().Err(err).Msg("failed to send ack")
 					return
 				}
-				c.ForwardStream(ctx, stream)
-			}(ctx, stream)
+				c.ForwardStream(cancelCtx, stream)
+			}(cancelCtx, stream)
 		case proto.TypeMetrics:
-			go c.handleMetrics(ctx, header, stream)
+			go c.handleMetrics(cancelCtx, header, stream, cancel)
 		case proto.TypeEnd:
 			stream.Close()
+			cancel()
 			prettyPrint("inf", "tunnel timed out")
 			return nil
 		default:
@@ -361,7 +365,7 @@ func (c *Client) handleMessages(ctx context.Context, session *yamux.Session) err
 }
 
 // handleMetrics handles metrics display.
-func (c *Client) handleMetrics(ctx context.Context, header *proto.Header, stream net.Conn) error {
+func (c *Client) handleMetrics(ctx context.Context, header *proto.Header, stream net.Conn, cancel context.CancelFunc) error {
 	defer stream.Close()
 
 	program, metricsChan := StartMetricsDisplay(c.domain)
@@ -371,6 +375,7 @@ func (c *Client) handleMetrics(ctx context.Context, header *proto.Header, stream
 		if _, err := program.Run(); err != nil {
 			log.Error().Err(err).Msg("metrics display error")
 		}
+		cancel()
 	}()
 
 	buf := make([]byte, header.Length)
