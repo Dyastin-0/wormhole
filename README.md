@@ -98,6 +98,7 @@ wormhole admin issue-token --expires 30d --ttl 4
 ```
 
 `--expires` is used to indicate the jwt expiration.
+
 `--ttl` is used to inject a custom claim `time-to-live` (in hours) on the JWT token, which is used by the client when requesting a tunnel.
 
 Clients with an API key can have a longer tunnel `time-to-live`, depending on the `TTL` value injected into the claims.
