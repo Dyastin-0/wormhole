@@ -15,7 +15,6 @@ import (
 	"github.com/Dyastin-0/wormhole/core"
 	wclient "github.com/Dyastin-0/wormhole/core/client"
 	wserver "github.com/Dyastin-0/wormhole/core/server"
-	"github.com/Dyastin-0/wormhole/dnsmanager"
 	"github.com/common-nighthawk/go-figure"
 	"github.com/urfave/cli/v3"
 	"golang.org/x/sync/errgroup"
@@ -35,10 +34,7 @@ const DefaultConfigPath = "/etc/wormhole/config.yaml"
 
 type Config struct {
 	Secret string `yaml:"secret"`
-	ZoneID string `yaml:"zoneID"`
 	Domain string `yaml:"domain"`
-	Token  string `yaml:"token"`
-	IPv4   string `yaml:"ipv4"`
 }
 
 func loadConfig(path string) (*Config, error) {
@@ -142,24 +138,9 @@ func startCommand() *cli.Command {
 				Usage:   "set the address where wormhole tunnel handler will run",
 			},
 			&cli.StringFlag{
-				Name:    "zoneID",
-				Aliases: []string{"z"},
-				Usage:   "set cloudflare zone (can be set via config file or WORMHOLE_ZONE_ID env var)",
-			},
-			&cli.StringFlag{
-				Name:    "token",
-				Aliases: []string{"t"},
-				Usage:   "set cloudflare api token (can be set via config file or WORMHOLE_TOKEN env var)",
-			},
-			&cli.StringFlag{
 				Name:    "domain",
 				Aliases: []string{"d"},
 				Usage:   "set base domain for tunnels (can be set via config file or WORMHOLE_DOMAIN env var)",
-			},
-			&cli.StringFlag{
-				Name:    "ipv4",
-				Aliases: []string{"ip"},
-				Usage:   "set ipv4 target for dns (can be set via config file or WORMHOLE_IPV4 env var)",
 			},
 			&cli.BoolFlag{
 				Name:  "pprof",
@@ -196,36 +177,6 @@ func start(ctx context.Context, cmd *cli.Command) error {
 		cfg = &Config{}
 	}
 
-	zoneID, err := getConfigValue(cfg.ZoneID, os.Getenv("WORMHOLE_ZONE_ID"), cmd.String("zoneID"), "zoneID")
-	if err != nil {
-		return err
-	}
-
-	token, err := getConfigValue(cfg.Token, os.Getenv("WORMHOLE_TOKEN"), cmd.String("token"), "token")
-	if err != nil {
-		return err
-	}
-
-	domain, err := getConfigValue(cfg.Domain, os.Getenv("WORMHOLE_DOMAIN"), cmd.String("domain"), "domain")
-	if err != nil {
-		return err
-	}
-
-	ipV4, err := getConfigValue(cfg.IPv4, os.Getenv("WORMHOLE_IPV4"), cmd.String("ipv4"), "ipv4")
-	if err != nil {
-		return err
-	}
-
-	dnsManager, err := dnsmanager.NewCloudflare(
-		dnsmanager.WithBaseDomain(domain),
-		dnsmanager.WithToken(token),
-		dnsmanager.WithZoneID(zoneID),
-		dnsmanager.WithIPv4(ipV4),
-	)
-	if err != nil {
-		return fmt.Errorf("failed to initialize dns manager: %w", err)
-	}
-
 	secretStr, err := getConfigValue(cfg.Secret, os.Getenv("WORMHOLE_SECRET"), cmd.String("secret"), "secret")
 	if err != nil {
 		return err
@@ -244,7 +195,6 @@ func start(ctx context.Context, cmd *cli.Command) error {
 	wormholeServer, err := wserver.New(
 		wserver.WithAddr(addr),
 		wserver.WithServeAddr(serveAddr),
-		wserver.WithDNSManager(dnsManager),
 		wserver.WithAPIKeyIssuer(apiKeyIssuer),
 	)
 	if err != nil {

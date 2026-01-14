@@ -7,7 +7,6 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
-	"errors"
 	"fmt"
 	"math/big"
 	"net"
@@ -18,9 +17,6 @@ import (
 	"github.com/Dyastin-0/wormhole/core/client"
 	"github.com/Dyastin-0/wormhole/core/proto"
 	"github.com/Dyastin-0/wormhole/core/server"
-	"github.com/Dyastin-0/wormhole/dnsmanager"
-	"github.com/Dyastin-0/wormhole/mocks"
-	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -54,14 +50,14 @@ func NewTestCert() (tls.Certificate, error) {
 	tmpl := &x509.Certificate{
 		SerialNumber: big.NewInt(time.Now().UnixNano()),
 		Subject: pkix.Name{
-			CommonName: "app.com",
+			CommonName: "*.app.com",
 		},
 		NotBefore:             time.Now(),
 		NotAfter:              time.Now().Add(24 * time.Hour),
 		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		BasicConstraintsValid: true,
-		DNSNames:              []string{"app.com"},
+		DNSNames:              []string{"*.app.com", "app.com"},
 	}
 
 	derBytes, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &priv.PublicKey, priv)
@@ -82,21 +78,10 @@ func TestRequestResponse(t *testing.T) {
 
 	time.Sleep(50 * time.Millisecond)
 
-	mockDNS := &mocks.DNSManager{}
-	mockDNS.On("BaseDomain").Return("app.com")
-	mockDNS.On("CreateDNSRecord", mock.Anything, mock.Anything, mock.Anything).Return(
-		&dnsmanager.DNSRecord{
-			ID:   "test-record-123",
-			TTL:  time.Minute,
-			Meta: &dnsmanager.Record{Name: "testapp"},
-		}, nil,
-	)
-	mockDNS.On("DeleteDNSRecord", mock.Anything, "test-record-123").Return(nil)
-
 	srv, err := server.New(
 		server.WithAddr("localhost:0"),
 		server.WithServeAddr("localhost:0"),
-		server.WithDNSManager(mockDNS),
+		server.WithDomain("app.com"),
 	)
 	require.NoError(t, err)
 
@@ -129,7 +114,7 @@ func TestRequestResponse(t *testing.T) {
 		sErrch <- srv.RunTunnelerWithListener(ctx, tunnelListener)
 	}()
 
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond)
 
 	c, err := client.New(
 		client.WithAddr(controlListener.Addr().String()),
@@ -145,10 +130,6 @@ func TestRequestResponse(t *testing.T) {
 	}()
 
 	time.Sleep(50 * time.Millisecond)
-
-	mockDNS.AssertCalled(t, "CreateDNSRecord", mock.Anything, mock.Anything, mock.MatchedBy(func(record *dnsmanager.Record) bool {
-		return record.Name == "testapp" && record.Type == dnsmanager.RecordTypeA
-	}))
 
 	tlsConfig := &tls.Config{
 		InsecureSkipVerify: true,
@@ -185,24 +166,13 @@ func TestRequestResponse(t *testing.T) {
 	}
 
 	time.Sleep(50 * time.Millisecond)
-
-	mockDNS.AssertCalled(t, "DeleteDNSRecord", mock.Anything, "test-record-123")
 }
 
 func TestRequestResponseNameTaken(t *testing.T) {
-	mockDNS := &mocks.DNSManager{}
-	mockDNS.On("BaseDomain").Return("app.com")
-	mockDNS.On("CreateDNSRecord", mock.Anything, mock.Anything, mock.Anything).Return(
-		&dnsmanager.DNSRecord{}, errors.Join(
-			dnsmanager.ErrFailedToCreateNewDNSRecord,
-			dnsmanager.ErrRecordAlreadyExists,
-		),
-	)
-
 	srv, err := server.New(
 		server.WithAddr("localhost:0"),
 		server.WithServeAddr("localhost:0"),
-		server.WithDNSManager(mockDNS),
+		server.WithDomain("app.com"),
 	)
 	require.NoError(t, err)
 
@@ -218,9 +188,9 @@ func TestRequestResponseNameTaken(t *testing.T) {
 		sErrch <- srv.RunWithListener(ctx, controlListener)
 	}()
 
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond)
 
-	c, err := client.New(
+	c1, err := client.New(
 		client.WithAddr(controlListener.Addr().String()),
 		client.WithName("testapp"),
 		client.WithProto(proto.ProtoHTTP),
@@ -228,28 +198,47 @@ func TestRequestResponseNameTaken(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	cErrch := make(chan error, 1)
+	c1Errch := make(chan error, 1)
 	go func() {
-		cErrch <- c.RunWithTCP(ctx)
+		c1Errch <- c1.RunWithTCP(ctx)
 	}()
 
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond)
 
-	mockDNS.AssertCalled(t, "CreateDNSRecord", mock.Anything, mock.Anything, mock.MatchedBy(func(record *dnsmanager.Record) bool {
-		return record.Name == "testapp" && record.Type == dnsmanager.RecordTypeA
-	}))
+	c2, err := client.New(
+		client.WithAddr(controlListener.Addr().String()),
+		client.WithName("testapp"),
+		client.WithProto(proto.ProtoHTTP),
+		client.WithTargetAddr("localhost:9090"),
+	)
+	require.NoError(t, err)
+
+	c2Errch := make(chan error, 1)
+	go func() {
+		c2Errch <- c2.RunWithTCP(ctx)
+	}()
+
+	time.Sleep(100 * time.Millisecond)
+
+	select {
+	case err := <-c2Errch:
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "name taken")
+	case <-time.After(1 * time.Second):
+		t.Fatal("expected second client to fail with name taken error")
+	}
+
+	cancel()
 
 	select {
 	case err := <-sErrch:
-		require.NoError(t, err)
-	case <-time.After(1 * time.Second):
+		require.Error(t, err)
+	case <-time.After(2 * time.Second):
 	}
 
 	select {
-	case err := <-cErrch:
-		require.NoError(t, err)
-	case <-time.After(1 * time.Second):
+	case err := <-c1Errch:
+		require.ErrorIs(t, err, context.Canceled)
+	case <-time.After(2 * time.Second):
 	}
-
-	time.Sleep(50 * time.Millisecond)
 }

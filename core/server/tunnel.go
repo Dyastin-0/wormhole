@@ -9,7 +9,6 @@ import (
 	"github.com/Dyastin-0/wormhole/core/metrics"
 	"github.com/Dyastin-0/wormhole/core/proto"
 	"github.com/Dyastin-0/wormhole/core/proxy"
-	"github.com/Dyastin-0/wormhole/dnsmanager"
 	"github.com/hashicorp/yamux"
 )
 
@@ -17,8 +16,6 @@ import (
 type Tunnel struct {
 	// session specifies the long-live yamux session.
 	session *yamux.Session
-	// dnsRecord specifies the tunnel's DNS record.
-	dnsRecord *dnsmanager.DNSRecord
 	// proto specifies the tunnel protocol.
 	proto uint8
 	// metrics represents the ingress/egress metrics for the underlying tunnel.

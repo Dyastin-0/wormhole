@@ -1,7 +1,5 @@
 package server
 
-import "github.com/Dyastin-0/wormhole/dnsmanager"
-
 type OptFunc func(*Server)
 
 func WithAddr(addr string) OptFunc {
@@ -16,9 +14,9 @@ func WithServeAddr(addr string) OptFunc {
 	}
 }
 
-func WithDNSManager(dnsManager dnsmanager.DNSManager) OptFunc {
+func WithDomain(domain string) OptFunc {
 	return func(s *Server) {
-		s.dnsManager = dnsManager
+		s.domain = domain
 	}
 }
 

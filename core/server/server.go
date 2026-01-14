@@ -15,7 +15,6 @@ import (
 
 	"github.com/Dyastin-0/wormhole/core/metrics"
 	"github.com/Dyastin-0/wormhole/core/proto"
-	"github.com/Dyastin-0/wormhole/dnsmanager"
 	"github.com/caddyserver/certmagic"
 	"github.com/hashicorp/yamux"
 	cmap "github.com/orcaman/concurrent-map/v2"
@@ -47,8 +46,8 @@ type Server struct {
 	addr string
 	// serveAddr specifies the address (:port) where the tunneler listens for incoming tunnel traffic.
 	serveAddr string
-	// dnsManager manages DNS records for tunnel subdomains (e.g., creating/deleting A records).
-	dnsManager dnsmanager.DNSManager
+	// domain specifies the base domain name.
+	domain string
 	// tunnels map domain names (e.g., "example.domain.com") to active tunnel sessions.
 	tunnels *cmap.ConcurrentMap[string, *Tunnel]
 	// apiKeyIssuer is used to validate api key from requests.
@@ -76,10 +75,6 @@ func New(opts ...OptFunc) (*Server, error) {
 		return nil, errors.New("serverAddr must be set")
 	}
 
-	if s.dnsManager == nil {
-		return nil, errors.New("dnsManager must be set")
-	}
-
 	return s, nil
 }
 
@@ -96,7 +91,7 @@ func (s *Server) Run(ctx context.Context) error {
 // RunTunneler starts the tunneler, listening for incoming tunnel traffic on the configured serveAddr.
 func (s *Server) RunTunneler(ctx context.Context) error {
 	magic := certmagic.NewDefault()
-	magic.ManageAsync(ctx, []string{fmt.Sprintf("*.%s", s.dnsManager.BaseDomain())})
+	magic.ManageAsync(ctx, []string{fmt.Sprintf("*.%s", s.domain)})
 
 	ln, err := tls.Listen("tcp", s.serveAddr, magic.TLSConfig())
 	if err != nil {
@@ -267,7 +262,7 @@ func (s *Server) handleRequest(ctx context.Context, stream net.Conn, session *ya
 		return err
 	}
 
-	domain := fmt.Sprintf("%s.%s", req.Name, s.dnsManager.BaseDomain())
+	domain := fmt.Sprintf("%s.%s", req.Name, s.domain)
 
 	if s.tunnels.Has(domain) {
 		resp := &proto.Response{Status: proto.StatusNameTaken, Domain: domain}
@@ -302,35 +297,10 @@ func (s *Server) handleRequest(ctx context.Context, stream net.Conn, session *ya
 		}
 	}
 
-	record := &dnsmanager.Record{
-		Type:    dnsmanager.RecordTypeA,
-		Name:    req.Name,
-		Proxied: false,
-		TTL:     1,
-	}
-
-	dnsRecord, err := s.dnsManager.CreateDNSRecord(ctx, ttl, record)
-	if err != nil {
-		var sendErr error
-		if errors.Is(err, dnsmanager.ErrRecordAlreadyExists) {
-			resp := proto.NewResponse(proto.StatusNameTaken, uint64(ttl), domain)
-			sendErr = s.sendResp(stream, resp)
-			if sendErr != nil {
-				return errors.Join(err, sendErr)
-			}
-		}
-		sendErr = s.sendErr(stream, "failed to create domain")
-		if sendErr != nil {
-			return errors.Join(err, sendErr)
-		}
-		return err
-	}
-
 	tunnel := &Tunnel{
-		session:   session,
-		dnsRecord: dnsRecord,
-		proto:     req.Proto,
-		metrics:   metrics.NewMetrics(),
+		session: session,
+		proto:   req.Proto,
+		metrics: metrics.NewMetrics(),
 	}
 
 	s.tunnels.Set(domain, tunnel)
@@ -340,10 +310,6 @@ func (s *Server) handleRequest(ctx context.Context, stream net.Conn, session *ya
 	if err != nil {
 		err = fmt.Errorf("failed to send response: %w", err)
 		s.tunnels.Remove(domain)
-		deleteErr := s.dnsManager.DeleteDNSRecord(ctx, tunnel.dnsRecord.ID)
-		if deleteErr != nil {
-			return errors.Join(err, deleteErr)
-		}
 		return err
 	}
 
@@ -363,21 +329,13 @@ func (s *Server) handleRequest(ctx context.Context, stream net.Conn, session *ya
 	case <-ctx.Done():
 	case <-session.CloseChan():
 		log.Info().Str("domain", domain).Msg("session closed")
-	case <-time.After(tunnel.dnsRecord.TTL):
+	case <-time.After(ttl):
 		log.Info().Str("domain", domain).Msg("tunnel timed out")
 	}
 
 	err = s.sendEnd(session)
 	if err != nil {
 		log.Error().Err(err).Msg("failed to send end")
-	}
-
-	cCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	err = s.dnsManager.DeleteDNSRecord(cCtx, tunnel.dnsRecord.ID)
-	if err != nil {
-		log.Error().Err(err).Msg("failed to delete dns record")
 	}
 
 	s.tunnels.Remove(domain)
