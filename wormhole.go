@@ -87,7 +87,7 @@ func main() {
 	}()
 
 	if err := w.Run(ctx, os.Args); err != nil {
-		if errors.Is(context.Canceled, err) {
+		if errors.Is(err, context.Canceled) {
 			fmt.Printf("wormhole [inf] exited")
 			return
 		}
