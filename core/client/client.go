@@ -18,6 +18,11 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+var (
+	ErrNameTaken        = errors.New("name taken")
+	ErrUnsupportedProto = errors.New("unsupported protocol")
+)
+
 // Client represents a Wormhole client that establishes and manages a tunnel.
 type Client struct {
 	// addr is the TCP address (host:port) of the Wormhole server.
@@ -120,10 +125,10 @@ func (c *Client) RunWithTCP(ctx context.Context) error {
 	switch response.Status {
 	case proto.StatusNameTaken:
 		prettyPrint("err", fmt.Sprintf("subdomain '%s' is already in use", c.name))
-		return nil
+		return ErrNameTaken
 	case proto.StatusUnsupportedProto:
 		prettyPrint("err", fmt.Sprintf("protocol '%v' is not supported", c.proto))
-		return nil
+		return ErrUnsupportedProto
 	case proto.StatusOK:
 	default:
 		prettyPrint("err", fmt.Sprintf("unexpected response status: %v", response.Status))

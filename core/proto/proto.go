@@ -62,8 +62,6 @@ const (
 	StatusNameTaken uint8 = 0x03
 	// StatusUnsupportedProto indicates the requested protocol is not supported.
 	StatusUnsupportedProto uint8 = 0x04
-	// StatusInvalidAPiKey indicates a request contains an invalid API key.
-	StatusInvalidAPiKey uint8 = 0x05
 )
 
 // Constants definition of the protocol version.
@@ -334,7 +332,7 @@ func DeserializeRequest(data []byte) (*Request, error) {
 	req.Name = string(nameBytes)
 
 	if err := binary.Read(reader, binary.BigEndian, &req.APIKeyLength); err != nil {
-		return nil, fmt.Errorf("failed to read name length: %w", err)
+		return nil, fmt.Errorf("failed to read api key length: %w", err) // Fixed error message
 	}
 
 	expectedSize = int(RequestSize) + int(req.NameLength) + int(req.APIKeyLength)
@@ -342,11 +340,16 @@ func DeserializeRequest(data []byte) (*Request, error) {
 		return nil, ErrInsufficientData
 	}
 
-	apiKeyBytes := make([]byte, req.APIKeyLength)
-	if n, err := reader.Read(apiKeyBytes); err != nil || n != int(req.APIKeyLength) {
-		return nil, fmt.Errorf("failed to read name: %w", err)
+	// Handle empty APIKey case
+	if req.APIKeyLength > 0 {
+		apiKeyBytes := make([]byte, req.APIKeyLength)
+		if n, err := reader.Read(apiKeyBytes); err != nil || n != int(req.APIKeyLength) {
+			return nil, fmt.Errorf("failed to read api key: %w", err)
+		}
+		req.APIKey = string(apiKeyBytes)
+	} else {
+		req.APIKey = ""
 	}
-	req.APIKey = string(apiKeyBytes)
 
 	if err := validateRequest(&req); err != nil {
 		return nil, fmt.Errorf("request validation failed: %w", err)

@@ -24,6 +24,8 @@ import (
 // DefaultTunnelTTL is the default time-to-live for tunnels (1 hour).
 const DefaultTunnelTTL = 1 * time.Hour
 
+var ErrNameTaken = errors.New("name taken")
+
 var (
 	headerBufferPool = sync.Pool{
 		New: func() any {
@@ -270,7 +272,12 @@ func (s *Server) handleRequest(ctx context.Context, stream net.Conn, session *ya
 
 	if s.tunnels.Has(domain) {
 		resp := &proto.Response{Status: proto.StatusNameTaken, Domain: domain}
-		return s.sendResp(stream, resp)
+		sendErr := s.sendResp(stream, resp)
+		if sendErr != nil {
+			return sendErr
+		}
+
+		return ErrNameTaken
 	}
 
 	ttl := DefaultTunnelTTL
