@@ -71,6 +71,10 @@ func New(opts ...OptFunc) (*Server, error) {
 		return nil, errors.New("addr must be set")
 	}
 
+	if s.domain == "" {
+		return nil, errors.New("nil domain")
+	}
+
 	if s.serveAddr == "" {
 		return nil, errors.New("serverAddr must be set")
 	}

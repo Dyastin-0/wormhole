@@ -192,9 +192,15 @@ func start(ctx context.Context, cmd *cli.Command) error {
 		return err
 	}
 
+	domain, err := getConfigValue(cfg.Domain, os.Getenv("WORMHOLE_DOMAIN"), cmd.String("domain"), "domain")
+	if err != nil {
+		return err
+	}
+
 	wormholeServer, err := wserver.New(
 		wserver.WithAddr(addr),
 		wserver.WithServeAddr(serveAddr),
+		wserver.WithDomain(domain),
 		wserver.WithAPIKeyIssuer(apiKeyIssuer),
 	)
 	if err != nil {
