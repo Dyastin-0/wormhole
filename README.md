@@ -27,7 +27,8 @@ go install github.com/Dyastin-0/wormhole@latest
 
 ### Running a Server
 
-Running a server requires a `domain` and an `API token` with `Edit` permission, at least for the specific `zone`, from a DNS manager, as it automatically manages DNS records for tunnels. Currently, there's an implementation of `DNSManager` with `Cloudflare`, you can implement the `DNSManager` interface with whichever DNS manager you are using.
+Running a server requires a `wildcard` domain, e.g., `*.wormhole.dev`, and its `base` domain pointed to the wormhole server. You'll have to
+setup a reverse proxy that support wildcards.
 
 There are multiple ways to load configs.
 
@@ -48,10 +49,7 @@ You can store a configuration file at `DefaultConfigFile` (see `wormhole.go`) to
 ```bash
 wormhole start \
     --secret <api-key-secret> \
-    --zoneID <zone-id> \
-    --token <api-token> \
     --domain <base-domain-for-tunnels> \
-    --ipv4 <your-server-ip> \
     --address <:port-number> \
     --serveAddress <:port-number>
 ```
@@ -60,7 +58,10 @@ wormhole start \
 
 `--serveAddress` is used to run a `TLS` server that route connections to it's configured tunnel based on it's `SNI`.
 
-Note that not all DNS manager requires the `zone ID` for their API, e.g. Digital Ocean. Also, the Wormhole server uses plain `TCP`, you'll need to use a reverse proxy with `TLS`, as the client dials with `TLS`. Lastly, make sure the `<base-domain>` as well as `*.<base-domain>` points to your server.
+`--secret` is used to generate API keys, see below how it is used.
+
+`--domain` is used as `base` domain for tunnels. The `base` is used for the control server where wormhole clients connects to, while
+the wildcard (`*.wormhole.dev`) is used for the tunnel clients (e.g., browsers).
 
 ---
 
