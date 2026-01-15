@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bufio"
 	"net"
 	"strings"
 	"time"
@@ -13,29 +14,39 @@ const (
 	ProtoTLS   = "tls"
 )
 
+type ConnWithReader struct {
+	net.Conn
+	r *bufio.Reader
+}
+
+func (c *ConnWithReader) Read(p []byte) (int, error) {
+	return c.r.Read(p)
+}
+
 type Sniff struct {
 	peekN int
 }
 
 // Conn determines the underlying protocol of a network connection.
-func (s *Sniff) Conn(conn net.Conn) (string, *PeekableConn) {
-	peekConn := NewPeekableConn(conn)
-	peekConn.SetReadDeadline(time.Now().Add(5 * time.Second))
+func (s *Sniff) Conn(conn net.Conn) (string, *bufio.Reader) {
+	br := bufio.NewReader(conn)
 
-	peekedBytes, err := peekConn.Peek(s.peekN)
+	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	peekedBytes, err := br.Peek(s.peekN)
+	_ = conn.SetReadDeadline(time.Time{})
+
 	if err != nil && len(peekedBytes) == 0 {
-		return ProtoTCP, peekConn
+		return ProtoTCP, br
 	}
-
-	peekConn.SetReadDeadline(time.Time{})
 
 	if s.TLS(peekedBytes) {
-		return ProtoTLS, peekConn
+		return ProtoTLS, br
 	}
 	if s.HTTP(peekedBytes) {
-		return ProtoHTTP, peekConn
+		return ProtoHTTP, br
 	}
-	return ProtoTCP, peekConn
+
+	return ProtoTCP, br
 }
 
 // TLS determines if peekedBytes is a tls record.

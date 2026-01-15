@@ -4,7 +4,6 @@
 package server
 
 import (
-	"bufio"
 	"context"
 	"crypto/tls"
 	"errors"
@@ -167,15 +166,14 @@ func (s *Server) RunTunnelerWithListener(ctx context.Context, ln net.Listener) e
 }
 
 // tunnel forwards an incoming connection to the appropriate client session based on the SNI.
-
 func (s *Server) tunnel(ctx context.Context, conn net.Conn) error {
-	defer conn.Close()
-
 	sni, tlsConn := getSNI(conn)
 	if sni == "" {
+		conn.Close()
 		return fmt.Errorf("missing sni")
 	}
-	defer tlsConn.Close()
+	conn = tlsConn
+	defer conn.Close()
 
 	tunnel, ok := s.tunnels.Get(sni)
 	if !ok {
@@ -183,53 +181,28 @@ func (s *Server) tunnel(ctx context.Context, conn net.Conn) error {
 	}
 
 	sniffer := &Sniff{peekN: 24}
+	proto, br := sniffer.Conn(tlsConn)
+	log.Debug().Str("proto", proto).Msg("detected protocol")
 
-	detectedProto, conn := sniffer.Conn(tlsConn)
+	if proto == ProtoHTTP && tunnel.auth.IsEnabled() {
+		req, err := http.ReadRequest(br)
+		if err != nil {
+			s.sendUnauthorized(tlsConn, tunnel.auth)
+			return err
+		}
 
-	log.Debug().Str("proto", detectedProto).Msg("detected protocol")
-
-	if detectedProto == ProtoHTTP && tunnel.auth.IsEnabled() {
-		var ok bool
-		conn, ok = s.authenticateHTTP(conn, tunnel)
-		if !ok {
-			s.sendUnauthorized(conn, tunnel.auth)
-			return fmt.Errorf("unauthorized access to %s", sni)
+		if !tunnel.auth.Authenticate(req) {
+			s.sendUnauthorized(tlsConn, tunnel.auth)
+			return fmt.Errorf("unauthorized")
 		}
 	}
 
-	tCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	return tunnel.From(tCtx, conn)
-}
-
-type ConnWithReader struct {
-	net.Conn
-	r *bufio.Reader
-}
-
-func (c *ConnWithReader) Read(p []byte) (int, error) {
-	return c.r.Read(p)
-}
-
-// authenticateHTTP authenticates the request using the underlying authenticator.
-func (s *Server) authenticateHTTP(conn net.Conn, tunnel *Tunnel) (net.Conn, bool) {
-	br := bufio.NewReader(conn)
-
-	req, err := http.ReadRequest(br)
-	if err != nil {
-		log.Error().Err(err).Msg("failed to read HTTP request for auth")
-		return conn, false
-	}
-
-	if !tunnel.auth.Authenticate(req) {
-		return conn, false
-	}
-
-	return &ConnWithReader{
+	wrapped := &ConnWithReader{
 		Conn: conn,
 		r:    br,
-	}, true
+	}
+
+	return tunnel.From(ctx, wrapped)
 }
 
 // sendUnauthorized sends the authentication challenge from the underlying authenticator.
