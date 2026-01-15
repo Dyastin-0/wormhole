@@ -181,7 +181,10 @@ func (s *Server) tunnel(ctx context.Context, conn net.Conn) error {
 		return fmt.Errorf("no tunnel for %s", sni)
 	}
 
-	sniffer := &Sniff{}
+	sniffer := &Sniff{
+		peekN: 24,
+	}
+
 	detectedProto, peekableConn := sniffer.Conn(tlsConn)
 
 	log.Debug().Str("proto", detectedProto).Msg("detected protocol")
