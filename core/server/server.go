@@ -187,10 +187,7 @@ func (s *Server) tunnel(ctx context.Context, conn net.Conn) error {
 	log.Debug().Str("proto", proto).Msg("detected protocol")
 
 	if proto == ProtoHTTP && tunnel.auth.IsEnabled() {
-		const maxBodySize = 10 << 20
-		limited := &io.LimitedReader{R: br, N: maxBodySize}
-
-		req, err := http.ReadRequest(bufio.NewReader(limited))
+		req, err := http.ReadRequest(br)
 		if err != nil {
 			s.sendUnauthorized(tlsConn, tunnel.auth)
 			return fmt.Errorf("failed to read HTTP request: %w", err)
@@ -201,41 +198,21 @@ func (s *Server) tunnel(ctx context.Context, conn net.Conn) error {
 			return fmt.Errorf("unauthorized")
 		}
 
-		var bodyBuf bytes.Buffer
-		if req.ContentLength > 0 || req.Header.Get("Transfer-Encoding") == "chunked" {
-			_, err = io.Copy(&bodyBuf, req.Body)
-			if err != nil {
-				return fmt.Errorf("failed to read request body: %w", err)
-			}
-			req.Body.Close()
-		}
-
 		var fullRequest bytes.Buffer
-
-		if err = req.Write(&fullRequest); err != nil {
-			return fmt.Errorf("failed to serialize request headers: %w", err)
-		}
-
-		if bodyBuf.Len() > 0 {
-			_, err = io.Copy(&fullRequest, &bodyBuf)
-			if err != nil {
-				return fmt.Errorf("failed to copy body: %w", err)
-			}
+		if err := req.Write(&fullRequest); err != nil {
+			return fmt.Errorf("failed to serialize request: %w", err)
 		}
 
 		wrapped := &ConnWithReader{
 			Conn: conn,
 			r:    bufio.NewReader(io.MultiReader(&fullRequest, br)),
 		}
-
 		return tunnel.From(ctx, wrapped)
 	}
-
 	wrapped := &ConnWithReader{
 		Conn: conn,
 		r:    br,
 	}
-
 	return tunnel.From(ctx, wrapped)
 }
 
