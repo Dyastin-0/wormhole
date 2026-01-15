@@ -55,7 +55,7 @@ func (b *BearerAuth) SendChallenge(conn net.Conn) {
 	html := `<!DOCTYPE html>
 <html>
 <head>
-    <title>401 Unauthorized</title>
+    <title>Authentication Required</title>
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -64,45 +64,52 @@ func (b *BearerAuth) SendChallenge(conn net.Conn) {
             align-items: center;
             height: 100vh;
             margin: 0;
-            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            background: #0f172a;
+            color: #e2e8f0;
         }
         .container {
             text-align: center;
-            padding: 3rem;
-            background: white;
-            border-radius: 12px;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-            max-width: 400px;
+            max-width: 500px;
+            padding: 2rem;
+        }
+        .error-code {
+            font-size: 6rem;
+            font-weight: 700;
+            margin-bottom: 1rem;
+            opacity: 0.9;
+            color: #64748b;
         }
         h1 {
-            color: #333;
+            color: #f1f5f9;
             margin: 0 0 0.5rem 0;
-            font-size: 3rem;
-        }
-        h2 {
-            color: #f5576c;
-            margin: 0 0 1.5rem 0;
+            font-size: 2rem;
             font-weight: 600;
         }
         p {
-            color: #666;
+            color: #94a3b8;
             line-height: 1.6;
             margin: 0.5rem 0;
+            font-size: 1rem;
         }
-        code {
-            background: #f5f5f5;
-            padding: 2px 6px;
-            border-radius: 3px;
-            font-size: 0.9em;
+        .code {
+            display: inline-block;
+            margin-top: 1rem;
+            padding: 0.5rem 1rem;
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.875rem;
+            color: #cbd5e1;
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>401</h1>
-        <h2>Unauthorized</h2>
-        <p>This tunnel requires a Bearer token.</p>
-        <p>Include header: <code>Authorization: Bearer &lt;token&gt;</code></p>
+        <div class="error-code">401</div>
+        <h1>Bearer Token Required</h1>
+        <p>This tunnel requires a valid Bearer token to access.</p>
+        <div class="code">Authorization: Bearer &lt;token&gt;</div>
     </div>
 </body>
 </html>`

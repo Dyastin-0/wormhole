@@ -212,7 +212,7 @@ func (s *Server) tunnel(ctx context.Context, conn net.Conn) error {
 
 		var fullRequest bytes.Buffer
 
-		if err := req.Write(&fullRequest); err != nil {
+		if err = req.Write(&fullRequest); err != nil {
 			return fmt.Errorf("failed to serialize request headers: %w", err)
 		}
 
