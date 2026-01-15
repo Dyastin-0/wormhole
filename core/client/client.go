@@ -43,11 +43,14 @@ type Client struct {
 	apiKey string
 	// ttl specifies the time-to-live of this client.
 	ttl uint64
-	// authType
-	authType     uint8
+	// authType is the authentication type for the tunnel.
+	authType uint8
+	// authUsername is the username for HTTP basic auth.
 	authUsername string
+	// authPassword is the password for HTTP basic auth.
 	authPassword string
-	authToken    string
+	// authToken is the bearer token for bearer token auth.
+	authToken string
 }
 
 // New creates a new Client with the specified configuration options.
@@ -248,6 +251,11 @@ func (c *Client) sendRequest(ctx context.Context, stream net.Conn) (*proto.Heade
 	}
 
 	request := proto.NewRequest(c.proto, c.name, c.ttl, c.apiKey)
+	request.AuthType = c.authType
+	request.AuthUsername = c.authUsername
+	request.AuthPassword = c.authPassword
+	request.AuthToken = c.authToken
+
 	serializedRequest, err := proto.SerializeRequest(request)
 	if err != nil {
 		return nil, fmt.Errorf("failed to serialize request: %w", err)
