@@ -13,6 +13,9 @@ type Authenticator interface {
 
 	// SendChallenge sends the appropriate authentication challenge response.
 	SendChallenge(conn net.Conn)
+
+	// IsEnabled returns true if authentication is configured.
+	IsEnabled() bool
 }
 
 // NoAuth represents no authentication (public access)
@@ -24,4 +27,8 @@ func (n *NoAuth) Authenticate(req *http.Request) bool {
 
 func (n *NoAuth) SendChallenge(conn net.Conn) {
 	// No challenge needed for public access
+}
+
+func (n *NoAuth) IsEnabled() bool {
+	return false
 }

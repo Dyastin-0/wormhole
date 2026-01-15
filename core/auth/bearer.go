@@ -120,3 +120,7 @@ func (b *BearerAuth) SendChallenge(conn net.Conn) {
 
 	conn.Write([]byte(response))
 }
+
+func (b *BearerAuth) IsEnabled() bool {
+	return b.Token != ""
+}

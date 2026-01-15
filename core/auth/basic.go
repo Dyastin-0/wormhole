@@ -128,3 +128,7 @@ func (b *BasicAuth) SendChallenge(conn net.Conn) {
 
 	conn.Write([]byte(response))
 }
+
+func (b *BasicAuth) IsEnabled() bool {
+	return b.Username != "" && b.Password != ""
+}

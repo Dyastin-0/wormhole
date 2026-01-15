@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/Dyastin-0/wormhole/core/auth"
+	"github.com/Dyastin-0/wormhole/core/metrics"
 	"github.com/Dyastin-0/wormhole/core/proto"
 	"github.com/caddyserver/certmagic"
 	"github.com/hashicorp/yamux"
@@ -183,7 +184,7 @@ func (s *Server) tunnel(ctx context.Context, conn net.Conn) error {
 	sniffer := &Sniff{}
 	detectedProto, peekableConn := sniffer.Conn(tlsConn)
 
-	if detectedProto == ProtoHTTP {
+	if detectedProto == ProtoHTTP && tunnel.auth.IsEnabled() {
 		if !s.authenticateHTTP(peekableConn, tunnel) {
 			s.sendUnauthorized(peekableConn, tunnel.auth)
 			return fmt.Errorf("unauthorized access to %s", sni)
@@ -359,6 +360,7 @@ func (s *Server) handleRequest(ctx context.Context, stream net.Conn, session *ya
 		proto:   req.Proto,
 		ttl:     ttl,
 		auth:    authenticator,
+		metrics: metrics.New(),
 	}
 
 	s.tunnels.Set(domain, tunnel)
