@@ -11,7 +11,7 @@ func TestMetricsReadWriter(t *testing.T) {
 	data := []byte("hello world")
 	buf := bytes.NewBuffer(data)
 
-	m := NewMetrics()
+	m := New()
 	mrw := NewMetricsReadWriter(buf, m)
 
 	readBuf := make([]byte, len(data))

@@ -27,6 +27,16 @@ const (
 	TypeError uint8 = 0xFF
 )
 
+// Constants definition for HTTP authentication types.
+const (
+	// AuthTypeNone indicates no authentication.
+	AuthTypeNone uint8 = 0x01
+	// AuthTypeBasic implements a HTTP basic authentication.
+	AuthTypeBasic uint8 = 0x02
+	// AuthTypeBearer implements a bearer token authentication.
+	AuthTypeBearer uint8 = 0x03
+)
+
 // FlagMetrics indicates that the client wants to stream the tunnel metrics.
 const FlagMetrics = 0x01
 
@@ -38,8 +48,8 @@ const (
 	MaxStringLength uint32 = 4096
 	// HeaderSize is the fixed size of a protocol header in bytes (12 bytes).
 	HeaderSize uint8 = 12
-	// RequestSize is the fixed size of a request's non-string fields in bytes (17 bytes).
-	RequestSize uint8 = 17
+	// RequestSize is the fixed size of a request's non-string fields in bytes (30 bytes).
+	RequestSize = 30
 	// ResponseSize is the fixed size of a response's non-string fields in bytes (13 bytes).
 	ResponseSize uint8 = 13
 	// MetricsSize is the fixed size of a metrics' fields in bytes (36).
@@ -164,22 +174,6 @@ func (h *Header) ClearFlag(flag uint8) {
 	h.Flags &^= flag
 }
 
-// Request represents a client's request to establish a tunnel.
-type Request struct {
-	// Proto specifies the tunnel protocol (e.g., ProtoHTTP, ProtoTCP).
-	Proto uint8
-	// TTL is the desired tunnel time-to-live, ignored when APIKey is not present.
-	TTL uint64
-	// NameLength is the length of the Name field in bytes (must not exceed MaxStringLength).
-	NameLength uint32
-	// Name is the desired subdomain name for the tunnel (e.g., "example" for "example.domain.com").
-	Name string
-	// APIKeyLength is the length of the APIKey field in bytes (must not exceed MaxStringLength).
-	APIKeyLength uint32
-	// APIKey is the server-issued JWT token.
-	APIKey string
-}
-
 // Response represents the server's response to a tunnel request.
 type Response struct {
 	// Status indicates the result of the request (e.g., StatusOK, StatusNameTaken).
@@ -257,105 +251,6 @@ func DeserializeHeader(data []byte) (*Header, error) {
 	}
 
 	return &header, nil
-}
-
-// SerializeRequest serializes a Request to a byte slice using a pooled buffer.
-func SerializeRequest(req *Request) ([]byte, error) {
-	if err := validateRequest(req); err != nil {
-		return nil, fmt.Errorf("request validation failed: %w", err)
-	}
-
-	bufPtr := requestBufferPool.Get().(*[]byte)
-	defer requestBufferPool.Put(bufPtr)
-
-	*bufPtr = (*bufPtr)[:0]
-	totalSize := int(RequestSize) + len(req.Name) + len(req.APIKey)
-	if cap(*bufPtr) < totalSize {
-		*bufPtr = make([]byte, 0, totalSize)
-	}
-	buf := bytes.NewBuffer(*bufPtr)
-
-	if err := binary.Write(buf, binary.BigEndian, req.Proto); err != nil {
-		return nil, fmt.Errorf("failed to write protocol: %w", err)
-	}
-	if err := binary.Write(buf, binary.BigEndian, req.TTL); err != nil {
-		return nil, fmt.Errorf("failed to write ttl: %w", err)
-	}
-	if err := binary.Write(buf, binary.BigEndian, req.NameLength); err != nil {
-		return nil, fmt.Errorf("failed to write name length: %w", err)
-	}
-	if _, err := buf.WriteString(req.Name); err != nil {
-		return nil, fmt.Errorf("failed to write name: %w", err)
-	}
-	if err := binary.Write(buf, binary.BigEndian, req.APIKeyLength); err != nil {
-		return nil, fmt.Errorf("failed to write api key length: %w", err)
-	}
-	if _, err := buf.WriteString(req.APIKey); err != nil {
-		return nil, fmt.Errorf("failed to write api key: %w", err)
-	}
-
-	result := make([]byte, buf.Len())
-	copy(result, buf.Bytes())
-	return result, nil
-}
-
-// DeserializeRequest deserializes a byte slice into a Request.
-func DeserializeRequest(data []byte) (*Request, error) {
-	if len(data) < int(RequestSize) {
-		return nil, ErrInvalidRequestSize
-	}
-
-	reader := bytes.NewReader(data)
-	var req Request
-
-	if err := binary.Read(reader, binary.BigEndian, &req.Proto); err != nil {
-		return nil, fmt.Errorf("failed to read protocol: %w", err)
-	}
-
-	if err := binary.Read(reader, binary.BigEndian, &req.TTL); err != nil {
-		return nil, fmt.Errorf("failed to read ttl: %w", err)
-	}
-
-	if err := binary.Read(reader, binary.BigEndian, &req.NameLength); err != nil {
-		return nil, fmt.Errorf("failed to read name length: %w", err)
-	}
-
-	expectedSize := int(RequestSize) + int(req.NameLength)
-	if len(data) < expectedSize {
-		return nil, ErrInsufficientData
-	}
-
-	nameBytes := make([]byte, req.NameLength)
-	if n, err := reader.Read(nameBytes); err != nil || n != int(req.NameLength) {
-		return nil, fmt.Errorf("failed to read name: %w", err)
-	}
-	req.Name = string(nameBytes)
-
-	if err := binary.Read(reader, binary.BigEndian, &req.APIKeyLength); err != nil {
-		return nil, fmt.Errorf("failed to read api key length: %w", err) // Fixed error message
-	}
-
-	expectedSize = int(RequestSize) + int(req.NameLength) + int(req.APIKeyLength)
-	if len(data) < expectedSize {
-		return nil, ErrInsufficientData
-	}
-
-	// Handle empty APIKey case
-	if req.APIKeyLength > 0 {
-		apiKeyBytes := make([]byte, req.APIKeyLength)
-		if n, err := reader.Read(apiKeyBytes); err != nil || n != int(req.APIKeyLength) {
-			return nil, fmt.Errorf("failed to read api key: %w", err)
-		}
-		req.APIKey = string(apiKeyBytes)
-	} else {
-		req.APIKey = ""
-	}
-
-	if err := validateRequest(&req); err != nil {
-		return nil, fmt.Errorf("request validation failed: %w", err)
-	}
-
-	return &req, nil
 }
 
 // SerializeResponse serializes a Response to a byte slice using a pooled buffer.
@@ -495,35 +390,6 @@ func validateHeader(header *Header) error {
 	return nil
 }
 
-// validateRequest validates a Request's fields.
-func validateRequest(req *Request) error {
-	if req.Proto != ProtoHTTP && req.Proto != ProtoTCP {
-		return ErrInvalidProtocol
-	}
-
-	if req.NameLength == 0 || len(req.Name) == 0 {
-		return ErrEmptyString
-	}
-
-	if req.NameLength != uint32(len(req.Name)) {
-		return ErrInvalidLength
-	}
-
-	if req.NameLength > MaxStringLength {
-		return ErrStringTooLong
-	}
-
-	if req.APIKeyLength != uint32(len(req.APIKey)) {
-		return ErrInvalidLength
-	}
-
-	if req.APIKeyLength > MaxStringLength {
-		return ErrStringTooLong
-	}
-
-	return nil
-}
-
 // validateResponse validates a Response's fields.
 func validateResponse(resp *Response) error {
 	switch resp.Status {
@@ -568,18 +434,6 @@ func NewHeader(msgType uint8, length uint64) *Header {
 		Flags:    0,
 		Length:   length,
 		Reserved: 0,
-	}
-}
-
-// NewRequest creates a new Request with the specified protocol and subdomain name.
-func NewRequest(proto uint8, name string, ttl uint64, apiKey string) *Request {
-	return &Request{
-		Proto:        proto,
-		TTL:          ttl,
-		NameLength:   uint32(len(name)),
-		Name:         name,
-		APIKeyLength: uint32(len(apiKey)),
-		APIKey:       apiKey,
 	}
 }
 

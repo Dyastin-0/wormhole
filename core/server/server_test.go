@@ -3,28 +3,23 @@ package server
 import (
 	"context"
 	"encoding/binary"
-	"errors"
+	"fmt"
 	"io"
 	"net"
 	"testing"
 	"time"
 
 	"github.com/Dyastin-0/wormhole/core/proto"
-	"github.com/Dyastin-0/wormhole/dnsmanager"
-	"github.com/Dyastin-0/wormhole/mocks"
 	"github.com/hashicorp/yamux"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
 func TestNewValidConfig(t *testing.T) {
-	mockDNS := &mocks.DNSManager{}
-
 	srv, err := New(
 		WithAddr("localhost:8080"),
 		WithServeAddr("localhost:8443"),
-		WithDNSManager(mockDNS),
+		WithDomain("test.com"),
 	)
 
 	assert.NoError(t, err)
@@ -40,21 +35,12 @@ func TestNewInvalidConfig(t *testing.T) {
 			name: "missing addr",
 			opts: []OptFunc{
 				WithServeAddr("localhost:8443"),
-				WithDNSManager(&mocks.DNSManager{}),
 			},
 		},
 		{
 			name: "missing serveAddr",
 			opts: []OptFunc{
 				WithAddr("localhost:8080"),
-				WithDNSManager(&mocks.DNSManager{}),
-			},
-		},
-		{
-			name: "missing dnsManager",
-			opts: []OptFunc{
-				WithAddr("localhost:8080"),
-				WithServeAddr("localhost:8443"),
 			},
 		},
 	}
@@ -69,11 +55,10 @@ func TestNewInvalidConfig(t *testing.T) {
 }
 
 func TestSendResp(t *testing.T) {
-	mockDNS := &mocks.DNSManager{}
 	srv, err := New(
 		WithAddr("localhost:8080"),
 		WithServeAddr("localhost:8443"),
-		WithDNSManager(mockDNS),
+		WithDomain("test.com"),
 	)
 	require.NoError(t, err)
 
@@ -114,11 +99,10 @@ func TestSendResp(t *testing.T) {
 }
 
 func TestSendErr(t *testing.T) {
-	mockDNS := &mocks.DNSManager{}
 	srv, err := New(
 		WithAddr("localhost:8080"),
 		WithServeAddr("localhost:8443"),
-		WithDNSManager(mockDNS),
+		WithDomain("test.com"),
 	)
 	require.NoError(t, err)
 
@@ -158,11 +142,10 @@ func TestSendErr(t *testing.T) {
 }
 
 func TestSendEnd(t *testing.T) {
-	mockDNS := &mocks.DNSManager{}
 	srv, err := New(
 		WithAddr("localhost:8080"),
 		WithServeAddr("localhost:8443"),
-		WithDNSManager(mockDNS),
+		WithDomain("test.com"),
 	)
 	require.NoError(t, err)
 
@@ -224,27 +207,17 @@ func createYamuxSessionPair(t *testing.T) (*yamux.Session, *yamux.Session, func(
 }
 
 func TestHandleRequestSuccess(t *testing.T) {
-	mockDNS := &mocks.DNSManager{}
-	mockDNS.On("BaseDomain").Return("app.com")
-	mockDNS.On("CreateDNSRecord", mock.Anything, mock.Anything, mock.Anything).Return(
-		&dnsmanager.DNSRecord{
-			ID:   "test-record-id",
-			TTL:  DefaultTunnelTTL,
-			Meta: &dnsmanager.Record{Name: "testapp"},
-		}, nil,
-	)
-	mockDNS.On("DeleteDNSRecord", mock.Anything, "test-record-id").Return(nil)
 	srv, err := New(
 		WithAddr("localhost:8080"),
 		WithServeAddr("localhost:8443"),
-		WithDNSManager(mockDNS),
+		WithDomain("test.com"),
 	)
 	require.NoError(t, err)
 
 	serverSession, clientSession, cleanup := createYamuxSessionPair(t)
 	defer cleanup()
 
-	request := proto.NewRequest(proto.ProtoHTTP, "testapp")
+	request := proto.NewRequest(proto.ProtoHTTP, "testapp", 0, "")
 	serializedRequest, err := proto.SerializeRequest(request)
 	require.NoError(t, err)
 
@@ -272,31 +245,22 @@ func TestHandleRequestSuccess(t *testing.T) {
 
 	err = <-errch
 	require.NoError(t, err)
-
-	mockDNS.AssertCalled(t, "CreateDNSRecord", mock.Anything, mock.Anything, mock.MatchedBy(func(record *dnsmanager.Record) bool {
-		return record.Name == "testapp" && record.Type == dnsmanager.RecordTypeA
-	}))
 }
 
 func TestHandleRequestNameTaken(t *testing.T) {
-	mockDNS := &mocks.DNSManager{}
-	mockDNS.On("BaseDomain").Return("app.com")
-	mockDNS.On("DeleteDNSRecord", mock.Anything, "test-record-id").Return(nil)
-	mockDNS.On("CreateDNSRecord", mock.Anything, mock.Anything, mock.Anything).Return(
-		&dnsmanager.DNSRecord{}, errors.Join(dnsmanager.ErrFailedToCreateNewDNSRecord, dnsmanager.ErrRecordAlreadyExists),
-	)
-
 	srv, err := New(
 		WithAddr("localhost:8080"),
 		WithServeAddr("localhost:8443"),
-		WithDNSManager(mockDNS),
+		WithDomain("test.com"),
 	)
 	require.NoError(t, err)
+
+	srv.tunnels.Set(fmt.Sprintf("testapp.%s", srv.domain), nil)
 
 	serverSession, clientSession, cleanup := createYamuxSessionPair(t)
 	defer cleanup()
 
-	request := proto.NewRequest(proto.ProtoHTTP, "testapp")
+	request := proto.NewRequest(proto.ProtoHTTP, "testapp", 0, "")
 	serializedRequest, err := proto.SerializeRequest(request)
 	require.NoError(t, err)
 
@@ -340,10 +304,6 @@ func TestHandleRequestNameTaken(t *testing.T) {
 
 	err = <-errch
 	require.Error(t, err)
-
-	mockDNS.AssertCalled(t, "CreateDNSRecord", mock.Anything, mock.Anything, mock.MatchedBy(func(record *dnsmanager.Record) bool {
-		return record.Name == "testapp" && record.Type == dnsmanager.RecordTypeA
-	}))
 }
 
 func createInvalidProtocolBytes() []byte {
@@ -356,21 +316,10 @@ func createInvalidProtocolBytes() []byte {
 }
 
 func TestHandleRequestUnsupportedProto(t *testing.T) {
-	mockDNS := &mocks.DNSManager{}
-	mockDNS.On("BaseDomain").Return("app.com")
-	mockDNS.On("CreateDNSRecord", mock.Anything, mock.Anything, mock.Anything).Return(
-		&dnsmanager.DNSRecord{
-			ID:   "test-record-id",
-			TTL:  DefaultTunnelTTL,
-			Meta: &dnsmanager.Record{Name: "testapp"},
-		}, nil,
-	)
-	mockDNS.On("DeleteDNSRecord", mock.Anything, "test-record-id").Return(nil)
-
 	srv, err := New(
 		WithAddr("localhost:8080"),
 		WithServeAddr("localhost:8443"),
-		WithDNSManager(mockDNS),
+		WithDomain("test.com"),
 	)
 	require.NoError(t, err)
 

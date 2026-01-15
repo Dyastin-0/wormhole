@@ -4,15 +4,18 @@
 package server
 
 import (
+	"bufio"
 	"context"
 	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"sync"
 	"time"
 
+	"github.com/Dyastin-0/wormhole/core/auth"
 	"github.com/Dyastin-0/wormhole/core/metrics"
 	"github.com/Dyastin-0/wormhole/core/proto"
 	"github.com/caddyserver/certmagic"
@@ -178,10 +181,36 @@ func (s *Server) tunnel(ctx context.Context, conn net.Conn) error {
 		return fmt.Errorf("no tunnel for %s", sni)
 	}
 
+	sniffer := &Sniff{}
+	detectedProto, peekableConn := sniffer.Conn(tlsConn)
+
+	if detectedProto == ProtoHTTP && tunnel.auth.IsEnabled() {
+		if !s.authenticateHTTP(peekableConn, tunnel) {
+			s.sendUnauthorized(peekableConn, tunnel.auth)
+			return fmt.Errorf("unauthorized access to %s", sni)
+		}
+	}
+
 	tCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	return tunnel.From(tCtx, tlsConn)
+	return tunnel.From(tCtx, peekableConn)
+}
+
+// authenticateHTTP authenticates the request using the underlying authenticator.
+func (s *Server) authenticateHTTP(conn *PeekableConn, tunnel *Tunnel) bool {
+	req, err := http.ReadRequest(bufio.NewReader(conn))
+	if err != nil {
+		log.Error().Err(err).Msg("failed to read HTTP request for auth")
+		return false
+	}
+
+	return tunnel.auth.Authenticate(req)
+}
+
+// sendUnauthorized sends the authentication challenge from the underlying authenticator.
+func (s *Server) sendUnauthorized(conn net.Conn, authenticator auth.Authenticator) {
+	authenticator.SendChallenge(conn)
 }
 
 // handleConnections accepts incoming client control connections and processes them concurrently.
@@ -283,8 +312,8 @@ func (s *Server) handleRequest(ctx context.Context, stream net.Conn, session *ya
 	ttl := DefaultTunnelTTL
 
 	if req.APIKey != "" {
-		claims, err := s.apiKeyIssuer.Validate(req.APIKey)
-		if err == nil {
+		claims, errr := s.apiKeyIssuer.Validate(req.APIKey)
+		if errr == nil {
 			// if ttl from claims is zero (0), it is a priviledged api key.
 			// we will use the ttl from the client request if provided.
 			if claims.TTL == 0 {
@@ -299,8 +328,7 @@ func (s *Server) handleRequest(ctx context.Context, stream net.Conn, session *ya
 			}
 		} else {
 			log.Error().Err(err).Str("domain", domain).Msg("api key validation")
-			var sendErr error
-			sendErr = s.sendErr(stream, err.Error())
+			sendErr := s.sendErr(stream, errr.Error())
 			if sendErr != nil {
 				return errors.Join(err, sendErr)
 			}
@@ -308,15 +336,36 @@ func (s *Server) handleRequest(ctx context.Context, stream net.Conn, session *ya
 		}
 	}
 
+	var authenticator auth.Authenticator
+
+	switch req.AuthType {
+	case proto.AuthTypeBasic:
+		authenticator, err = auth.NewBasicAuth(req.AuthUsername, req.AuthPassword)
+		if err != nil {
+			authenticator = &auth.NoAuth{}
+		}
+	case proto.AuthTypeBearer:
+		authenticator, err = auth.NewBearerAuth(req.AuthToken)
+		if err != nil {
+			authenticator = &auth.NoAuth{}
+		}
+	case proto.AuthTypeNone:
+		fallthrough
+	default:
+		authenticator = &auth.NoAuth{}
+	}
+
 	tunnel := &Tunnel{
 		session: session,
 		proto:   req.Proto,
-		metrics: metrics.NewMetrics(),
+		ttl:     ttl,
+		auth:    authenticator,
+		metrics: metrics.New(),
 	}
 
 	s.tunnels.Set(domain, tunnel)
 
-	resp := proto.NewResponse(proto.StatusOK, uint64(ttl), domain)
+	resp := proto.NewResponse(proto.StatusOK, uint64(tunnel.ttl), domain)
 	err = s.sendResp(stream, resp)
 	if err != nil {
 		err = fmt.Errorf("failed to send response: %w", err)
@@ -340,7 +389,7 @@ func (s *Server) handleRequest(ctx context.Context, stream net.Conn, session *ya
 	case <-ctx.Done():
 	case <-session.CloseChan():
 		log.Info().Str("domain", domain).Msg("session closed")
-	case <-time.After(ttl):
+	case <-time.After(tunnel.ttl):
 		log.Info().Str("domain", domain).Msg("tunnel timed out")
 	}
 

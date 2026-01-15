@@ -10,7 +10,6 @@ import (
 
 	"github.com/Dyastin-0/wormhole/core/metrics"
 	"github.com/Dyastin-0/wormhole/core/proto"
-	"github.com/Dyastin-0/wormhole/dnsmanager"
 	"github.com/hashicorp/yamux"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -69,7 +68,7 @@ func TestFromSuccess(t *testing.T) {
 	tunnel := &Tunnel{
 		session: session,
 		proto:   proto.ProtoHTTP,
-		metrics: metrics.NewMetrics(),
+		metrics: metrics.New(),
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
@@ -116,9 +115,8 @@ func TestFromHandshakeFail(t *testing.T) {
 	defer session.Close()
 
 	tunnel := &Tunnel{
-		session:   session,
-		proto:     proto.ProtoHTTP,
-		dnsRecord: &dnsmanager.DNSRecord{},
+		session: session,
+		proto:   proto.ProtoHTTP,
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)

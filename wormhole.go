@@ -247,7 +247,13 @@ func http(ctx context.Context, cmd *cli.Command) error {
 	ttl := cmd.Uint64("ttl")
 	metrics := cmd.Bool("metrics")
 
-	wormholeClient, err := wclient.New(
+	// Auth flags
+	authType := cmd.String("authType")
+	authUser := cmd.String("authUser")
+	authPass := cmd.String("authPass")
+	authToken := cmd.String("authToken")
+
+	opts := []wclient.OptFunc{
 		wclient.WithProtoHTTP,
 		wclient.WithName(name),
 		wclient.WithAddr(addr),
@@ -255,7 +261,14 @@ func http(ctx context.Context, cmd *cli.Command) error {
 		wclient.WithMetrics(metrics),
 		wclient.WithAPIKey(apiKey),
 		wclient.WithTTL(ttl),
-	)
+	}
+
+	// Add authentication options
+	if err := addAuthOptions(&opts, authType, authUser, authPass, authToken); err != nil {
+		return err
+	}
+
+	wormholeClient, err := wclient.New(opts...)
 	if err != nil {
 		return fmt.Errorf("failed to initialize wormhole client: %w", err)
 	}
@@ -285,7 +298,13 @@ func tcp(ctx context.Context, cmd *cli.Command) error {
 	ttl := cmd.Uint64("ttl")
 	metrics := cmd.Bool("metrics")
 
-	wormholeClient, err := wclient.New(
+	// Auth flags
+	authType := cmd.String("authType")
+	authUser := cmd.String("authUser")
+	authPass := cmd.String("authPass")
+	authToken := cmd.String("authToken")
+
+	opts := []wclient.OptFunc{
 		wclient.WithProtoTCP,
 		wclient.WithName(name),
 		wclient.WithAddr(addr),
@@ -293,7 +312,14 @@ func tcp(ctx context.Context, cmd *cli.Command) error {
 		wclient.WithMetrics(metrics),
 		wclient.WithAPIKey(apiKey),
 		wclient.WithTTL(ttl),
-	)
+	}
+
+	// Add authentication options
+	if err := addAuthOptions(&opts, authType, authUser, authPass, authToken); err != nil {
+		return err
+	}
+
+	wormholeClient, err := wclient.New(opts...)
 	if err != nil {
 		return fmt.Errorf("failed to initialize wormhole client: %w", err)
 	}
@@ -303,6 +329,26 @@ func tcp(ctx context.Context, cmd *cli.Command) error {
 		return err
 	}
 
+	return nil
+}
+
+func addAuthOptions(opts *[]wclient.OptFunc, authType, authUser, authPass, authToken string) error {
+	switch authType {
+	case "basic":
+		if authUser == "" || authPass == "" {
+			return fmt.Errorf("basic auth requires both --auth-user and --auth-pass")
+		}
+		*opts = append(*opts, wclient.WithBasicAuth(authUser, authPass))
+	case "bearer":
+		if authToken == "" {
+			return fmt.Errorf("bearer auth requires --auth-token")
+		}
+		*opts = append(*opts, wclient.WithBearerAuth(authToken))
+	case "none", "":
+		*opts = append(*opts, wclient.WithNoAuth)
+	default:
+		return fmt.Errorf("invalid auth type: %s (valid options: basic, bearer, none)", authType)
+	}
 	return nil
 }
 
@@ -341,6 +387,26 @@ func baseClientFlags(flags ...cli.Flag) []cli.Flag {
 			Name:    "metrics",
 			Aliases: []string{"m"},
 			Value:   false,
+		},
+		// Authentication flags
+		&cli.StringFlag{
+			Name:  "auth-type",
+			Usage: "authentication type: basic, bearer, or none (default: none)",
+			Value: "none",
+		},
+		&cli.StringFlag{
+			Name:    "auth-user",
+			Aliases: []string{"u"},
+			Usage:   "username for basic authentication",
+		},
+		&cli.StringFlag{
+			Name:    "auth-pass",
+			Aliases: []string{"p"},
+			Usage:   "password for basic authentication",
+		},
+		&cli.StringFlag{
+			Name:  "auth-token",
+			Usage: "bearer token for bearer authentication",
 		},
 	)
 }

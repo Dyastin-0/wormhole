@@ -54,7 +54,7 @@ type Metrics struct {
 }
 
 // NewMetrics creates a new Metrics instance.
-func NewMetrics() *Metrics {
+func New() *Metrics {
 	return &Metrics{
 		StartTime: time.Now(),
 	}

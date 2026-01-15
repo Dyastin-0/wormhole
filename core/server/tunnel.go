@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"time"
 
+	"github.com/Dyastin-0/wormhole/core/auth"
 	"github.com/Dyastin-0/wormhole/core/metrics"
 	"github.com/Dyastin-0/wormhole/core/proto"
 	"github.com/Dyastin-0/wormhole/core/proxy"
@@ -18,8 +20,12 @@ type Tunnel struct {
 	session *yamux.Session
 	// proto specifies the tunnel protocol.
 	proto uint8
+	// ttl specifies the tunnel's time-to-live in hour.
+	ttl time.Duration
 	// metrics represents the ingress/egress metrics for the underlying tunnel.
 	metrics *metrics.Metrics
+	// auth represents the authentication method that will be used for HTTP tunnels.
+	auth auth.Authenticator
 }
 
 // From opens a stream (remoteStream) from the session then forwards the stream to it.

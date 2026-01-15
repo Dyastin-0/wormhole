@@ -55,3 +55,22 @@ func WithTTL(ttl uint64) OptFunc {
 		c.ttl = ttl
 	}
 }
+
+func WithBasicAuth(username, password string) OptFunc {
+	return func(c *Client) {
+		c.authType = proto.AuthTypeBasic
+		c.authUsername = username
+		c.authPassword = password
+	}
+}
+
+func WithBearerAuth(token string) OptFunc {
+	return func(c *Client) {
+		c.authType = proto.AuthTypeBearer
+		c.authToken = token
+	}
+}
+
+func WithNoAuth(c *Client) {
+	c.authType = proto.AuthTypeNone
+}

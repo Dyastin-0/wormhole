@@ -43,6 +43,11 @@ type Client struct {
 	apiKey string
 	// ttl specifies the time-to-live of this client.
 	ttl uint64
+	// authType
+	authType     uint8
+	authUsername string
+	authPassword string
+	authToken    string
 }
 
 // New creates a new Client with the specified configuration options.
