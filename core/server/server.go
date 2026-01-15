@@ -5,6 +5,7 @@ package server
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/tls"
 	"errors"
@@ -190,7 +191,7 @@ func (s *Server) tunnel(ctx context.Context, conn net.Conn) error {
 	log.Debug().Str("proto", detectedProto).Msg("detected protocol")
 
 	if detectedProto == ProtoHTTP && tunnel.auth.IsEnabled() {
-		if !s.authenticateHTTP(peekableConn, tunnel) {
+		if !s.authenticateHTTPFromPeek(peekableConn, tunnel) {
 			s.sendUnauthorized(peekableConn, tunnel.auth)
 			return fmt.Errorf("unauthorized access to %s", sni)
 		}
@@ -202,11 +203,19 @@ func (s *Server) tunnel(ctx context.Context, conn net.Conn) error {
 	return tunnel.From(tCtx, peekableConn)
 }
 
-// authenticateHTTP authenticates the request using the underlying authenticator.
-func (s *Server) authenticateHTTP(conn *PeekableConn, tunnel *Tunnel) bool {
-	req, err := http.ReadRequest(bufio.NewReader(conn))
+// authenticateHTTPFromPeek peeks at headers without consuming them.
+func (s *Server) authenticateHTTPFromPeek(conn *PeekableConn, tunnel *Tunnel) bool {
+	reader := bufio.NewReader(conn)
+
+	peeked, err := reader.Peek(4096)
+	if err != nil && err != bufio.ErrBufferFull && err != io.EOF {
+		log.Error().Err(err).Msg("failed to peek HTTP request")
+		return false
+	}
+
+	req, err := http.ReadRequest(bufio.NewReader(bytes.NewReader(peeked)))
 	if err != nil {
-		log.Error().Err(err).Msg("failed to read HTTP request for auth")
+		log.Error().Err(err).Msg("failed to parse HTTP request from peek")
 		return false
 	}
 

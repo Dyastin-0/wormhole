@@ -385,22 +385,22 @@ func baseClientFlags(flags ...cli.Flag) []cli.Flag {
 			Value:   false,
 		},
 		&cli.StringFlag{
-			Name:  "auth-type",
+			Name:  "authType",
 			Usage: "authentication type: basic, bearer, or none (default: none)",
 			Value: "none",
 		},
 		&cli.StringFlag{
-			Name:    "auth-user",
+			Name:    "authUser",
 			Aliases: []string{"u"},
 			Usage:   "username for basic authentication",
 		},
 		&cli.StringFlag{
-			Name:    "auth-pass",
+			Name:    "authPass",
 			Aliases: []string{"p"},
 			Usage:   "password for basic authentication",
 		},
 		&cli.StringFlag{
-			Name:  "auth-token",
+			Name:  "authToken",
 			Usage: "bearer token for bearer authentication",
 		},
 	)
