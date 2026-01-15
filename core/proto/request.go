@@ -261,5 +261,29 @@ func validateRequest(req *Request) error {
 		return ErrStringTooLong
 	}
 
+	if req.UsernameLength != uint32(len(req.AuthUsername)) {
+		return ErrInvalidLength
+	}
+
+	if req.UsernameLength > MaxStringLength {
+		return ErrStringTooLong
+	}
+
+	if req.PasswordLength != uint32(len(req.AuthPassword)) {
+		return ErrInvalidLength
+	}
+
+	if req.PasswordLength > MaxStringLength {
+		return ErrStringTooLong
+	}
+
+	if req.TokenLength != uint32(len(req.AuthToken)) {
+		return ErrInvalidLength
+	}
+
+	if req.TokenLength > MaxStringLength {
+		return ErrStringTooLong
+	}
+
 	return nil
 }
