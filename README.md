@@ -1,48 +1,42 @@
 # Wormhole
-A TCP-based reverse tunnel service written in `Go`.
 
-## How to Install
+A TCP-based reverse tunnel service written in Go.
+
+## Installation
 
 ### From Source
 
 ```bash
 git clone https://github.com/Dyastin-0/wormhole.git
-```
-
-```bash
 cd wormhole
-```
-
-```bash
 go install .
 ```
 
-### With Go
+### Using Go Install
 
 ```bash
 go install github.com/Dyastin-0/wormhole@latest
 ```
 
-## How to Use
+## Usage
 
 ### Running a Server
 
-Running a server requires a `wildcard` domain, e.g., `*.wormhole.dev`, and its `base` domain pointed to the wormhole server. You'll have to
-setup a reverse proxy that support wildcards.
+Running a server requires a wildcard domain (e.g., `*.wormhole.dev`) and its base domain pointed to the wormhole server. You'll need to configure a reverse proxy that supports wildcards.
 
-There are multiple ways to load configs.
+Configuration can be loaded in multiple ways:
 
-#### Environment (Recommended)
+#### Environment Variables (Recommended)
 
-Safest way is to load them in the environment, see `.example.env`. If you are running the server as a service, you can inject your `.env` via:
+The safest approach is to use environment variables. See `.example.env` for reference. If running the server as a systemd service, inject your `.env` file via:
 
-```
-EnvironmentFile=/your/wormhole/.env
+```ini
+EnvironmentFile=/path/to/wormhole/.env
 ```
 
 #### Config File
 
-You can store a configuration file at `DefaultConfigFile` (see `wormhole.go`) to automatically use them. See `example.config.yaml`.
+Store a configuration file at the default path (see `DefaultConfigPath` in `wormhole.go`) to automatically load settings. See `example.config.yaml` for reference.
 
 #### CLI Flags
 
@@ -54,71 +48,162 @@ wormhole start \
     --serveAddress <:port-number>
 ```
 
-`--address` is used to run a `TCP` server that handles Wormhole `client` connections.
+**Flag Descriptions:**
 
-`--serveAddress` is used to run a `TLS` server that route connections to it's configured tunnel based on it's `SNI`.
+- `--address`: TCP server address for handling Wormhole client connections
+- `--serveAddress`: TLS server address that routes connections to configured tunnels based on SNI
+- `--secret`: Secret key used to generate and validate API keys
+- `--domain`: Base domain for tunnels (e.g., `wormhole.dev` with wildcard `*.wormhole.dev` for tunnel clients)
 
-`--secret` is used to generate API keys, see below how it is used.
-
-`--domain` is used as `base` domain for tunnels. The `base` is used for the control server where wormhole clients connects to, while
-the wildcard (`*.wormhole.dev`) is used for the tunnel clients (e.g., browsers).
-
----
-
-If you are using environment/config file, simply run:
+If using environment variables or a config file, simply run:
 
 ```bash
 wormhole start
 ```
 
-Or if you put your configuration somewhere else:
+For custom config paths:
 
 ```bash
-wormhole start --configPath "/somewhere/somewhere/config.yaml"
+wormhole start --configPath "/path/to/config.yaml"
 ```
 
-### Running a Tunnel
+### Creating Tunnels
 
-Creating a tunnel is fairly simple, you just need to specify your desired and valid sub-domain, target address, and the wormhole server address. If you don't specify the `--address`, by default, it will connect to my self-hosted Wormhole server.
+#### Basic HTTP Tunnel
+
+Create a tunnel by specifying your desired subdomain, target address, and wormhole server address:
 
 ```bash
 wormhole http \
-    --name <desired-subdomain-name> \
+    --name <subdomain> \
     --targetAddr <:port-number> \
     --address <wormhole.server.address:443>
 ```
 
-You can use both `tcp` and `http` command to tunnel an `HTTP` server. And optionally, you can run it with `-m` flag to see a live metrics of your tunnel.
+If `--address` is omitted, the client connects to the default server at `wormhole.dyastin.dev:443`.
 
-### Generating an API Key
+Both `http` and `tcp` commands can tunnel HTTP servers. Add the `-m` flag to display live tunnel metrics.
 
-There's a special server side command, `admin` where it can issue API keys meant to be used by clients.
+#### TCP Tunnel
+
+```bash
+wormhole tcp \
+    --name <subdomain> \
+    --targetAddr <:port-number> \
+    --address <wormhole.server.address:443>
+```
+
+#### Tunnel Authentication
+
+Wormhole supports authentication to restrict access to your tunnels. You can protect tunnels with either Basic Auth or Bearer token authentication.
+
+##### Basic Authentication
+
+```bash
+wormhole http \
+    --name <subdomain> \
+    --targetAddr <:port-number> \
+    --authType basic \
+    --authUser <username> \
+    --authPass <password>
+```
+
+Clients accessing this tunnel will be prompted for credentials. Example curl request:
+
+```bash
+curl -u username:password https://<subdomain>.wormhole.dev
+```
+
+##### Bearer Token Authentication
+
+```bash
+wormhole http \
+    --name <subdomain> \
+    --targetAddr <:port-number> \
+    --authType bearer \
+    --authToken <your-secret-token>
+```
+
+Clients must include the bearer token in the Authorization header:
+
+```bash
+curl -H "Authorization: Bearer <your-secret-token>" https://<subdomain>.wormhole.dev
+```
+
+##### No Authentication
+
+To explicitly disable authentication (default behavior):
+
+```bash
+wormhole http \
+    --name <subdomain> \
+    --targetAddr <:port-number> \
+    --authType none
+```
+
+### API Key Management
+
+#### Generating a Secret
+
+First, generate a signing secret for API key generation:
+
+```bash
+wormhole admin generate-secret --length 32
+```
+
+Store this secret securely and set it as the `WORMHOLE_SECRET` environment variable or in your config file.
+
+#### Issuing API Keys
+
+Issue API keys to grant clients extended tunnel lifetimes:
 
 ```bash
 wormhole admin issue-token --expires 30d --ttl 4
 ```
 
-`--expires` is used to indicate the jwt expiration.
+**Parameter Descriptions:**
 
-`--ttl` is used to inject a custom claim `time-to-live` (in hours) on the JWT token, which is used by the client when requesting a tunnel.
+- `--expires`: JWT expiration duration (e.g., `30d`, `720h`, `1y`)
+- `--ttl`: Time-to-live in hours for tunnels created with this key
 
-Clients with an API key can have a longer tunnel `time-to-live`, depending on the `TTL` value injected into the claims.
-If the `TTL` claims is zero (0), the server treats it differently. Clients with an API key that has zero (0) `TTL` on its claim can specify
-a `--ttl` flag to customize the tunnel's `time-to-live` via the `--ttl` flag.
+**TTL Behavior:**
 
-API key is specified as a flag, `--apiKey`.
-If a client specified `--apiKey`, but has not specified `--ttl`, tunnel's `time-to-live` will use the default one (1) hour.
+- **Fixed TTL** (TTL > 0): Tunnels will have the specified TTL (e.g., `--ttl 4` creates tunnels with 4-hour lifetimes)
+- **Flexible TTL** (TTL = 0): Clients can specify their own `--ttl` value up to a server-defined maximum
+- **No API Key**: Clients without an API key default to 1-hour tunnel lifetimes
+
+#### Using API Keys
 
 ```bash
-wormhole http \ 
-    --name <desired-subdomain-name> \ 
+wormhole http \
+    --name <subdomain> \
     --targetAddr <:port-number> \
-    --address <wormhole.server.address:443> \
     --apiKey <api-key> \
-    --ttl 24 
+    --ttl 24
 ```
 
-Clients with no API key will always have a tunnel with one (1) hour `time-to-live`, but can still freely choose their own subdomain.
+If `--ttl` is omitted when using an API key, the tunnel defaults to 1 hour unless the key has a specific TTL claim.
+
+### Complete Example with Authentication
+
+Create an authenticated tunnel with a custom TTL:
+
+```bash
+wormhole http \
+    --name myapp \
+    --targetAddr :3000 \
+    --address wormhole.dyastin.dev:443 \
+    --apiKey eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9... \
+    --ttl 24 \
+    --authType bearer \
+    --authToken my-secret-token-123
+```
+
+Access the tunnel:
+
+```bash
+curl -H "Authorization: Bearer my-secret-token-123" https://myapp.wormhole.dyastin.dev
+```
 
 ## Demo
 
