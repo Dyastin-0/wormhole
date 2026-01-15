@@ -4,6 +4,8 @@
 package server
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"crypto/tls"
 	"errors"
@@ -195,14 +197,22 @@ func (s *Server) tunnel(ctx context.Context, conn net.Conn) error {
 			s.sendUnauthorized(tlsConn, tunnel.auth)
 			return fmt.Errorf("unauthorized")
 		}
+
+		var buf bytes.Buffer
+		err = req.Write(&buf)
+		if err != nil {
+			return fmt.Errorf("failed to serialize request: %w", err)
+		}
+
+		wrapped := &ConnWithReader{
+			Conn: conn,
+			r:    bufio.NewReader(io.MultiReader(&buf, br)),
+		}
+
+		return tunnel.From(ctx, wrapped)
 	}
 
-	wrapped := &ConnWithReader{
-		Conn: conn,
-		r:    br,
-	}
-
-	return tunnel.From(ctx, wrapped)
+	return tunnel.From(ctx, conn)
 }
 
 // sendUnauthorized sends the authentication challenge from the underlying authenticator.
