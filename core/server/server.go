@@ -231,7 +231,12 @@ func (s *Server) tunnel(ctx context.Context, conn net.Conn) error {
 		return tunnel.From(ctx, wrapped)
 	}
 
-	return tunnel.From(ctx, conn)
+	wrapped := &ConnWithReader{
+		Conn: conn,
+		r:    br,
+	}
+
+	return tunnel.From(ctx, wrapped)
 }
 
 // sendUnauthorized sends the authentication challenge from the underlying authenticator.
