@@ -184,6 +184,8 @@ func (s *Server) tunnel(ctx context.Context, conn net.Conn) error {
 	sniffer := &Sniff{}
 	detectedProto, peekableConn := sniffer.Conn(tlsConn)
 
+	log.Debug().Str("proto", detectedProto).Msg("detected protocol")
+
 	if detectedProto == ProtoHTTP && tunnel.auth.IsEnabled() {
 		if !s.authenticateHTTP(peekableConn, tunnel) {
 			s.sendUnauthorized(peekableConn, tunnel.auth)
