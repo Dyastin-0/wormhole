@@ -226,24 +226,30 @@ func (s *Server) writeNoTunnel(conn net.Conn, sni string) {
 <html>
 <head>
     <title>Tunnel Not Found</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
+        * {
+            box-sizing: border-box;
+        }
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             display: flex;
             justify-content: center;
             align-items: center;
-            height: 100vh;
+            min-height: 100vh;
             margin: 0;
+            padding: 1rem;
             background: #0f172a;
             color: #e2e8f0;
         }
         .container {
             text-align: center;
             max-width: 500px;
-            padding: 2rem;
+            width: 100%%;
+            padding: 2rem 1.5rem;
         }
         .error-code {
-            font-size: 6rem;
+            font-size: clamp(4rem, 15vw, 6rem);
             font-weight: 700;
             margin-bottom: 1rem;
             opacity: 0.9;
@@ -252,14 +258,14 @@ func (s *Server) writeNoTunnel(conn net.Conn, sni string) {
         h1 {
             color: #f1f5f9;
             margin: 0 0 0.5rem 0;
-            font-size: 2rem;
+            font-size: clamp(1.5rem, 5vw, 2rem);
             font-weight: 600;
         }
         p {
             color: #94a3b8;
             line-height: 1.6;
             margin: 0.5rem 0;
-            font-size: 1rem;
+            font-size: clamp(0.938rem, 3vw, 1rem);
         }
         .subdomain {
             display: inline-block;
@@ -269,15 +275,17 @@ func (s *Server) writeNoTunnel(conn net.Conn, sni string) {
             border: 1px solid #334155;
             border-radius: 4px;
             font-family: 'Courier New', monospace;
-            font-size: 0.875rem;
+            font-size: clamp(0.813rem, 2.5vw, 0.875rem);
             color: #cbd5e1;
+            word-break: break-all;
+            max-width: 100%%;
         }
         .hint {
             margin-top: 1.5rem;
             padding-top: 1.5rem;
             border-top: 1px solid #334155;
             color: #64748b;
-            font-size: 0.875rem;
+            font-size: clamp(0.813rem, 2.5vw, 0.875rem);
         }
     </style>
 </head>

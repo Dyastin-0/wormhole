@@ -56,24 +56,30 @@ func (b *BearerAuth) SendChallenge(conn net.Conn) {
 <html>
 <head>
     <title>Authentication Required</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
+        * {
+            box-sizing: border-box;
+        }
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             display: flex;
             justify-content: center;
             align-items: center;
-            height: 100vh;
+            min-height: 100vh;
             margin: 0;
+            padding: 1rem;
             background: #0f172a;
             color: #e2e8f0;
         }
         .container {
             text-align: center;
             max-width: 500px;
-            padding: 2rem;
+            width: 100%;
+            padding: 2rem 1.5rem;
         }
         .error-code {
-            font-size: 6rem;
+            font-size: clamp(4rem, 15vw, 6rem);
             font-weight: 700;
             margin-bottom: 1rem;
             opacity: 0.9;
@@ -82,14 +88,14 @@ func (b *BearerAuth) SendChallenge(conn net.Conn) {
         h1 {
             color: #f1f5f9;
             margin: 0 0 0.5rem 0;
-            font-size: 2rem;
+            font-size: clamp(1.5rem, 5vw, 2rem);
             font-weight: 600;
         }
         p {
             color: #94a3b8;
             line-height: 1.6;
             margin: 0.5rem 0;
-            font-size: 1rem;
+            font-size: clamp(0.938rem, 3vw, 1rem);
         }
         .code {
             display: inline-block;
@@ -99,8 +105,10 @@ func (b *BearerAuth) SendChallenge(conn net.Conn) {
             border: 1px solid #334155;
             border-radius: 4px;
             font-family: 'Courier New', monospace;
-            font-size: 0.875rem;
+            font-size: clamp(0.813rem, 2.5vw, 0.875rem);
             color: #cbd5e1;
+            word-break: break-all;
+            max-width: 100%;
         }
     </style>
 </head>
