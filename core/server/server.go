@@ -13,6 +13,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -177,20 +178,24 @@ func (s *Server) tunnel(ctx context.Context, conn net.Conn) error {
 	conn = tlsConn
 	defer conn.Close()
 
-	tunnel, ok := s.tunnels.Get(sni)
-	if !ok {
-		return fmt.Errorf("no tunnel for %s", sni)
-	}
-
 	sniffer := &Sniff{peekN: 24}
 	proto, br := sniffer.Conn(tlsConn)
 	log.Debug().Str("proto", proto).Msg("detected protocol")
+
+	tunnel, ok := s.tunnels.Get(sni)
+	if !ok {
+		if proto == ProtoHTTP {
+			s.writeNoTunnel(conn, sni)
+			return fmt.Errorf("no tunnel for %s", sni)
+		}
+		return fmt.Errorf("no tunnel for %s", sni)
+	}
 
 	if proto == ProtoHTTP && tunnel.auth.IsEnabled() {
 		req, err := http.ReadRequest(br)
 		if err != nil {
 			s.sendUnauthorized(tlsConn, tunnel.auth)
-			return fmt.Errorf("failed to read HTTP request: %w", err)
+			return fmt.Errorf("failed to read http request: %w", err)
 		}
 
 		if !tunnel.auth.Authenticate(req) {
@@ -214,6 +219,92 @@ func (s *Server) tunnel(ctx context.Context, conn net.Conn) error {
 		r:    br,
 	}
 	return tunnel.From(ctx, wrapped)
+}
+
+func (s *Server) writeNoTunnel(conn net.Conn, sni string) {
+	html := fmt.Sprintf(`<!DOCTYPE html>
+<html>
+<head>
+    <title>Tunnel Not Found</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background: #0f172a;
+            color: #e2e8f0;
+        }
+        .container {
+            text-align: center;
+            max-width: 500px;
+            padding: 2rem;
+        }
+        .error-code {
+            font-size: 6rem;
+            font-weight: 700;
+            margin-bottom: 1rem;
+            opacity: 0.9;
+            color: #64748b;
+        }
+        h1 {
+            color: #f1f5f9;
+            margin: 0 0 0.5rem 0;
+            font-size: 2rem;
+            font-weight: 600;
+        }
+        p {
+            color: #94a3b8;
+            line-height: 1.6;
+            margin: 0.5rem 0;
+            font-size: 1rem;
+        }
+        .subdomain {
+            display: inline-block;
+            margin-top: 1rem;
+            padding: 0.5rem 1rem;
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.875rem;
+            color: #cbd5e1;
+        }
+        .hint {
+            margin-top: 1.5rem;
+            padding-top: 1.5rem;
+            border-top: 1px solid #334155;
+            color: #64748b;
+            font-size: 0.875rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="error-code">404</div>
+        <h1>Tunnel Not Found</h1>
+        <p>No active tunnel is registered for this subdomain.</p>
+        <div class="subdomain">%s</div>
+        <div class="hint">
+            <p>Create a tunnel with:</p>
+            <p>wormhole http --name %s --targetAddr :3000</p>
+        </div>
+    </div>
+</body>
+</html>`, sni, strings.Split(sni, ".")[0])
+
+	response := fmt.Sprintf(
+		"HTTP/1.1 404 Not Found\r\n"+
+			"Content-Type: text/html; charset=utf-8\r\n"+
+			"Content-Length: %d\r\n"+
+			"Connection: close\r\n"+
+			"\r\n"+
+			"%s",
+		len(html), html,
+	)
+	conn.Write([]byte(response))
 }
 
 // sendUnauthorized sends the authentication challenge from the underlying authenticator.
