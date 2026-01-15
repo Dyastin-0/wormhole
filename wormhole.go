@@ -247,7 +247,6 @@ func http(ctx context.Context, cmd *cli.Command) error {
 	ttl := cmd.Uint64("ttl")
 	metrics := cmd.Bool("metrics")
 
-	// Auth flags
 	authType := cmd.String("authType")
 	authUser := cmd.String("authUser")
 	authPass := cmd.String("authPass")
@@ -263,7 +262,6 @@ func http(ctx context.Context, cmd *cli.Command) error {
 		wclient.WithTTL(ttl),
 	}
 
-	// Add authentication options
 	if err := addAuthOptions(&opts, authType, authUser, authPass, authToken); err != nil {
 		return err
 	}
@@ -298,7 +296,6 @@ func tcp(ctx context.Context, cmd *cli.Command) error {
 	ttl := cmd.Uint64("ttl")
 	metrics := cmd.Bool("metrics")
 
-	// Auth flags
 	authType := cmd.String("authType")
 	authUser := cmd.String("authUser")
 	authPass := cmd.String("authPass")
@@ -314,7 +311,6 @@ func tcp(ctx context.Context, cmd *cli.Command) error {
 		wclient.WithTTL(ttl),
 	}
 
-	// Add authentication options
 	if err := addAuthOptions(&opts, authType, authUser, authPass, authToken); err != nil {
 		return err
 	}

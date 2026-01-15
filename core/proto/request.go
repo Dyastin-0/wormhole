@@ -49,6 +49,12 @@ func NewRequest(proto uint8, name string, ttl uint64, apiKey string) *Request {
 
 // SerializeRequest serializes a Request to a byte slice using a pooled buffer.
 func SerializeRequest(req *Request) ([]byte, error) {
+	req.NameLength = uint32(len(req.Name))
+	req.APIKeyLength = uint32(len(req.APIKey))
+	req.UsernameLength = uint32(len(req.AuthUsername))
+	req.PasswordLength = uint32(len(req.AuthPassword))
+	req.TokenLength = uint32(len(req.AuthToken))
+
 	if err := validateRequest(req); err != nil {
 		return nil, fmt.Errorf("request validation failed: %w", err)
 	}
