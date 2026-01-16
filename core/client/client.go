@@ -365,16 +365,17 @@ func (c *Client) handleMessages(ctx context.Context, session *yamux.Session) err
 
 		switch header.Type {
 		case proto.TypeAccess:
-			go func(ctx context.Context, cancel context.CancelFunc, stream net.Conn) {
+			go func(ctx context.Context, stream net.Conn) {
 				defer stream.Close()
-				err := c.ForwardStream(cancelCtx, stream)
-				if err != nil {
+				err = c.ForwardStream(cancelCtx, stream)
+				if isDialError(err) && ctx.Err() == nil {
 					fmt.Printf("wormhole [err] %s\n", err.Error())
-					// clear line and move cursor at start, somehow next line is starting at the end of Printf above.
+					// for some reason, cursor is at the end of previous line
+					// clear the line and move cursor to start
 					fmt.Print("\033[2K\r")
 					cancel()
 				}
-			}(cancelCtx, cancel, stream)
+			}(cancelCtx, stream)
 		case proto.TypeMetrics:
 			go c.handleMetrics(cancelCtx, header, stream, cancel)
 		case proto.TypeEnd:
@@ -386,6 +387,23 @@ func (c *Client) handleMessages(ctx context.Context, session *yamux.Session) err
 			stream.Close()
 		}
 	}
+}
+
+func isDialError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	if errors.Is(err, context.Canceled) {
+		return false
+	}
+
+	var netErr *net.OpError
+	if errors.As(err, &netErr) && netErr.Op == "dial" {
+		return true
+	}
+
+	return false
 }
 
 // handleMetrics handles metrics display.
