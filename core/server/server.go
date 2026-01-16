@@ -191,7 +191,7 @@ func (s *Server) tunnel(ctx context.Context, conn net.Conn) error {
 		return fmt.Errorf("no tunnel for %s", sni)
 	}
 
-	if proto == ProtoHTTP && tunnel.auth.IsEnabled() {
+	if proto == ProtoHTTP && tunnel.auth != nil {
 		req, err := http.ReadRequest(br)
 		if err != nil {
 			s.sendUnauthorized(tlsConn, tunnel.auth)
@@ -449,17 +449,18 @@ func (s *Server) handleRequest(ctx context.Context, stream net.Conn, session *ya
 	case proto.AuthTypeBasic:
 		authenticator, err = auth.NewBasicAuth(req.AuthUsername, req.AuthPassword)
 		if err != nil {
-			authenticator = &auth.NoAuth{}
+			log.Warn().Err(err).Msg("failed to ues basic auth")
 		}
 	case proto.AuthTypeBearer:
 		authenticator, err = auth.NewBearerAuth(req.AuthToken)
 		if err != nil {
-			authenticator = &auth.NoAuth{}
+			log.Warn().Err(err).Msg("failed to ues bearer auth")
 		}
 	case proto.AuthTypeNone:
 		fallthrough
 	default:
-		authenticator = &auth.NoAuth{}
+		log.Warn().Uint8("authType", req.AuthType).Msg("unexpected auth type")
+		authenticator = nil
 	}
 
 	tunnel := &Tunnel{

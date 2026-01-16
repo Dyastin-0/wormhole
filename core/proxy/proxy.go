@@ -40,12 +40,10 @@ func StreamWithContext(ctx context.Context, src, dst io.ReadWriter) error {
 	go func() {
 		select {
 		case <-ctx.Done():
-			closeConnection(src)
-			closeConnection(dst)
 		case <-done:
-			closeConnection(src)
-			closeConnection(dst)
 		}
+		closeConnection(src)
+		closeConnection(dst)
 	}()
 
 	// Copy src -> dst
@@ -60,15 +58,10 @@ func StreamWithContext(ctx context.Context, src, dst io.ReadWriter) error {
 		errch <- err
 	}()
 
-	// Wait for first error
 	err := <-errch
 
-	// Close connections to unblock the other goroutine
-	closeConnection(src)
-	closeConnection(dst)
 	close(done)
 
-	// Now wait for second goroutine (should return quickly)
 	<-errch
 
 	if ctx.Err() != nil {

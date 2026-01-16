@@ -1,7 +1,7 @@
 package auth
 
 import (
-	"errors"
+	"crypto/subtle"
 	"fmt"
 	"net"
 	"net/http"
@@ -12,18 +12,18 @@ import (
 
 // BearerAuth implements bearer token auth.
 type BearerAuth struct {
-	Token string
-	Realm string
+	token string
+	realm string
 }
 
 func NewBearerAuth(token string) (*BearerAuth, error) {
 	if token == "" {
-		return nil, errors.New("nil token")
+		return nil, fmt.Errorf("token cannot be empty")
 	}
 
 	return &BearerAuth{
-		Token: token,
-		Realm: "Wormhole Tunnel",
+		token: token,
+		realm: "Wormhole Tunnel",
 	}, nil
 }
 
@@ -40,15 +40,11 @@ func (b *BearerAuth) Authenticate(req *http.Request) bool {
 	}
 
 	token := strings.TrimSpace(auth[7:])
-	authenticated := token == b.Token
 
-	if authenticated {
-		log.Info().Msg("successful bearer authentication")
-	} else {
-		log.Warn().Msg("failed bearer authentication")
-	}
-
-	return authenticated
+	return subtle.ConstantTimeCompare(
+		[]byte(token),
+		[]byte(b.token),
+	) == 1
 }
 
 func (b *BearerAuth) SendChallenge(conn net.Conn) {
@@ -130,12 +126,10 @@ func (b *BearerAuth) SendChallenge(conn net.Conn) {
 			"Connection: close\r\n"+
 			"\r\n"+
 			"%s",
-		b.Realm, len(html), html,
+		b.realm, len(html), html,
 	)
 
-	conn.Write([]byte(response))
-}
-
-func (b *BearerAuth) IsEnabled() bool {
-	return b.Token != ""
+	if _, err := conn.Write([]byte(response)); err != nil {
+		log.Error().Err(err).Msg("failed to send bearer auth challenge")
+	}
 }

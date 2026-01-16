@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"crypto/subtle"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -9,28 +10,33 @@ import (
 	"strings"
 
 	"github.com/rs/zerolog/log"
+	"golang.org/x/crypto/bcrypt"
 )
 
-// BasicAuth implements HTTP basic auth.
+// BasicAuth implements HTTP basic auth with bcrypt password hashing.
 type BasicAuth struct {
-	Username string
-	Password string
-	Realm    string
+	username       string
+	hashedPassword []byte
+	realm          string
 }
 
 func NewBasicAuth(username, password string) (*BasicAuth, error) {
 	if username == "" {
-		return nil, errors.New("nil username")
+		return nil, errors.New("username cannot be empty")
+	}
+	if password == "" {
+		return nil, errors.New("password cannot be empty")
 	}
 
-	if password == "" {
-		return nil, errors.New("nil password")
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), 12)
+	if err != nil {
+		return nil, fmt.Errorf("failed to hash password: %w", err)
 	}
 
 	return &BasicAuth{
-		Username: username,
-		Password: password,
-		Realm:    "Wormhole Tunnel",
+		username:       username,
+		hashedPassword: hashedPassword,
+		realm:          "Wormhole Tunnel",
 	}, nil
 }
 
@@ -54,13 +60,20 @@ func (b *BasicAuth) Authenticate(req *http.Request) bool {
 		return false
 	}
 
-	authenticated := credentials[0] == b.Username && credentials[1] == b.Password
+	username := credentials[0]
+	password := credentials[1]
 
-	if authenticated {
-		log.Info().Str("user", credentials[0]).Msg("successful authentication")
-	} else {
-		log.Warn().Str("user", credentials[0]).Msg("failed authentication")
-	}
+	usernameMatch := subtle.ConstantTimeCompare(
+		[]byte(username),
+		[]byte(b.username),
+	) == 1
+
+	passwordMatch := bcrypt.CompareHashAndPassword(
+		b.hashedPassword,
+		[]byte(password),
+	) == nil
+
+	authenticated := usernameMatch && passwordMatch
 
 	return authenticated
 }
@@ -114,13 +127,15 @@ func (b *BasicAuth) SendChallenge(conn net.Conn) {
         .code {
             display: inline-block;
             margin-top: 1rem;
-            padding: 0.25rem 0.75rem;
+            padding: 0.5rem 1rem;
             background: #1e293b;
             border: 1px solid #334155;
             border-radius: 4px;
             font-family: 'Courier New', monospace;
             font-size: clamp(0.813rem, 2.5vw, 0.875rem);
             color: #cbd5e1;
+            word-break: break-all;
+            max-width: 100%;
         }
     </style>
 </head>
@@ -129,7 +144,7 @@ func (b *BasicAuth) SendChallenge(conn net.Conn) {
         <div class="error-code">401</div>
         <h1>Authentication Required</h1>
         <p>This tunnel requires valid credentials to access.</p>
-        <div class="code">401 Unauthorized</div>
+	      <div class="code">401 Unauthorized</div>
     </div>
 </body>
 </html>`
@@ -142,12 +157,10 @@ func (b *BasicAuth) SendChallenge(conn net.Conn) {
 			"Connection: close\r\n"+
 			"\r\n"+
 			"%s",
-		b.Realm, len(html), html,
+		b.realm, len(html), html,
 	)
 
-	conn.Write([]byte(response))
-}
-
-func (b *BasicAuth) IsEnabled() bool {
-	return b.Username != "" && b.Password != ""
+	if _, err := conn.Write([]byte(response)); err != nil {
+		log.Error().Err(err).Msg("failed to send basic auth challenge")
+	}
 }
