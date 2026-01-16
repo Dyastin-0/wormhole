@@ -194,7 +194,7 @@ func (s *Server) tunnel(ctx context.Context, conn net.Conn) error {
 	allowHTTP := tunnel.allowHTTP || tunnel.proto == proto.ProtoHTTP
 
 	if detectedProtocol == ProtoHTTP && !allowHTTP {
-		s.writeForbidden(conn, "HTTP access disabled for this TCP tunnel")
+		s.writeForbidden(conn, sni)
 		return fmt.Errorf("http not allowed on tcp tunnel")
 	}
 

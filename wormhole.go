@@ -241,7 +241,7 @@ func httpCommand() *cli.Command {
 
 func http(ctx context.Context, cmd *cli.Command) error {
 	name := cmd.String("name")
-	addr := cmd.String("addr")
+	addr := cmd.String("address")
 	targetAddr := cmd.String("targetAddr")
 	apiKey := cmd.String("api-key")
 	ttl := cmd.Uint64("ttl")
@@ -294,7 +294,7 @@ func tcpCommand() *cli.Command {
 
 func tcp(ctx context.Context, cmd *cli.Command) error {
 	name := cmd.String("name")
-	addr := cmd.String("addr")
+	addr := cmd.String("address")
 	targetAddr := cmd.String("targetAddr")
 	apiKey := cmd.String("api-key")
 	ttl := cmd.Uint64("ttl")
