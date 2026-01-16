@@ -55,7 +55,7 @@ func (t *Tunnel) From(ctx context.Context, stream net.Conn) error {
 		return fmt.Errorf("failed to write access header: %w", err)
 	}
 
-	proxyCtx, proxyCancel := context.WithCancel(context.Background())
+	proxyCtx, proxyCancel := context.WithCancel(ctx)
 	defer proxyCancel()
 
 	done := make(chan struct{})
