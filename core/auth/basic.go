@@ -10,14 +10,13 @@ import (
 	"strings"
 
 	"github.com/rs/zerolog/log"
-	"golang.org/x/crypto/bcrypt"
 )
 
 // BasicAuth implements HTTP basic auth with bcrypt password hashing.
 type BasicAuth struct {
-	username       string
-	hashedPassword []byte
-	realm          string
+	username string
+	password string
+	realm    string
 }
 
 func NewBasicAuth(username, password string) (*BasicAuth, error) {
@@ -28,15 +27,10 @@ func NewBasicAuth(username, password string) (*BasicAuth, error) {
 		return nil, errors.New("password cannot be empty")
 	}
 
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), 12)
-	if err != nil {
-		return nil, fmt.Errorf("failed to hash password: %w", err)
-	}
-
 	return &BasicAuth{
-		username:       username,
-		hashedPassword: hashedPassword,
-		realm:          "Wormhole Tunnel",
+		username: username,
+		password: password,
+		realm:    "Wormhole Tunnel",
 	}, nil
 }
 
@@ -68,10 +62,10 @@ func (b *BasicAuth) Authenticate(req *http.Request) bool {
 		[]byte(b.username),
 	) == 1
 
-	passwordMatch := bcrypt.CompareHashAndPassword(
-		b.hashedPassword,
+	passwordMatch := subtle.ConstantTimeCompare(
 		[]byte(password),
-	) == nil
+		[]byte(b.password),
+	) == 1
 
 	authenticated := usernameMatch && passwordMatch
 
