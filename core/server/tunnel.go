@@ -65,9 +65,13 @@ func (t *Tunnel) From(ctx context.Context, stream net.Conn) error {
 		select {
 		case <-ctx.Done():
 			proxyCancel()
+			stream.Close()
+			remoteStream.Close()
 		case <-t.session.CloseChan():
 			proxyCancel()
-		case <-done:
+			stream.Close()
+			remoteStream.Close()
+		case <-proxyCtx.Done():
 			return
 		}
 	}()
