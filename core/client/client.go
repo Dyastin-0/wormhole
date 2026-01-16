@@ -324,61 +324,96 @@ func (c *Client) ForwardStream(ctx context.Context, stream net.Conn) error {
 	return proxy.StreamWithContext(ctx, localConn, stream)
 }
 
+type acceptResult struct {
+	stream net.Conn
+	err    error
+}
+
 // handleMessages processes incoming multiplexed streams (control streams) from the server.
 func (c *Client) handleMessages(ctx context.Context, session *yamux.Session) error {
 	cancelCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	defer session.Close()
+
+	errch := make(chan error, 1)
+	acceptch := make(chan acceptResult)
 
 	go func() {
 		<-cancelCtx.Done()
 		session.Close()
 	}()
 
-	for {
-		stream, err := session.Accept()
-		if err != nil {
-			cancel()
-			if cancelCtx.Err() != nil {
-				return cancelCtx.Err()
+	go func() {
+		for {
+			stream, err := session.Accept()
+			select {
+			case acceptch <- acceptResult{stream: stream, err: err}:
+			case <-cancelCtx.Done():
+				return
 			}
-			return err
+			if err != nil {
+				return
+			}
 		}
+	}()
 
-		buf := make([]byte, proto.HeaderSize)
-		_, err = io.ReadFull(stream, buf)
-		if err != nil {
-			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
-				log.Debug().Err(err).Msg("stream connection closed")
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case err := <-errch:
+			return err
+
+		case result := <-acceptch:
+			if result.err != nil {
+				if cancelCtx.Err() != nil {
+					return cancelCtx.Err()
+				}
+				return result.err
+			}
+
+			stream := result.stream
+			buf := make([]byte, proto.HeaderSize)
+			_, err := io.ReadFull(stream, buf)
+			if err != nil {
+				if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+					log.Debug().Err(err).Msg("stream connection closed")
+					stream.Close()
+					continue
+				}
+				log.Warn().Err(err).Msg("failed to read stream header")
 				stream.Close()
 				continue
 			}
-			log.Warn().Err(err).Msg("failed to read stream header")
-			stream.Close()
-			continue
-		}
 
-		header, err := proto.DeserializeHeader(buf)
-		if err != nil {
-			log.Error().Err(err).Msg("failed to deserialize header")
-			stream.Close()
-			continue
-		}
+			header, err := proto.DeserializeHeader(buf)
+			if err != nil {
+				log.Error().Err(err).Msg("failed to deserialize header")
+				stream.Close()
+				continue
+			}
 
-		switch header.Type {
-		case proto.TypeAccess:
-			go func(ctx context.Context, stream net.Conn) {
-				defer stream.Close()
-				c.ForwardStream(cancelCtx, stream)
-			}(cancelCtx, stream)
-		case proto.TypeMetrics:
-			go c.handleMetrics(cancelCtx, header, stream, cancel)
-		case proto.TypeEnd:
-			stream.Close()
-			cancel()
-			prettyPrint("inf", "tunnel timed out")
-			return nil
-		default:
-			log.Debug().Msgf("unexpected header type: %v", header.Type)
-			stream.Close()
+			switch header.Type {
+			case proto.TypeAccess:
+				go func(ctx context.Context, stream net.Conn) {
+					defer stream.Close()
+					if err := c.ForwardStream(ctx, stream); err != nil {
+						select {
+						case errch <- err:
+						default:
+						}
+					}
+				}(cancelCtx, stream)
+			case proto.TypeMetrics:
+				go c.handleMetrics(cancelCtx, header, stream, cancel)
+			case proto.TypeEnd:
+				stream.Close()
+				prettyPrint("inf", "tunnel timed out")
+				return nil
+			default:
+				log.Debug().Msgf("unexpected header type: %v", header.Type)
+				stream.Close()
+			}
 		}
 	}
 }
@@ -389,7 +424,6 @@ func (c *Client) handleMetrics(ctx context.Context, header *proto.Header, stream
 
 	program, metricsChan := StartMetricsDisplay(c.domain)
 	defer close(metricsChan)
-
 	go func() {
 		if _, err := program.Run(); err != nil {
 			log.Error().Err(err).Msg("metrics display error")

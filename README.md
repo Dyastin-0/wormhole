@@ -5,7 +5,6 @@ A TCP-based reverse tunnel service written in Go.
 ## Installation
 
 ### From Source
-
 ```bash
 git clone https://github.com/Dyastin-0/wormhole.git
 cd wormhole
@@ -13,7 +12,6 @@ go install .
 ```
 
 ### Using Go Install
-
 ```bash
 go install github.com/Dyastin-0/wormhole@latest
 ```
@@ -29,7 +27,6 @@ Configuration can be loaded in multiple ways:
 #### Environment Variables (Recommended)
 
 The safest approach is to use environment variables. See `.example.env` for reference. If running the server as a systemd service, inject your `.env` file via:
-
 ```ini
 EnvironmentFile=/path/to/wormhole/.env
 ```
@@ -39,32 +36,29 @@ EnvironmentFile=/path/to/wormhole/.env
 Store a configuration file at the default path (see `DefaultConfigPath` in `wormhole.go`) to automatically load settings. See `example.config.yaml` for reference.
 
 #### CLI Flags
-
 ```bash
 wormhole start \
     --secret <api-key-secret> \
     --domain <base-domain-for-tunnels> \
     --address <:port-number> \
-    --serveAddress <:port-number>
+    --serve-address <:port-number>
 ```
 
 **Flag Descriptions:**
 
 - `--address`: TCP server address for handling Wormhole client connections
-- `--serveAddress`: TLS server address that routes connections to configured tunnels based on SNI
+- `--serve-address`: TLS server address that routes connections to configured tunnels based on SNI
 - `--secret`: Secret key used to generate and validate API keys
 - `--domain`: Base domain for tunnels (e.g., `wormhole.dev` with wildcard `*.wormhole.dev` for tunnel clients)
 
 If using environment variables or a config file, simply run:
-
 ```bash
 wormhole start
 ```
 
 For custom config paths:
-
 ```bash
-wormhole start --configPath "/path/to/config.yaml"
+wormhole start --config-path "/path/to/config.yaml"
 ```
 
 ### Creating Tunnels
@@ -72,11 +66,10 @@ wormhole start --configPath "/path/to/config.yaml"
 #### Basic HTTP Tunnel
 
 Create a tunnel by specifying your desired subdomain, target address, and wormhole server address:
-
 ```bash
 wormhole http \
     --name <subdomain> \
-    --targetAddr <:port-number> \
+    --target-address <:port-number> \
     --address <wormhole.server.address:443>
 ```
 
@@ -85,47 +78,53 @@ If `--address` is omitted, the client connects to the default server at `wormhol
 Both `http` and `tcp` commands can tunnel HTTP servers. Add the `-m` flag to display live tunnel metrics.
 
 #### TCP Tunnel
-
 ```bash
 wormhole tcp \
     --name <subdomain> \
-    --targetAddr <:port-number> \
+    --target-address <:port-number> \
     --address <wormhole.server.address:443>
 ```
+
+By default, TCP tunnels block HTTP traffic for security. To allow HTTP traffic on a TCP tunnel, use the `--allow-http` flag:
+```bash
+wormhole tcp \
+    --name <subdomain> \
+    --target-address <:port-number> \
+    --address <wormhole.server.address:443> \
+    --allow-http
+```
+
+This is useful when you want to tunnel HTTP applications through a TCP tunnel or need the flexibility of raw TCP with optional HTTP support.
 
 #### Tunnel Authentication
 
 Wormhole supports authentication to restrict access to your tunnels. You can protect tunnels with either Basic Auth or Bearer token authentication.
 
 ##### Basic Authentication
-
 ```bash
 wormhole http \
     --name <subdomain> \
-    --targetAddr <:port-number> \
-    --authType basic \
-    --authUser <username> \
-    --authPass <password>
+    --target-address <:port-number> \
+    --auth-type basic \
+    --auth-user <username> \
+    --auth-password <password>
 ```
 
 Clients accessing this tunnel will be prompted for credentials. Example curl request:
-
 ```bash
 curl -u username:password https://<subdomain>.wormhole.dev
 ```
 
 ##### Bearer Token Authentication
-
 ```bash
 wormhole http \
     --name <subdomain> \
-    --targetAddr <:port-number> \
-    --authType bearer \
-    --authToken <your-secret-token>
+    --target-address <:port-number> \
+    --auth-type bearer \
+    --auth-token <your-secret-token>
 ```
 
 Clients must include the bearer token in the Authorization header:
-
 ```bash
 curl -H "Authorization: Bearer <your-secret-token>" https://<subdomain>.wormhole.dev
 ```
@@ -133,12 +132,11 @@ curl -H "Authorization: Bearer <your-secret-token>" https://<subdomain>.wormhole
 ##### No Authentication
 
 To explicitly disable authentication (default behavior):
-
 ```bash
 wormhole http \
     --name <subdomain> \
-    --targetAddr <:port-number> \
-    --authType none
+    --target-address <:port-number> \
+    --auth-type none
 ```
 
 ### API Key Management
@@ -146,7 +144,6 @@ wormhole http \
 #### Generating a Secret
 
 First, generate a signing secret for API key generation:
-
 ```bash
 wormhole admin generate-secret --length 32
 ```
@@ -156,7 +153,6 @@ Store this secret securely and set it as the `WORMHOLE_SECRET` environment varia
 #### Issuing API Keys
 
 Issue API keys to grant clients extended tunnel lifetimes:
-
 ```bash
 wormhole admin issue-token --expires 30d --ttl 4
 ```
@@ -173,12 +169,11 @@ wormhole admin issue-token --expires 30d --ttl 4
 - **No API Key**: Clients without an API key default to 1-hour tunnel lifetimes
 
 #### Using API Keys
-
 ```bash
 wormhole http \
     --name <subdomain> \
-    --targetAddr <:port-number> \
-    --apiKey <api-key> \
+    --target-address <:port-number> \
+    --api-key <api-key> \
     --ttl 24
 ```
 
@@ -187,22 +182,39 @@ If `--ttl` is omitted when using an API key, the tunnel defaults to 1 hour unles
 ### Complete Example with Authentication
 
 Create an authenticated tunnel with a custom TTL:
-
 ```bash
 wormhole http \
     --name myapp \
-    --targetAddr :3000 \
+    --target-address :3000 \
     --address wormhole.dyastin.dev:443 \
-    --apiKey eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9... \
+    --api-key eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9... \
     --ttl 24 \
-    --authType bearer \
-    --authToken my-secret-token-123
+    --auth-type bearer \
+    --auth-token my-secret-token-123
 ```
 
 Access the tunnel:
-
 ```bash
 curl -H "Authorization: Bearer my-secret-token-123" https://myapp.wormhole.dyastin.dev
+```
+
+### TCP Tunnel with HTTP Support and Authentication
+
+Create a TCP tunnel that allows HTTP traffic with authentication:
+```bash
+wormhole tcp \
+    --name secure-app \
+    --target-address :8080 \
+    --address wormhole.dyastin.dev:443 \
+    --allow-http \
+    --auth-type basic \
+    --auth-user admin \
+    --auth-password secret123
+```
+
+Access the tunnel:
+```bash
+curl -u admin:secret123 https://secure-app.wormhole.dyastin.dev
 ```
 
 ## Demo

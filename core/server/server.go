@@ -304,7 +304,7 @@ func (s *Server) writeForbidden(conn net.Conn, sni string) {
         <div class="subdomain">%s</div>
         <div class="hint">
 		<p>If you are the owner of this tunnel, run:</p>
-            <p>wormhole tcp --name %s --targetAddr :3000 --allow-http</p>
+            <p>wormhole tcp --name %s --target-address :3000 --allow-http</p>
         </div>
     </div>
 </body>
@@ -398,7 +398,7 @@ func (s *Server) writeNoTunnel(conn net.Conn, sni string) {
         <div class="subdomain">%s</div>
         <div class="hint">
             <p>Create a tunnel with:</p>
-            <p>wormhole http --name %s --targetAddr :3000</p>
+            <p>wormhole http --name %s --target-address :3000</p>
         </div>
     </div>
 </body>
