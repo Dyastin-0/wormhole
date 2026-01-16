@@ -180,7 +180,6 @@ func (s *Server) tunnel(ctx context.Context, conn net.Conn) error {
 
 	sniffer := &Sniff{peekN: 24}
 	detectedProtocol, br := sniffer.Conn(tlsConn)
-	log.Debug().Str("proto", detectedProtocol).Msg("detected protocol")
 
 	tunnel, ok := s.tunnels.Get(sni)
 	if !ok {
