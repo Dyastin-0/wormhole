@@ -31,6 +31,8 @@ type Tunnel struct {
 
 // From opens a stream (remoteStream) from the session then forwards the stream to it.
 func (t *Tunnel) From(ctx context.Context, stream net.Conn) error {
+	defer stream.Close()
+
 	if t.metrics != nil {
 		t.metrics.IncrementConnections()
 		defer t.metrics.DecrementActiveConnections()

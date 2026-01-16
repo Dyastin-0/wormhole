@@ -210,8 +210,24 @@ func start(ctx context.Context, cmd *cli.Command) error {
 	g, gCtx := errgroup.WithContext(ctx)
 
 	if runPprof {
+		pprofServer := &nethttp.Server{
+			Addr: pprofAddr,
+		}
+
 		g.Go(func() error {
-			return nethttp.ListenAndServe(pprofAddr, nil)
+			if err := pprofServer.ListenAndServe(); err != nil && !errors.Is(err, nethttp.ErrServerClosed) {
+				return err
+			}
+			return nil
+		})
+
+		g.Go(func() error {
+			<-gCtx.Done()
+
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+
+			return pprofServer.Shutdown(shutdownCtx)
 		})
 	}
 
