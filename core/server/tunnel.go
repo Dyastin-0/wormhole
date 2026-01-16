@@ -25,6 +25,8 @@ type Tunnel struct {
 	metrics *metrics.Metrics
 	// auth represents the authentication method that will be used for HTTP tunnels.
 	auth auth.Authenticator
+	// allowHTTP specifies if this tunnel allows HTTP requests, ignored if tunnel protocol is HTTP.
+	allowHTTP bool
 }
 
 // From opens a stream (remoteStream) from the session then forwards the stream to it.
@@ -68,7 +70,10 @@ func (t *Tunnel) From(ctx context.Context, stream net.Conn) error {
 		}
 	}()
 
-	proxyStream := t.metrics.NewProxyReadWriter(stream)
+	if t.metrics != nil {
+		proxyStream := t.metrics.NewProxyReadWriter(stream)
+		return proxy.StreamWithContext(proxyCtx, proxyStream, remoteStream)
+	}
 
-	return proxy.StreamWithContext(proxyCtx, proxyStream, remoteStream)
+	return proxy.StreamWithContext(proxyCtx, stream, remoteStream)
 }

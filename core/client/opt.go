@@ -74,3 +74,9 @@ func WithBearerAuth(token string) OptFunc {
 func WithNoAuth(c *Client) {
 	c.authType = proto.AuthTypeNone
 }
+
+func WithAllowHTTP(allowHTTP bool) OptFunc {
+	return func(c *Client) {
+		c.allowHTTP = allowHTTP
+	}
+}

@@ -53,7 +53,7 @@ type Metrics struct {
 	ActiveConnections int32
 }
 
-// NewMetrics creates a new Metrics instance.
+// New creates a new Metrics instance.
 func New() *Metrics {
 	return &Metrics{
 		StartTime: time.Now(),

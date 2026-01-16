@@ -51,6 +51,8 @@ type Client struct {
 	authPassword string
 	// authToken is the bearer token for bearer token auth.
 	authToken string
+	// allowHTTP specifies if this tunnel allows HTTP requests, ignored if tunnel protocol is HTTP.
+	allowHTTP bool
 }
 
 // New creates a new Client with the specified configuration options.
@@ -264,6 +266,9 @@ func (c *Client) sendRequest(ctx context.Context, stream net.Conn) (*proto.Heade
 	header := proto.NewHeader(proto.TypeRequest, uint64(len(serializedRequest)))
 	if c.metrics {
 		header.SetFlag(proto.FlagMetrics)
+	}
+	if c.allowHTTP {
+		header.SetFlag(proto.FlagAllowHTTP)
 	}
 
 	serializedHeader, err := proto.SerializeHeader(header)

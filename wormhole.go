@@ -132,8 +132,8 @@ func startCommand() *cli.Command {
 				Usage:   "set the address where wormhole server will run",
 			},
 			&cli.StringFlag{
-				Name:    "serveAddress",
-				Aliases: []string{"sa", "serveAddr"},
+				Name:    "serve-address",
+				Aliases: []string{"sa", "serve-address"},
 				Value:   ":8889",
 				Usage:   "set the address where wormhole tunnel handler will run",
 			},
@@ -148,12 +148,12 @@ func startCommand() *cli.Command {
 				Value: false,
 			},
 			&cli.StringFlag{
-				Name:  "pprofAddr",
+				Name:  "pprof-address",
 				Usage: "address used for pprof",
 				Value: ":7060",
 			},
 			&cli.StringFlag{
-				Name:  "configPath",
+				Name:  "config-path",
 				Usage: "wormhole config path (override if config is somewhere else or not using linux)",
 				Value: DefaultConfigPath,
 			},
@@ -164,10 +164,10 @@ func startCommand() *cli.Command {
 
 func start(ctx context.Context, cmd *cli.Command) error {
 	addr := cmd.String("addr")
-	serveAddr := cmd.String("serveAddr")
-	pprofAddr := cmd.String("pprofAddr")
+	serveAddr := cmd.String("serve-address")
+	pprofAddr := cmd.String("pprof-address")
 	runPprof := cmd.Bool("pprof")
-	configPath := cmd.String("configPath")
+	configPath := cmd.String("config-path")
 
 	cfg, err := loadConfig(configPath)
 	if err != nil && !os.IsNotExist(err) {
@@ -243,14 +243,14 @@ func http(ctx context.Context, cmd *cli.Command) error {
 	name := cmd.String("name")
 	addr := cmd.String("addr")
 	targetAddr := cmd.String("targetAddr")
-	apiKey := cmd.String("apiKey")
+	apiKey := cmd.String("api-key")
 	ttl := cmd.Uint64("ttl")
 	metrics := cmd.Bool("metrics")
 
-	authType := cmd.String("authType")
-	authUser := cmd.String("authUser")
-	authPass := cmd.String("authPass")
-	authToken := cmd.String("authToken")
+	authType := cmd.String("auth-type")
+	authUser := cmd.String("auth-user")
+	authPass := cmd.String("auth-password")
+	authToken := cmd.String("auth-token")
 
 	opts := []wclient.OptFunc{
 		wclient.WithProtoHTTP,
@@ -281,9 +281,13 @@ func http(ctx context.Context, cmd *cli.Command) error {
 
 func tcpCommand() *cli.Command {
 	return &cli.Command{
-		Name:   "tcp",
-		Usage:  "start a wormhole tcp reverse tunnel client",
-		Flags:  baseClientFlags(),
+		Name:  "tcp",
+		Usage: "start a wormhole tcp reverse tunnel client",
+		Flags: append(baseClientFlags(),
+			&cli.BoolFlag{
+				Name:  "allow-http",
+				Usage: "allow HTTP traffic on this TCP tunnel",
+			}),
 		Action: tcp,
 	}
 }
@@ -292,14 +296,15 @@ func tcp(ctx context.Context, cmd *cli.Command) error {
 	name := cmd.String("name")
 	addr := cmd.String("addr")
 	targetAddr := cmd.String("targetAddr")
-	apiKey := cmd.String("apiKey")
+	apiKey := cmd.String("api-key")
 	ttl := cmd.Uint64("ttl")
 	metrics := cmd.Bool("metrics")
+	allowHTTP := cmd.Bool("allow-http")
 
-	authType := cmd.String("authType")
-	authUser := cmd.String("authUser")
-	authPass := cmd.String("authPass")
-	authToken := cmd.String("authToken")
+	authType := cmd.String("auth-type")
+	authUser := cmd.String("auth-user")
+	authPass := cmd.String("auth-password")
+	authToken := cmd.String("auth-token")
 
 	opts := []wclient.OptFunc{
 		wclient.WithProtoTCP,
@@ -309,6 +314,7 @@ func tcp(ctx context.Context, cmd *cli.Command) error {
 		wclient.WithMetrics(metrics),
 		wclient.WithAPIKey(apiKey),
 		wclient.WithTTL(ttl),
+		wclient.WithAllowHTTP(allowHTTP),
 	}
 
 	if err := addAuthOptions(&opts, authType, authUser, authPass, authToken); err != nil {
@@ -358,19 +364,19 @@ func baseClientFlags(flags ...cli.Flag) []cli.Flag {
 			Required: true,
 		},
 		&cli.StringFlag{
-			Name:     "targetAddress",
-			Aliases:  []string{"targetAddr", "t"},
+			Name:     "target-address",
+			Aliases:  []string{"t"},
 			Usage:    "set the address where connections will be tunneled to (eg., :3000)",
 			Required: true,
 		},
 		&cli.StringFlag{
 			Name:    "address",
-			Aliases: []string{"addr"},
+			Aliases: []string{"a"},
 			Usage:   "set the wormhole server address",
 			Value:   "wormhole.dyastin.dev:443",
 		},
 		&cli.StringFlag{
-			Name:    "apiKey",
+			Name:    "api-key",
 			Aliases: []string{"k", "key"},
 			Usage:   "API key token for authentication",
 		},
@@ -385,22 +391,22 @@ func baseClientFlags(flags ...cli.Flag) []cli.Flag {
 			Value:   false,
 		},
 		&cli.StringFlag{
-			Name:  "authType",
+			Name:  "auth-type",
 			Usage: "authentication type: basic, bearer, or none (default: none)",
 			Value: "none",
 		},
 		&cli.StringFlag{
-			Name:    "authUser",
+			Name:    "auth-user",
 			Aliases: []string{"u"},
 			Usage:   "username for basic authentication",
 		},
 		&cli.StringFlag{
-			Name:    "authPass",
+			Name:    "auth-password",
 			Aliases: []string{"p"},
 			Usage:   "password for basic authentication",
 		},
 		&cli.StringFlag{
-			Name:  "authToken",
+			Name:  "auth-token",
 			Usage: "bearer token for bearer authentication",
 		},
 	)
@@ -435,7 +441,7 @@ func issueTokenCommand() *cli.Command {
 				Value:   "2160h",
 			},
 			&cli.StringFlag{
-				Name:  "configPath",
+				Name:  "config-path",
 				Usage: "wormhole config path (override if config is somewhere else or not using linux)",
 				Value: DefaultConfigPath,
 			},
@@ -445,7 +451,7 @@ func issueTokenCommand() *cli.Command {
 }
 
 func issueToken(ctx context.Context, cmd *cli.Command) error {
-	configPath := cmd.String("configPath")
+	configPath := cmd.String("config-path")
 
 	cfg, err := loadConfig(configPath)
 	if err != nil {

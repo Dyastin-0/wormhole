@@ -35,8 +35,12 @@ const (
 	AuthTypeBearer uint8 = 0x03
 )
 
-// FlagMetrics indicates that the client wants to stream the tunnel metrics.
-const FlagMetrics = 0x01
+const (
+	// FlagMetrics indicates that the client wants to stream the tunnel metrics.
+	FlagMetrics = 0x01
+	// FlagAllowHTTP indicates that the client explicitly allows HTTP requests regardless of protocol.
+	FlagAllowHTTP = 0x02
+)
 
 // Constants definition for protocol limits and sizes.
 const (
