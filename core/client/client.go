@@ -362,10 +362,6 @@ func (c *Client) handleMessages(ctx context.Context, session *yamux.Session) err
 		case proto.TypeAccess:
 			go func(ctx context.Context, stream net.Conn) {
 				defer stream.Close()
-				if err := c.sendAck(stream); err != nil {
-					log.Error().Err(err).Msg("failed to send ack")
-					return
-				}
 				c.ForwardStream(cancelCtx, stream)
 			}(cancelCtx, stream)
 		case proto.TypeMetrics:
@@ -454,22 +450,6 @@ func (c *Client) handleMetrics(ctx context.Context, header *proto.Header, stream
 			}
 		}
 	}
-}
-
-// sendAck sends an acknowledgment for a TypeAccess message.
-func (c *Client) sendAck(stream net.Conn) error {
-	header := proto.NewHeader(proto.TypeAck, 0)
-	serializedHeader, err := proto.SerializeHeader(header)
-	if err != nil {
-		return fmt.Errorf("failed to serialize ack header: %w", err)
-	}
-
-	_, err = stream.Write(serializedHeader)
-	if err != nil {
-		return fmt.Errorf("failed to write ack: %w", err)
-	}
-
-	return nil
 }
 
 // Proto converts a protocol constant to its string representation.

@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"fmt"
-	"io"
 	"net"
 	"time"
 
@@ -50,21 +49,6 @@ func (t *Tunnel) From(ctx context.Context, stream net.Conn) error {
 	_, err = remoteStream.Write(serializedHeader)
 	if err != nil {
 		return fmt.Errorf("failed to write access header: %w", err)
-	}
-
-	buf := make([]byte, proto.HeaderSize)
-	_, err = io.ReadFull(remoteStream, buf)
-	if err != nil {
-		return fmt.Errorf("failed to read ack header: %w", err)
-	}
-
-	ackHeader, err := proto.DeserializeHeader(buf)
-	if err != nil {
-		return fmt.Errorf("failed to deserialize ack header: %w", err)
-	}
-
-	if ackHeader.Type != proto.TypeAck {
-		return fmt.Errorf("unexpected header type: %v", ackHeader.Type)
 	}
 
 	proxyCtx, proxyCancel := context.WithCancel(context.Background())

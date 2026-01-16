@@ -17,8 +17,6 @@ const (
 	TypeResponse uint8 = 0x02
 	// TypeAccess indicates an incoming connection to an established tunnel.
 	TypeAccess uint8 = 0x03
-	// TypeAck indicates an acknowledgment of an access message.
-	TypeAck uint8 = 0x04
 	// TypeMetrics indicates an incoming tunnel metrics stream.
 	TypeMetrics = 0x05
 	// TypeEnd indicates that a tunnel reached its end.
@@ -419,7 +417,7 @@ func validateResponse(resp *Response) error {
 // IsValidType checks if a message type is valid.
 func IsValidType(msgType uint8) bool {
 	switch msgType {
-	case TypeRequest, TypeResponse, TypeAck, TypeAccess, TypeMetrics, TypeEnd, TypeError:
+	case TypeRequest, TypeResponse, TypeAccess, TypeMetrics, TypeEnd, TypeError:
 		return true
 	default:
 		return false

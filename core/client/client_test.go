@@ -11,10 +11,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func createTestConnection() (net.Conn, net.Conn) {
-	return net.Pipe()
-}
-
 func TestClientNewValidConfig(t *testing.T) {
 	c, err := New(
 		WithAddr("localhost:8080"),
@@ -166,75 +162,4 @@ func TestForwardStreamFail(t *testing.T) {
 	err = c.ForwardStream(ctx, streamClient)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to dial tcp target address")
-}
-
-func TestClientSendAckSuccess(t *testing.T) {
-	c, err := New(
-		WithAddr("localhost:8080"),
-		WithTargetAddr("localhost:3000"),
-		WithName("test"),
-		WithProto(proto.ProtoHTTP),
-	)
-	require.NoError(t, err)
-
-	serverConn, clientConn := net.Pipe()
-	defer serverConn.Close()
-	defer clientConn.Close()
-
-	errChan := make(chan error, 1)
-	go func() {
-		errChan <- c.sendAck(clientConn)
-	}()
-
-	buf := make([]byte, proto.HeaderSize)
-	err = serverConn.SetReadDeadline(time.Now().Add(1 * time.Second))
-	require.NoError(t, err)
-
-	_, err = serverConn.Read(buf)
-	require.NoError(t, err)
-
-	header, err := proto.DeserializeHeader(buf)
-	require.NoError(t, err)
-	assert.Equal(t, proto.TypeAck, header.Type)
-
-	select {
-	case err := <-errChan:
-		assert.NoError(t, err)
-	case <-time.After(1 * time.Second):
-		t.Error("sendAck did not return within timeout")
-	}
-}
-
-func TestSendAckFail(t *testing.T) {
-	c, err := New(
-		WithAddr("localhost:8080"),
-		WithTargetAddr("localhost:3000"),
-		WithName("test"),
-		WithProto(proto.ProtoHTTP),
-	)
-	require.NoError(t, err)
-
-	serverConn, clientConn := net.Pipe()
-	serverConn.Close()
-	defer clientConn.Close()
-
-	err = c.sendAck(clientConn)
-	assert.Error(t, err)
-}
-
-func TestSendAckClosedConnection(t *testing.T) {
-	c, err := New(
-		WithAddr("localhost:8080"),
-		WithTargetAddr("localhost:3000"),
-		WithName("test"),
-		WithProto(proto.ProtoHTTP),
-	)
-	require.NoError(t, err)
-
-	serverConn, clientConn := net.Pipe()
-	defer serverConn.Close()
-	clientConn.Close()
-
-	err = c.sendAck(clientConn)
-	assert.Error(t, err)
 }
