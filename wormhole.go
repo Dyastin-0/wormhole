@@ -84,10 +84,10 @@ func main() {
 
 	if err := w.Run(ctx, os.Args); err != nil {
 		if errors.Is(err, context.Canceled) {
-			fmt.Printf("wormhole [inf] exited")
+			fmt.Println("wormhole [inf] exited")
 			return
 		}
-		fmt.Printf("wormhole [err] %s", err.Error())
+		fmt.Printf("wormhole [err] %s\n", err.Error())
 	}
 }
 
