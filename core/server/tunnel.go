@@ -58,17 +58,9 @@ func (t *Tunnel) From(ctx context.Context, stream net.Conn) error {
 	proxyCtx, proxyCancel := context.WithCancel(ctx)
 	defer proxyCancel()
 
-	done := make(chan struct{})
-	defer close(done)
-
 	go func() {
 		select {
-		case <-ctx.Done():
-			proxyCancel()
-			stream.Close()
-			remoteStream.Close()
 		case <-t.session.CloseChan():
-			proxyCancel()
 			stream.Close()
 			remoteStream.Close()
 		case <-proxyCtx.Done():
@@ -80,6 +72,5 @@ func (t *Tunnel) From(ctx context.Context, stream net.Conn) error {
 		proxyStream := t.metrics.NewProxyReadWriter(stream)
 		return proxy.StreamWithContext(proxyCtx, proxyStream, remoteStream)
 	}
-
 	return proxy.StreamWithContext(proxyCtx, stream, remoteStream)
 }

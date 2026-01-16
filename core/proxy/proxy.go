@@ -35,39 +35,40 @@ func Stream(src, dst io.ReadWriter) error {
 // StreamWithContext is Stream with context cancellation support.
 func StreamWithContext(ctx context.Context, src, dst io.ReadWriter) error {
 	errch := make(chan error, 2)
-	done := make(chan struct{})
-
-	go func() {
-		select {
-		case <-ctx.Done():
-		case <-done:
-		}
-		closeConnection(src)
-		closeConnection(dst)
-	}()
 
 	// Copy src -> dst
 	go func() {
 		_, err := io.Copy(dst, src)
 		errch <- err
+		closeConnection(dst)
+		closeConnection(src)
 	}()
 
 	// Copy dst -> src
 	go func() {
 		_, err := io.Copy(src, dst)
 		errch <- err
+		closeConnection(src)
+		closeConnection(dst)
 	}()
 
-	err := <-errch
-
-	close(done)
-
-	<-errch
-
-	if ctx.Err() != nil {
+	select {
+	case <-ctx.Done():
+		closeConnection(src)
+		closeConnection(dst)
+		<-errch
+		<-errch
 		return ctx.Err()
+	case err := <-errch:
+		err2 := <-errch
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if err != nil {
+			return err
+		}
+		return err2
 	}
-	return err
 }
 
 // closeConnection safely closes a connection if it implements io.Closer.
