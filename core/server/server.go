@@ -754,7 +754,7 @@ func (s *Server) handlePingStream(ctx context.Context, tunnel *Tunnel) error {
 
 	log.Debug().Msg("ping stream established")
 
-	ticker := time.NewTicker(5 * time.Second)
+	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
 
 	bufPtr := headerBufferPool.Get().(*[]byte)
@@ -774,7 +774,7 @@ func (s *Server) handlePingStream(ctx context.Context, tunnel *Tunnel) error {
 				continue
 			}
 
-			stream.SetDeadline(time.Now().Add(5 * time.Second))
+			stream.SetDeadline(time.Now().Add(1 * time.Second))
 
 			start := time.Now()
 			_, err = stream.Write(serialized)
@@ -803,7 +803,6 @@ func (s *Server) handlePingStream(ctx context.Context, tunnel *Tunnel) error {
 			}
 
 			tunnel.metrics.SetRTT(uint32(rtt.Microseconds()))
-			log.Trace().Dur("rtt", rtt).Msg("RTT measured")
 		}
 	}
 }
