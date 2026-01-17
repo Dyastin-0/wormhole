@@ -76,7 +76,7 @@ func TestRequestResponse(t *testing.T) {
 	require.NoError(t, err)
 	defer targetServer.Close()
 
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond)
 
 	srv, err := server.New(
 		server.WithAddr("localhost:0"),
