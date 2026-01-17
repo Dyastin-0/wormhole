@@ -767,14 +767,14 @@ func (s *Server) handlePingStream(ctx context.Context, tunnel *Tunnel) error {
 		case <-tunnel.session.CloseChan():
 			return nil
 		case <-ticker.C:
+			stream.SetDeadline(time.Now().Add(1 * time.Second))
+
 			pingHeader := proto.NewHeader(proto.TypePing, 0)
 			serialized, err := proto.SerializeHeader(pingHeader)
 			if err != nil {
 				log.Error().Err(err).Msg("failed to serialize ping")
 				continue
 			}
-
-			stream.SetDeadline(time.Now().Add(1 * time.Second))
 
 			start := time.Now()
 			_, err = stream.Write(serialized)
