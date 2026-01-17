@@ -15,6 +15,7 @@ type MetricsMsg struct {
 	Uptime            uint64
 	ConnectionCount   uint64
 	ActiveConnections uint32
+	RTT               uint32
 }
 
 type metricsModel struct {
@@ -124,6 +125,9 @@ func (m metricsModel) View() string {
 
 	uptimeLine := formatLine("Uptime:", formatDuration(time.Duration(m.metrics.Uptime)))
 
+	rttMs := float64(m.metrics.RTT) / 1000.0
+	rttLine := formatLine("RTT:", fmt.Sprintf("%.2f ms", rttMs))
+
 	body := lipgloss.JoinVertical(
 		lipgloss.Left,
 		labelStyle.Render("Traffic"),
@@ -135,6 +139,7 @@ func (m metricsModel) View() string {
 		totalConnsLine,
 		"",
 		uptimeLine,
+		rttLine,
 		"",
 		labelStyle.Render("Press q or ctrl+c to quit"),
 	)

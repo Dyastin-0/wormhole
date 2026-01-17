@@ -364,6 +364,22 @@ func (c *Client) handleMessages(ctx context.Context, session *yamux.Session) err
 		}
 
 		switch header.Type {
+		case proto.TypePing:
+			go func(stream net.Conn) {
+				defer stream.Close()
+
+				pongHeader := proto.NewHeader(proto.TypePong, 0)
+				serialized, err := proto.SerializeHeader(pongHeader)
+				if err != nil {
+					log.Error().Err(err).Msg("failed to serialize pong")
+					return
+				}
+
+				_, err = stream.Write(serialized)
+				if err != nil {
+					log.Error().Err(err).Msg("failed to write pong")
+				}
+			}(stream)
 		case proto.TypeAccess:
 			go func(ctx context.Context, stream net.Conn) {
 				defer stream.Close()
@@ -436,6 +452,7 @@ func (c *Client) handleMetrics(ctx context.Context, header *proto.Header, stream
 		Uptime:            deserializedMetrics.Uptime,
 		ConnectionCount:   deserializedMetrics.ConnectionCount,
 		ActiveConnections: deserializedMetrics.ActiveConnections,
+		RTT:               deserializedMetrics.RTT,
 	}
 
 	for {
@@ -474,6 +491,7 @@ func (c *Client) handleMetrics(ctx context.Context, header *proto.Header, stream
 				Uptime:            deserializedMetrics.Uptime,
 				ConnectionCount:   deserializedMetrics.ConnectionCount,
 				ActiveConnections: deserializedMetrics.ActiveConnections,
+				RTT:               deserializedMetrics.RTT,
 			}
 		}
 	}

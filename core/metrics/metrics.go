@@ -51,6 +51,8 @@ type Metrics struct {
 	StartTime time.Time
 	// ActiveConnections represents current active connections.
 	ActiveConnections int32
+	// RTT represent the single roundtrip latency.
+	RTT uint32
 }
 
 // New creates a new Metrics instance.
@@ -123,6 +125,16 @@ func (m *Metrics) GetEgressRate() float64 {
 	}
 
 	return float64(m.GetEgressBytes()) / uptime.Seconds()
+}
+
+// SetLatency atomically sets latency.
+func (m *Metrics) SetRTT(rtt uint32) {
+	atomic.StoreUint32(&m.RTT, rtt)
+}
+
+// GetLatency atomically loads Latency.
+func (m *Metrics) GetRTT() uint32 {
+	return atomic.LoadUint32(&m.RTT)
 }
 
 // NewProxyReadWriter return a new MetricsReadWriter using the underlying metrics.

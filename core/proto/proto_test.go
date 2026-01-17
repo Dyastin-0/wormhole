@@ -89,7 +89,7 @@ func TestFlag(t *testing.T) {
 }
 
 func TestMetricsSerializeDeserialize(t *testing.T) {
-	original := NewMetrics(1024, 1024, 1024, 1024, 1024)
+	original := NewMetrics(1024, 1024, 1024, 1024, 1024, 54)
 	serialized, err := SerializeMetrics(original)
 	require.NoError(t, err)
 

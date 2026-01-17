@@ -585,6 +585,13 @@ func (s *Server) handleRequest(ctx context.Context, stream net.Conn, session *ya
 				log.Error().Err(er).Str("domain", domain).Msg("metrics stream stopped")
 			}
 		}(metricsCtx, tunnel)
+
+		go func(ctx context.Context, tunnel *Tunnel) {
+			er := s.handlePingStream(ctx, tunnel)
+			if er != nil {
+				log.Error().Err(er).Str("domain", domain).Msg("ping stream stopped")
+			}
+		}(metricsCtx, tunnel)
 	}
 
 	s.tunnels.Set(domain, tunnel)
@@ -711,6 +718,7 @@ func (s *Server) sendMetrics(stream net.Conn, tunnel *Tunnel) error {
 		uint64(tunnel.metrics.GetUptime()),
 		tunnel.metrics.GetConnectionCount(),
 		uint32(tunnel.metrics.GetActiveConnections()),
+		tunnel.metrics.GetRTT(),
 	)
 	serializedMetrics, err := proto.SerializeMetrics(metrics)
 	if err != nil {
@@ -734,6 +742,70 @@ func (s *Server) sendMetrics(stream net.Conn, tunnel *Tunnel) error {
 	}
 
 	return nil
+}
+
+// handlePingStream accepts pings from client and measures RTT.
+func (s *Server) handlePingStream(ctx context.Context, tunnel *Tunnel) error {
+	stream, err := tunnel.session.OpenStream()
+	if err != nil {
+		return fmt.Errorf("failed to open ping stream: %w", err)
+	}
+	defer stream.Close()
+
+	log.Debug().Msg("ping stream established")
+
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+
+	bufPtr := headerBufferPool.Get().(*[]byte)
+	defer headerBufferPool.Put(bufPtr)
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-tunnel.session.CloseChan():
+			return nil
+		case <-ticker.C:
+			pingHeader := proto.NewHeader(proto.TypePing, 0)
+			serialized, err := proto.SerializeHeader(pingHeader)
+			if err != nil {
+				log.Error().Err(err).Msg("failed to serialize ping")
+				continue
+			}
+
+			stream.SetDeadline(time.Now().Add(5 * time.Second))
+
+			start := time.Now()
+			_, err = stream.Write(serialized)
+			if err != nil {
+				log.Error().Err(err).Msg("failed to write ping")
+				continue
+			}
+
+			_, err = io.ReadFull(stream, *bufPtr)
+			if err != nil {
+				log.Error().Err(err).Msg("failed to read pong")
+				continue
+			}
+
+			rtt := time.Since(start)
+
+			header, err := proto.DeserializeHeader(*bufPtr)
+			if err != nil {
+				log.Error().Err(err).Msg("failed to deserialize pong")
+				continue
+			}
+
+			if header.Type != proto.TypePong {
+				log.Warn().Uint8("type", header.Type).Msg("unexpected message type, expected pong")
+				continue
+			}
+
+			tunnel.metrics.SetRTT(uint32(rtt.Microseconds()))
+			log.Trace().Dur("rtt", rtt).Msg("RTT measured")
+		}
+	}
 }
 
 // getSNI extracts the Server Name Indication (SNI) from a TLS connection.
