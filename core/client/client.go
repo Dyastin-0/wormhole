@@ -365,21 +365,7 @@ func (c *Client) handleMessages(ctx context.Context, session *yamux.Session) err
 
 		switch header.Type {
 		case proto.TypePing:
-			go func(stream net.Conn) {
-				defer stream.Close()
-
-				pongHeader := proto.NewHeader(proto.TypePong, 0)
-				serialized, err := proto.SerializeHeader(pongHeader)
-				if err != nil {
-					log.Error().Err(err).Msg("failed to serialize pong")
-					return
-				}
-
-				_, err = stream.Write(serialized)
-				if err != nil {
-					log.Error().Err(err).Msg("failed to write pong")
-				}
-			}(stream)
+			go handlePingStream(cancelCtx, stream)
 		case proto.TypeAccess:
 			go func(ctx context.Context, stream net.Conn) {
 				defer stream.Close()
@@ -420,6 +406,62 @@ func isDialError(err error) bool {
 	}
 
 	return false
+}
+
+// handlePingStream handle server pings using a dedicated stream.
+func handlePingStream(ctx context.Context, stream net.Conn) {
+	defer stream.Close()
+
+	pongHeader := proto.NewHeader(proto.TypePong, 0)
+	serialized, err := proto.SerializeHeader(pongHeader)
+	if err != nil {
+		log.Error().Err(err).Msg("failed to serialize pong")
+		return
+	}
+
+	_, err = stream.Write(serialized)
+	if err != nil {
+		log.Error().Err(err).Msg("failed to write pong")
+		return
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			buf := make([]byte, proto.HeaderSize)
+			_, err := io.ReadFull(stream, buf)
+			if err != nil {
+				log.Error().Err(err).Msg("failed to read ping")
+				return
+			}
+
+			header, err := proto.DeserializeHeader(buf)
+			if err != nil {
+				log.Error().Err(err).Msg("failed to deserialize ping header")
+				return
+			}
+
+			if header.Type != proto.TypePing {
+				log.Warn().Uint8("type", header.Type).Msg("unexpected message type in ping stream")
+				return
+			}
+
+			pongHeader := proto.NewHeader(proto.TypePong, 0)
+			serialized, err := proto.SerializeHeader(pongHeader)
+			if err != nil {
+				log.Error().Err(err).Msg("failed to serialize pong")
+				return
+			}
+
+			_, err = stream.Write(serialized)
+			if err != nil {
+				log.Error().Err(err).Msg("failed to write pong")
+				return
+			}
+		}
+	}
 }
 
 // handleMetrics handles metrics display.
