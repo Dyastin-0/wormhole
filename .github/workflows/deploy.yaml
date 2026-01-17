@@ -21,4 +21,4 @@ jobs:
           git pull origin master
           go test ./... -v
           go install .
-          sudo systemctl restart wormhole.service
+          systemctl --user restart wormhole.service
