@@ -72,7 +72,7 @@ func NewTestCert() (tls.Certificate, error) {
 }
 
 func TestRequestResponse(t *testing.T) {
-	targetServer, err := startTestHTTPServer("localhost:9090")
+	targetServer, err := startTestHTTPServer("localhost:8591")
 	require.NoError(t, err)
 	defer targetServer.Close()
 
@@ -120,7 +120,7 @@ func TestRequestResponse(t *testing.T) {
 		client.WithAddr(controlListener.Addr().String()),
 		client.WithName("testapp"),
 		client.WithProto(proto.ProtoHTTP),
-		client.WithTargetAddr("localhost:9090"),
+		client.WithTargetAddr("localhost:8591"),
 	)
 	require.NoError(t, err)
 
