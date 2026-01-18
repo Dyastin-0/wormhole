@@ -1,24 +1,43 @@
 name: Deploy
-
 on:
   push:
-    branches: [ master ]  
+    branches: [ master ]
 
 jobs:
-  deploy:
+  test:
     runs-on: ubuntu-latest
-    
     steps:
-    - name: Deploy
+    - uses: actions/checkout@v4
+    - uses: actions/setup-go@v5
+      with:
+        go-version-file: 'go.mod'
+    - run: go test ./... -v
+    
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-go@v5
+      with:
+        go-version-file: 'go.mod'
+    - run: go build -o wormhole
+    
+    - name: Deploy to server
+      uses: appleboy/scp-action@v0.1.7
+      with:
+        host: ${{ secrets.DO_HOST }}
+        username: ${{ secrets.DO_USERNAME }}
+        key: ${{ secrets.DO_SSH_KEY }}
+        source: "wormhole"
+        target: "~/go/bin/"
+    
+    - name: Restart service
       uses: appleboy/ssh-action@v1.0.3
       with:
         host: ${{ secrets.DO_HOST }}
         username: ${{ secrets.DO_USERNAME }}
         key: ${{ secrets.DO_SSH_KEY }}
         script: |
-          set -e
-          cd prod/wormhole
-          git pull origin master
-          go test ./... -v
-          go install .
-          systemctl --user restart wormhole.service
+          systemctl --user restart wormhole
+          systemctl --user is-active wormhole

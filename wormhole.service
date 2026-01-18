@@ -3,8 +3,7 @@ Description=wormhole
 After=network.target
 
 [Service]
-User=mrps
-ExecStart=/opt/mrps/wormhole/wormhole start --pprof
+ExecStart=/opt/mrps/wormhole/wormhole start 
 Restart=never
 StandardOutput=journal
 StandardError=journal
