@@ -199,7 +199,7 @@ func (s *Server) tunnel(ctx context.Context, conn net.Conn) error {
 		return fmt.Errorf("http not allowed on tcp tunnel")
 	}
 
-	if isHTTP && tunnel.auth != nil {
+	if isHTTP && tunnel.auth != nil && tunnel.httpLogch != nil {
 		req, err := http.ReadRequest(br)
 		if err != nil {
 			s.sendUnauthorized(tlsConn, tunnel.auth)
@@ -227,6 +227,29 @@ func (s *Server) tunnel(ctx context.Context, conn net.Conn) error {
 		return tunnel.Proxy(ctx, wrapped)
 	}
 
+	if isHTTP && tunnel.httpLogch != nil {
+		req, err := http.ReadRequest(br)
+		if err != nil {
+			s.sendUnauthorized(tlsConn, tunnel.auth)
+			s.logHTTPRequest(tunnel, start, "GET", "/", http.StatusUnauthorized)
+			return fmt.Errorf("failed to read http request: %w", err)
+		}
+
+		var fullRequest bytes.Buffer
+		if err := req.Write(&fullRequest); err != nil {
+			return fmt.Errorf("failed to serialize request: %w", err)
+		}
+
+		s.logHTTPRequest(tunnel, start, req.Method, req.URL.Path, http.StatusOK)
+
+		wrapped := &ConnWithReader{
+			Conn: conn,
+			r:    bufio.NewReader(io.MultiReader(&fullRequest, br)),
+		}
+
+		return tunnel.Proxy(ctx, wrapped)
+	}
+
 	wrapped := &ConnWithReader{
 		Conn: conn,
 		r:    br,
@@ -237,8 +260,11 @@ func (s *Server) tunnel(ctx context.Context, conn net.Conn) error {
 // logHTTPRequest logs an HTTP request to the tunnel's HTTP log channel.
 func (s *Server) logHTTPRequest(tunnel *Tunnel, start time.Time, method, path string, status int32) {
 	if tunnel.httpLogch == nil {
+		log.Debug().Msg("what")
 		return
 	}
+
+	log.Debug().Msg("ok")
 
 	duration := uint32(time.Since(start).Microseconds())
 
@@ -252,10 +278,7 @@ func (s *Server) logHTTPRequest(tunnel *Tunnel, start time.Time, method, path st
 
 	select {
 	case tunnel.httpLogch <- log:
-		// Successfully sent
 	default:
-		// Channel full, drop the log entry
-		// You could also log a warning here
 	}
 }
 
@@ -656,6 +679,8 @@ func (s *Server) handleRequest(ctx context.Context, stream net.Conn, session *ya
 
 	if header.HasFlag(proto.FlagMetrics) {
 		tunnel.metrics = metrics.New()
+		tunnel.httpLogch = make(chan *proto.HTTPLog, 1024)
+
 		metricsCtx, metricsCancel := context.WithCancel(ctx)
 		defer metricsCancel()
 
