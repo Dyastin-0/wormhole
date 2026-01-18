@@ -21,7 +21,7 @@ jobs:
     - uses: actions/setup-go@v5
       with:
         go-version-file: 'go.mod'
-    - run: go build -o wormhole
+    - run: CGO_ENABLED=0 go build -ldflags="-s -w" -o wormhole
     
     - name: Deploy to server
       uses: appleboy/scp-action@v0.1.7
