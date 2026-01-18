@@ -18,6 +18,14 @@ type MetricsMsg struct {
 	RTT               uint32
 }
 
+type HTTPLogMsg struct {
+	Timestamp int64
+	Method    string
+	Path      string
+	Status    int32
+	Duration  uint32
+}
+
 type metricsModel struct {
 	name        string
 	spinner     spinner.Model
@@ -27,48 +35,65 @@ type metricsModel struct {
 	ingressRate float64
 	egressRate  float64
 	startTime   time.Time
+	httpLogs    []HTTPLogMsg
 }
 
 var (
-	accent     = lipgloss.Color("250")
-	highlight  = lipgloss.Color("255")
-	subtle     = lipgloss.Color("245")
-	borderTone = lipgloss.Color("240")
+	subtle = lipgloss.AdaptiveColor{Light: "#999", Dark: "#666"}
 
 	titleStyle = lipgloss.NewStyle().
 			Bold(true).
-			Foreground(highlight).
-			Underline(true).
-			MarginBottom(1)
+			Foreground(lipgloss.Color("15"))
 
 	labelStyle = lipgloss.NewStyle().
-			Foreground(subtle)
+			Foreground(subtle).
+			Width(20)
 
 	valueStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(highlight)
+			Foreground(lipgloss.Color("15")).
+			Align(lipgloss.Right).
+			Width(15)
 
 	rateStyle = lipgloss.NewStyle().
-			Foreground(accent)
+			Foreground(lipgloss.Color("244")).
+			Align(lipgloss.Right).
+			Width(15)
 
-	boxStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(borderTone).
-			Padding(1, 2).
+	logHeaderStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("15")).
 			MarginTop(1).
-			MarginBottom(1).Width(42)
-)
+			MarginBottom(1)
 
-const (
-	labelWidth = 10
-	valueWidth = 10
-	rateWidth  = 13
+	logTimeStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("244")).
+			Width(8)
+
+	logMethodStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("39")).
+			Width(6)
+
+	logPathStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("15"))
+
+	logStatusOKStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("42")).
+				Width(5)
+
+	logStatusErrorStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("196")).
+				Width(5)
+
+	logDurationStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("244")).
+				Align(lipgloss.Right).
+				Width(10)
 )
 
 func newMetricsModel(name string) metricsModel {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
-	s.Style = lipgloss.NewStyle().Foreground(accent)
+	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
 
 	return metricsModel{
 		name:        name,
@@ -77,6 +102,7 @@ func newMetricsModel(name string) metricsModel {
 		prevMetrics: MetricsMsg{},
 		lastUpdate:  time.Now(),
 		startTime:   time.Now(),
+		httpLogs:    []HTTPLogMsg{},
 	}
 }
 
@@ -107,6 +133,12 @@ func (m metricsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.metrics = msg
 		m.lastUpdate = now
 
+	case HTTPLogMsg:
+		m.httpLogs = append(m.httpLogs, msg)
+		if len(m.httpLogs) > 10 {
+			m.httpLogs = m.httpLogs[len(m.httpLogs)-10:]
+		}
+
 	case spinner.TickMsg:
 		var cmd tea.Cmd
 		m.spinner, cmd = m.spinner.Update(msg)
@@ -117,55 +149,71 @@ func (m metricsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m metricsModel) View() string {
-	ingressLine := formatLineRate("Ingress:", m.metrics.Ingress, m.ingressRate)
-	egressLine := formatLineRate("Egress:", m.metrics.Egress, m.egressRate)
+	title := titleStyle.Render(fmt.Sprintf("%s %s", m.name, m.spinner.View()))
 
-	activeConnsLine := formatLine("Active:", fmt.Sprintf("%d", m.metrics.ActiveConnections))
-	totalConnsLine := formatLine("Total:", fmt.Sprintf("%d", m.metrics.ConnectionCount))
-
-	uptimeLine := formatLine("Uptime:", formatDuration(time.Duration(m.metrics.Uptime)))
-
-	rttMs := float64(m.metrics.RTT) / 1000.0
-	rttLine := formatLine("RTT:", fmt.Sprintf("%.2f ms", rttMs))
-
-	body := lipgloss.JoinVertical(
-		lipgloss.Left,
-		labelStyle.Render("Traffic"),
-		ingressLine,
-		egressLine,
-		"",
-		labelStyle.Render("Connections"),
-		activeConnsLine,
-		totalConnsLine,
-		"",
-		uptimeLine,
-		rttLine,
-		"",
-		labelStyle.Render("Press q or ctrl+c to quit"),
-	)
-
-	innerWidth := boxStyle.GetWidth() -
-		boxStyle.GetPaddingLeft() - boxStyle.GetPaddingRight()
-
-	title := lipgloss.PlaceHorizontal(
-		innerWidth,
-		lipgloss.Center,
-		titleStyle.Render(m.name),
-	)
-
-	centeredBody := lipgloss.PlaceHorizontal(
-		innerWidth,
-		lipgloss.Center,
-		body,
-	)
-
-	content := lipgloss.JoinVertical(
-		lipgloss.Center,
+	lines := []string{
 		title,
-		centeredBody,
-	)
+		"",
+		m.formatLine("Ingress", formatBytes(m.metrics.Ingress), fmt.Sprintf("%s/s", formatBytes(uint64(m.ingressRate)))),
+		m.formatLine("Egress", formatBytes(m.metrics.Egress), fmt.Sprintf("%s/s", formatBytes(uint64(m.egressRate)))),
+		"",
+		m.formatLine("Active connections", fmt.Sprintf("%d", m.metrics.ActiveConnections), ""),
+		m.formatLine("Total connections", fmt.Sprintf("%d", m.metrics.ConnectionCount), ""),
+		"",
+		m.formatLine("Uptime", formatDuration(time.Duration(m.metrics.Uptime)), ""),
+		m.formatLine("RTT", fmt.Sprintf("%.2f ms", float64(m.metrics.RTT)/1000.0), ""),
+	}
 
-	return boxStyle.Render(content)
+	if len(m.httpLogs) > 0 {
+		lines = append(lines, "")
+		lines = append(lines, logHeaderStyle.Render("Requests"))
+
+		for _, log := range m.httpLogs {
+			lines = append(lines, m.formatHTTPLog(log))
+		}
+	}
+
+	lines = append(lines, "")
+	lines = append(lines, lipgloss.NewStyle().Foreground(subtle).Render("Press q to quit"))
+
+	return lipgloss.JoinVertical(lipgloss.Left, lines...)
+}
+
+func (m metricsModel) formatLine(label, value, rate string) string {
+	l := labelStyle.Render(label)
+	v := valueStyle.Render(value)
+
+	if rate != "" {
+		r := rateStyle.Render(rate)
+		return lipgloss.JoinHorizontal(lipgloss.Left, l, v, r)
+	}
+
+	return lipgloss.JoinHorizontal(lipgloss.Left, l, v)
+}
+
+func (m metricsModel) formatHTTPLog(log HTTPLogMsg) string {
+	timestamp := time.Unix(log.Timestamp, 0).Format("15:04:05")
+	timeStr := logTimeStyle.Render(timestamp)
+
+	methodStr := logMethodStyle.Render(log.Method)
+
+	path := log.Path
+	if len(path) > 40 {
+		path = path[:37] + "..."
+	}
+	pathStr := logPathStyle.Render(path)
+
+	var statusStr string
+	if log.Status >= 200 && log.Status < 300 {
+		statusStr = logStatusOKStyle.Render(fmt.Sprintf("%d", log.Status))
+	} else {
+		statusStr = logStatusErrorStyle.Render(fmt.Sprintf("%d", log.Status))
+	}
+
+	durationMs := float64(log.Duration) / 1000.0
+	durationStr := logDurationStyle.Render(fmt.Sprintf("%.1fms", durationMs))
+
+	return fmt.Sprintf("%s  %s  %s  %s  %s", timeStr, methodStr, statusStr, pathStr, durationStr)
 }
 
 // formatBytes converts bytes to human-readable format.
@@ -200,32 +248,15 @@ func formatDuration(d time.Duration) string {
 	return fmt.Sprintf("%ds", s)
 }
 
-func formatLineRate(label string, value uint64, rate float64) string {
-	labelText := fmt.Sprintf("%-*s", labelWidth, label)
-	valueText := fmt.Sprintf("%-*s", valueWidth, formatBytes(value))
-	rateText := fmt.Sprintf("%-*s", rateWidth, fmt.Sprintf("(%s/s)", formatBytes(uint64(rate))))
-
-	return labelStyle.Render(labelText) +
-		valueStyle.Render(valueText) +
-		rateStyle.Render(rateText)
-}
-
-func formatLine(label string, value string) string {
-	labelText := fmt.Sprintf("%-*s", labelWidth, label)
-	valueText := fmt.Sprintf("%-*s", valueWidth, value)
-
-	return labelStyle.Render(labelText) + valueStyle.Render(valueText)
-}
-
 // StartMetricsDisplay starts the metrics display UI.
-func StartMetricsDisplay(name string) (*tea.Program, chan<- MetricsMsg) {
-	metricsChan := make(chan MetricsMsg, 10)
+func StartMetricsDisplay(name string) (*tea.Program, chan<- any) {
+	metricsChan := make(chan interface{}, 10)
 
 	p := tea.NewProgram(newMetricsModel(name))
 
 	go func() {
-		for metrics := range metricsChan {
-			p.Send(metrics)
+		for msg := range metricsChan {
+			p.Send(msg)
 		}
 	}()
 

@@ -191,16 +191,17 @@ func (s *Server) tunnel(ctx context.Context, conn net.Conn) error {
 	}
 
 	allowHTTP := tunnel.allowHTTP || tunnel.proto == proto.ProtoHTTP
+	isHTTP := detectedProtocol == ProtoHTTP
+	log.Debug().Str("detectedProtocol", detectedProtocol).Bool("http", isHTTP).Msg("proto")
 
-	if detectedProtocol == ProtoHTTP && !allowHTTP {
+	if isHTTP && !allowHTTP {
 		s.writeForbidden(conn, sni)
 		return fmt.Errorf("http not allowed on tcp tunnel")
 	}
 
-	if detectedProtocol == ProtoHTTP && allowHTTP && tunnel.auth != nil {
+	if isHTTP && tunnel.auth != nil && tunnel.httpLogch != nil {
 		req, err := http.ReadRequest(br)
 		if err != nil {
-			s.sendUnauthorized(tlsConn, tunnel.auth)
 			return fmt.Errorf("failed to read http request: %w", err)
 		}
 
@@ -218,13 +219,109 @@ func (s *Server) tunnel(ctx context.Context, conn net.Conn) error {
 			Conn: conn,
 			r:    bufio.NewReader(io.MultiReader(&fullRequest, br)),
 		}
-		return tunnel.From(ctx, wrapped)
+		return tunnel.Proxy(ctx, wrapped, req.Method, req.URL.Path)
 	}
+
+	if isHTTP && tunnel.httpLogch != nil {
+		log.Debug().Msg("streaming with logging")
+
+		req, err := http.ReadRequest(br)
+		if err != nil {
+			return fmt.Errorf("failed to read http request: %w", err)
+		}
+
+		var fullRequest bytes.Buffer
+		if err := req.Write(&fullRequest); err != nil {
+			return fmt.Errorf("failed to serialize request: %w", err)
+		}
+
+		wrapped := &ConnWithReader{
+			Conn: conn,
+			r:    bufio.NewReader(io.MultiReader(&fullRequest, br)),
+		}
+		return tunnel.Proxy(ctx, wrapped, req.Method, req.URL.Path)
+	}
+
+	log.Debug().Msg("SHESH")
+
 	wrapped := &ConnWithReader{
 		Conn: conn,
 		r:    br,
 	}
-	return tunnel.From(ctx, wrapped)
+	return tunnel.Proxy(ctx, wrapped, "", "")
+}
+
+// logHTTPRequest logs an HTTP request to the tunnel's HTTP log channel.
+func (s *Server) logHTTPRequest(tunnel *Tunnel, start time.Time, method, path string, status int32) {
+	if tunnel.httpLogch == nil {
+		return
+	}
+
+	duration := uint32(time.Since(start).Microseconds())
+
+	log := proto.NewHTTPLog(
+		time.Now().Unix(),
+		method,
+		path,
+		status,
+		duration,
+	)
+
+	select {
+	case tunnel.httpLogch <- log:
+		// Successfully sent
+	default:
+		// Channel full, drop the log entry
+		// You could also log a warning here
+	}
+}
+
+// streamHTTPLogs streams HTTP request logs to the client.
+func (s *Server) streamHTTPLogs(ctx context.Context, tunnel *Tunnel) error {
+	stream, err := tunnel.session.Open()
+	if err != nil {
+		return fmt.Errorf("failed to open yamux stream: %w", err)
+	}
+	defer stream.Close()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-tunnel.session.CloseChan():
+			return nil
+		case httpLog := <-tunnel.httpLogch:
+			if err := s.sendHTTPLog(stream, httpLog); err != nil {
+				return fmt.Errorf("failed to send http log: %w", err)
+			}
+		}
+	}
+}
+
+// sendHTTPLog sends an HTTP log entry to the client.
+func (s *Server) sendHTTPLog(stream net.Conn, httpLog *proto.HTTPLog) error {
+	serialized, err := proto.SerializeHTTPLog(httpLog)
+	if err != nil {
+		return fmt.Errorf("failed to serialize http log: %w", err)
+	}
+
+	header := proto.NewHeader(proto.TypeHTTPLog, uint64(len(serialized)))
+	serializedHeader, err := proto.SerializeHeader(header)
+	if err != nil {
+		return fmt.Errorf("failed to serialize header: %w", err)
+	}
+
+	_, err = stream.Write(serializedHeader)
+	if err != nil {
+		return fmt.Errorf("failed to write header: %w", err)
+	}
+
+	_, err = stream.Write(serialized)
+	if err != nil {
+		return fmt.Errorf("failed to write http log: %w", err)
+	}
+
+	return nil
 }
 
 func (s *Server) writeForbidden(conn net.Conn, sni string) {
@@ -576,6 +673,7 @@ func (s *Server) handleRequest(ctx context.Context, stream net.Conn, session *ya
 
 	if header.HasFlag(proto.FlagMetrics) {
 		tunnel.metrics = metrics.New()
+		tunnel.httpLogch = make(chan *proto.HTTPLog, 1024)
 		metricsCtx, metricsCancel := context.WithCancel(ctx)
 		defer metricsCancel()
 
@@ -590,6 +688,13 @@ func (s *Server) handleRequest(ctx context.Context, stream net.Conn, session *ya
 			er := s.handlePingStream(ctx, tunnel)
 			if er != nil {
 				log.Error().Err(er).Str("domain", domain).Msg("ping stream stopped")
+			}
+		}(metricsCtx, tunnel)
+
+		go func(ctx context.Context, tunnel *Tunnel) {
+			er := s.streamHTTPLogs(ctx, tunnel)
+			if er != nil {
+				log.Error().Err(er).Str("domain", domain).Msg("http log stream stopped")
 			}
 		}(metricsCtx, tunnel)
 	}

@@ -21,10 +21,12 @@ const (
 	TypeMetrics = 0x05
 	// TypeEnd indicates that a tunnel reached its end.
 	TypeEnd uint8 = 0x06
-	// TypePing indicates an incoming ping message.
+	// TypePing indicates an incoming ping stream, all subsequent ping will be handled by it.
 	TypePing uint8 = 0x07
 	//  TypePong indicates an incoming pong message.
 	TypePong uint8 = 0x08
+	// TypeHTTPLog indicates an incoming http log stream, all subsequent logs will be handled by it.
+	TypeHTTPLog uint8 = 0x09
 	// TypeError indicates an error response from the server.
 	TypeError uint8 = 0xFF
 )
@@ -60,6 +62,8 @@ const (
 	ResponseSize uint8 = 13
 	// MetricsSize is the fixed size of a metrics' fields in bytes (36).
 	MetricsSize uint8 = 40
+	// HTTPLogSize is the fixed size of an HTTPLog's non-string fields in bytes (20 bytes).
+	HTTPLogSize uint8 = 20
 )
 
 // Constants definition of supported protocols for tunneling.

@@ -53,6 +53,8 @@ type Client struct {
 	authToken string
 	// allowHTTP specifies if this tunnel allows HTTP requests, ignored if tunnel protocol is HTTP.
 	allowHTTP bool
+
+	metricsChan chan<- any
 }
 
 // New creates a new Client with the specified configuration options.
@@ -380,6 +382,8 @@ func (c *Client) handleMessages(ctx context.Context, session *yamux.Session) err
 			}(cancelCtx, stream)
 		case proto.TypeMetrics:
 			go c.handleMetrics(cancelCtx, header, stream, cancel)
+		case proto.TypeHTTPLog:
+			go c.handleHTTPLog(cancelCtx, header, stream, cancel)
 		case proto.TypeEnd:
 			stream.Close()
 			cancel()
@@ -406,6 +410,67 @@ func isDialError(err error) bool {
 	}
 
 	return false
+}
+
+// handleHTTPLog handles incoming HTTP log entries from the server.
+func (c *Client) handleHTTPLog(ctx context.Context, header *proto.Header, stream net.Conn, cancel context.CancelFunc) error {
+	defer stream.Close()
+	defer cancel()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+			// Read the HTTP log payload
+			buf := make([]byte, header.Length)
+			_, err := io.ReadFull(stream, buf)
+			if err != nil {
+				if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+					return nil
+				}
+				return fmt.Errorf("failed to read http log: %w", err)
+			}
+
+			httpLog, err := proto.DeserializeHTTPLog(buf)
+			if err != nil {
+				log.Error().Err(err).Msg("failed to deserialize http log")
+				return fmt.Errorf("failed to deserialize http log: %w", err)
+			}
+
+			// Log to console for now
+			// TODO: Send to metrics display when UI is updated
+			timestamp := time.Unix(httpLog.Timestamp, 0).Format("15:04:05")
+			durationMs := float64(httpLog.Duration) / 1000.0
+			log.Info().
+				Str("time", timestamp).
+				Str("method", httpLog.Method).
+				Str("path", httpLog.Path).
+				Int32("status", httpLog.Status).
+				Float64("duration_ms", durationMs).
+				Msg("http request")
+
+			// Read next header for the next log entry
+			headerBuf := make([]byte, proto.HeaderSize)
+			_, err = io.ReadFull(stream, headerBuf)
+			if err != nil {
+				if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+					return nil
+				}
+				return fmt.Errorf("failed to read http log header: %w", err)
+			}
+
+			header, err = proto.DeserializeHeader(headerBuf)
+			if err != nil {
+				return fmt.Errorf("failed to deserialize header: %w", err)
+			}
+
+			if header.Type != proto.TypeHTTPLog {
+				log.Warn().Uint8("type", header.Type).Msg("unexpected message type in http log stream")
+				return nil
+			}
+		}
+	}
 }
 
 // handlePingStream handle server pings using a dedicated stream.
@@ -476,6 +541,9 @@ func (c *Client) handleMetrics(ctx context.Context, header *proto.Header, stream
 		}
 		cancel()
 	}()
+
+	// Store the channel for HTTP logs to use
+	c.metricsChan = metricsChan
 
 	buf := make([]byte, header.Length)
 	_, err := io.ReadFull(stream, buf)
