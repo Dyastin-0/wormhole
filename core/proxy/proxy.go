@@ -3,25 +3,28 @@ package proxy
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"io"
 	"net/http"
-	"sync"
 )
 
 // Stream handles bidirectional streaming between src and dst.
 func Stream(src, dst io.ReadWriter) error {
 	errch := make(chan error, 2)
+
 	// Copy src -> dst
 	go func() {
 		_, err := io.Copy(dst, src)
 		errch <- err
 	}()
+
 	// Copy dst -> src
 	go func() {
 		_, err := io.Copy(src, dst)
 		errch <- err
 	}()
+
 	err := <-errch
 	closeConnection(src)
 	closeConnection(dst)
@@ -32,6 +35,7 @@ func Stream(src, dst io.ReadWriter) error {
 // StreamWithContext is Stream with context cancellation support.
 func StreamWithContext(ctx context.Context, src, dst io.ReadWriter) error {
 	errch := make(chan error, 2)
+
 	// Copy src -> dst
 	go func() {
 		_, err := io.Copy(dst, src)
@@ -39,6 +43,7 @@ func StreamWithContext(ctx context.Context, src, dst io.ReadWriter) error {
 		closeConnection(dst)
 		closeConnection(src)
 	}()
+
 	// Copy dst -> src
 	go func() {
 		_, err := io.Copy(src, dst)
@@ -46,6 +51,7 @@ func StreamWithContext(ctx context.Context, src, dst io.ReadWriter) error {
 		closeConnection(src)
 		closeConnection(dst)
 	}()
+
 	select {
 	case <-ctx.Done():
 		closeConnection(src)
@@ -66,34 +72,39 @@ func StreamWithContext(ctx context.Context, src, dst io.ReadWriter) error {
 }
 
 // StreamWithContextInspect is StreamWithContext with HTTP response inspection.
-// onStatus is called once when HTTP response status is detected (from dst->src direction).
 func StreamWithContextInspect(ctx context.Context, src, dst io.ReadWriter, onStatus func(int)) error {
 	errch := make(chan error, 2)
-	once := sync.Once{}
 
 	// Copy src -> dst
 	go func() {
 		_, err := io.Copy(dst, src)
 		errch <- err
 		closeConnection(dst)
-		closeConnection(src)
 	}()
 
-	// Copy dst -> src with inspection
+	// Copy dst -> src
 	go func() {
 		br := bufio.NewReader(dst)
+
 		resp, err := http.ReadResponse(br, nil)
-		if err == nil {
-			once.Do(func() {
-				onStatus(resp.StatusCode)
-			})
+		if err == nil && resp != nil {
+			onStatus(resp.StatusCode)
+			bodyBytes, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			resp.Body = io.NopCloser(bytes.NewReader(bodyBytes))
 		}
 
-		// Copy remaining data from buffered reader
-		_, err = io.Copy(src, br)
-		errch <- err
+		var copyErr error
+		if resp != nil {
+			var buf bytes.Buffer
+			resp.Write(&buf)
+			_, copyErr = io.Copy(src, io.MultiReader(&buf, br))
+		} else {
+			_, copyErr = io.Copy(src, br)
+		}
+
+		errch <- copyErr
 		closeConnection(src)
-		closeConnection(dst)
 	}()
 
 	select {

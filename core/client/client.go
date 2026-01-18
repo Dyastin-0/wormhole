@@ -417,13 +417,48 @@ func (c *Client) handleHTTPLog(ctx context.Context, header *proto.Header, stream
 	defer stream.Close()
 	defer cancel()
 
+	buf := make([]byte, header.Length)
+	_, err := io.ReadFull(stream, buf)
+	if err != nil {
+		if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+			return nil
+		}
+		return fmt.Errorf("failed to read http log: %w", err)
+	}
+
+	// This is the "READY" log, should be ignored.
+	_, err = proto.DeserializeHTTPLog(buf)
+	if err != nil {
+		log.Error().Err(err).Msg("failed to deserialize http log")
+		return fmt.Errorf("failed to deserialize http log: %w", err)
+	}
+
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
+			headerBuf := make([]byte, proto.HeaderSize)
+			_, err := io.ReadFull(stream, headerBuf)
+			if err != nil {
+				if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+					return nil
+				}
+				return fmt.Errorf("failed to read http log header: %w", err)
+			}
+
+			header, err = proto.DeserializeHeader(headerBuf)
+			if err != nil {
+				return fmt.Errorf("failed to deserialize header: %w", err)
+			}
+
+			if header.Type != proto.TypeHTTPLog {
+				log.Warn().Uint8("type", header.Type).Msg("unexpected message type in http log stream")
+				return nil
+			}
+
 			buf := make([]byte, header.Length)
-			_, err := io.ReadFull(stream, buf)
+			_, err = io.ReadFull(stream, buf)
 			if err != nil {
 				if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
 					return nil
@@ -443,25 +478,6 @@ func (c *Client) handleHTTPLog(ctx context.Context, header *proto.Header, stream
 				Duration:  httpLog.Duration,
 				Timestamp: httpLog.Timestamp,
 				Status:    httpLog.Status,
-			}
-
-			headerBuf := make([]byte, proto.HeaderSize)
-			_, err = io.ReadFull(stream, headerBuf)
-			if err != nil {
-				if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
-					return nil
-				}
-				return fmt.Errorf("failed to read http log header: %w", err)
-			}
-
-			header, err = proto.DeserializeHeader(headerBuf)
-			if err != nil {
-				return fmt.Errorf("failed to deserialize header: %w", err)
-			}
-
-			if header.Type != proto.TypeHTTPLog {
-				log.Warn().Uint8("type", header.Type).Msg("unexpected message type in http log stream")
-				return nil
 			}
 		}
 	}

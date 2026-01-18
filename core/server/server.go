@@ -163,6 +163,7 @@ func (s *Server) RunTunnelerWithListener(ctx context.Context, ln net.Listener) e
 				log.Error().Err(err).Msg("failed to accept connection")
 				continue
 			}
+
 			go s.tunnel(ctx, conn)
 		}
 	}
@@ -261,6 +262,9 @@ func (s *Server) streamHTTPLogs(ctx context.Context, tunnel *Tunnel) error {
 		return fmt.Errorf("failed to open yamux stream: %w", err)
 	}
 	defer stream.Close()
+
+	// Initially send a "stream ready", so the client accept loop does not block.
+	tunnel.logHTTPRequest(time.Now(), "READY", "/", 0)
 
 	for {
 		select {
