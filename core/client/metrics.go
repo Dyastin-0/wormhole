@@ -22,7 +22,7 @@ type HTTPLogMsg struct {
 	Timestamp int64
 	Method    string
 	Path      string
-	Status    int32
+	Status    uint16
 	Duration  uint32
 }
 
@@ -250,7 +250,7 @@ func formatDuration(d time.Duration) string {
 
 // StartMetricsDisplay starts the metrics display UI.
 func StartMetricsDisplay(name string) (*tea.Program, chan<- any) {
-	metricsChan := make(chan interface{}, 10)
+	metricsChan := make(chan any, 10)
 
 	p := tea.NewProgram(newMetricsModel(name))
 

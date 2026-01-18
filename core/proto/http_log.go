@@ -19,7 +19,7 @@ type HTTPLog struct {
 	// Path represents the request path.
 	Path string
 	// Status represents the HTTP response status code.
-	Status int32
+	Status uint16
 	// Duration represents the request duration in microseconds.
 	Duration uint32
 }
@@ -146,7 +146,7 @@ func validateHTTPLog(log *HTTPLog) error {
 }
 
 // NewHTTPLog creates a new HTTPLog with the specified fields.
-func NewHTTPLog(timestamp int64, method, path string, status int32, duration uint32) *HTTPLog {
+func NewHTTPLog(timestamp int64, method, path string, status uint16, duration uint32) *HTTPLog {
 	return &HTTPLog{
 		Timestamp:    timestamp,
 		MethodLength: uint16(len(method)),

@@ -31,7 +31,7 @@ type Tunnel struct {
 	httpLogch chan *proto.HTTPLog
 }
 
-// From opens a stream (remoteStream) from the session then forwards the stream to it.
+// Proxy opens a stream from the session then forwards the stream to it.
 func (t *Tunnel) Proxy(ctx context.Context, stream net.Conn) error {
 	defer stream.Close()
 
@@ -75,4 +75,71 @@ func (t *Tunnel) Proxy(ctx context.Context, stream net.Conn) error {
 		return proxy.StreamWithContext(proxyCtx, proxyStream, remoteStream)
 	}
 	return proxy.StreamWithContext(proxyCtx, stream, remoteStream)
+}
+
+// ProxyWithInspect opens a stream from the session, forwards the stream to it,
+// then inspects and logs the response.
+func (t *Tunnel) ProxyWithInspect(ctx context.Context, stream net.Conn, start time.Time, method, path string) error {
+	defer stream.Close()
+
+	if t.metrics != nil {
+		t.metrics.IncrementConnections()
+		defer t.metrics.DecrementActiveConnections()
+	}
+
+	remoteStream, err := t.session.Open()
+	if err != nil {
+		return fmt.Errorf("failed to open yamux session: %w", err)
+	}
+	defer remoteStream.Close()
+
+	header := proto.NewHeader(proto.TypeAccess, 0)
+	serializedHeader, err := proto.SerializeHeader(header)
+	if err != nil {
+		return fmt.Errorf("failed to serialize header: %w", err)
+	}
+
+	_, err = remoteStream.Write(serializedHeader)
+	if err != nil {
+		return fmt.Errorf("failed to write access header: %w", err)
+	}
+
+	proxyCtx, proxyCancel := context.WithCancel(ctx)
+	defer proxyCancel()
+
+	go func() {
+		select {
+		case <-t.session.CloseChan():
+			stream.Close()
+			remoteStream.Close()
+		case <-proxyCtx.Done():
+			return
+		}
+	}()
+
+	if t.metrics != nil {
+		proxyStream := t.metrics.NewProxyReadWriter(stream)
+		return proxy.StreamWithContextInspect(proxyCtx, proxyStream, remoteStream, func(status int) {
+			t.logHTTPRequest(start, method, path, status)
+		})
+	}
+	return proxy.StreamWithContext(proxyCtx, stream, remoteStream)
+}
+
+// logHTTPRequest logs an HTTP request to the tunnel's HTTP log channel.
+func (t *Tunnel) logHTTPRequest(start time.Time, method, path string, status int) {
+	duration := uint32(time.Since(start).Microseconds())
+
+	log := proto.NewHTTPLog(
+		time.Now().Unix(),
+		method,
+		path,
+		uint16(status),
+		duration,
+	)
+
+	select {
+	case t.httpLogch <- log:
+	default:
+	}
 }

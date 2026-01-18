@@ -422,7 +422,6 @@ func (c *Client) handleHTTPLog(ctx context.Context, header *proto.Header, stream
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
-			// Read the HTTP log payload
 			buf := make([]byte, header.Length)
 			_, err := io.ReadFull(stream, buf)
 			if err != nil {
@@ -438,19 +437,14 @@ func (c *Client) handleHTTPLog(ctx context.Context, header *proto.Header, stream
 				return fmt.Errorf("failed to deserialize http log: %w", err)
 			}
 
-			// Log to console for now
-			// TODO: Send to metrics display when UI is updated
-			timestamp := time.Unix(httpLog.Timestamp, 0).Format("15:04:05")
-			durationMs := float64(httpLog.Duration) / 1000.0
-			log.Info().
-				Str("time", timestamp).
-				Str("method", httpLog.Method).
-				Str("path", httpLog.Path).
-				Int32("status", httpLog.Status).
-				Float64("duration_ms", durationMs).
-				Msg("http request")
+			c.metricsChan <- HTTPLogMsg{
+				Method:    httpLog.Method,
+				Path:      httpLog.Path,
+				Duration:  httpLog.Duration,
+				Timestamp: httpLog.Timestamp,
+				Status:    httpLog.Status,
+			}
 
-			// Read next header for the next log entry
 			headerBuf := make([]byte, proto.HeaderSize)
 			_, err = io.ReadFull(stream, headerBuf)
 			if err != nil {
@@ -542,7 +536,6 @@ func (c *Client) handleMetrics(ctx context.Context, header *proto.Header, stream
 		cancel()
 	}()
 
-	// Store the channel for HTTP logs to use
 	c.metricsChan = metricsChan
 
 	buf := make([]byte, header.Length)

@@ -127,12 +127,12 @@ func (m *Metrics) GetEgressRate() float64 {
 	return float64(m.GetEgressBytes()) / uptime.Seconds()
 }
 
-// SetLatency atomically sets latency.
+// SetRTT atomically sets latency.
 func (m *Metrics) SetRTT(rtt uint32) {
 	atomic.StoreUint32(&m.RTT, rtt)
 }
 
-// GetLatency atomically loads Latency.
+// GetRTT atomically loads Latency.
 func (m *Metrics) GetRTT() uint32 {
 	return atomic.LoadUint32(&m.RTT)
 }
