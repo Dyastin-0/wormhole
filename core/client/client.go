@@ -496,7 +496,6 @@ func handlePingStream(ctx context.Context, stream net.Conn) {
 
 	_, err = stream.Write(serialized)
 	if err != nil {
-		log.Error().Err(err).Msg("failed to write pong")
 		return
 	}
 
@@ -508,7 +507,6 @@ func handlePingStream(ctx context.Context, stream net.Conn) {
 			buf := make([]byte, proto.HeaderSize)
 			_, err := io.ReadFull(stream, buf)
 			if err != nil {
-				log.Error().Err(err).Msg("failed to read ping")
 				return
 			}
 
@@ -532,7 +530,6 @@ func handlePingStream(ctx context.Context, stream net.Conn) {
 
 			_, err = stream.Write(serialized)
 			if err != nil {
-				log.Error().Err(err).Msg("failed to write pong")
 				return
 			}
 		}

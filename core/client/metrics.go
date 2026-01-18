@@ -47,17 +47,17 @@ var (
 
 	labelStyle = lipgloss.NewStyle().
 			Foreground(subtle).
-			Width(20)
+			Width(22)
 
 	valueStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("15")).
 			Align(lipgloss.Right).
-			Width(15)
+			Width(20)
 
 	rateStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("244")).
 			Align(lipgloss.Right).
-			Width(15)
+			Width(20)
 
 	logHeaderStyle = lipgloss.NewStyle().
 			Bold(true).
@@ -67,14 +67,11 @@ var (
 
 	logTimeStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("244")).
-			Width(8)
+			Width(10)
 
 	logMethodStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("39")).
-			Width(6)
-
-	logPathStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("15"))
+			Width(8)
 
 	logStatusOKStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("42")).
@@ -84,10 +81,14 @@ var (
 				Foreground(lipgloss.Color("196")).
 				Width(5)
 
+	logPathStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("15")).
+			Width(30)
+
 	logDurationStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("244")).
 				Align(lipgloss.Right).
-				Width(10)
+				Width(12)
 )
 
 func newMetricsModel(name string) metricsModel {
@@ -185,7 +186,7 @@ func (m metricsModel) formatLine(label, value, rate string) string {
 
 	if rate != "" {
 		r := rateStyle.Render(rate)
-		return lipgloss.JoinHorizontal(lipgloss.Left, l, v, r)
+		return lipgloss.JoinHorizontal(lipgloss.Left, l, v, "  ", r)
 	}
 
 	return lipgloss.JoinHorizontal(lipgloss.Left, l, v)
@@ -198,20 +199,20 @@ func (m metricsModel) formatHTTPLog(log HTTPLogMsg) string {
 	methodStr := logMethodStyle.Render(log.Method)
 
 	path := log.Path
-	if len(path) > 40 {
-		path = path[:37] + "..."
+	if len(path) > 50 {
+		path = path[:47] + "..."
 	}
 	pathStr := logPathStyle.Render(path)
 
 	var statusStr string
-	if log.Status >= 200 && log.Status < 300 {
+	if log.Status >= 200 && log.Status < 400 {
 		statusStr = logStatusOKStyle.Render(fmt.Sprintf("%d", log.Status))
 	} else {
 		statusStr = logStatusErrorStyle.Render(fmt.Sprintf("%d", log.Status))
 	}
 
 	durationMs := float64(log.Duration) / 1000.0
-	durationStr := logDurationStyle.Render(fmt.Sprintf("%.1fms", durationMs))
+	durationStr := logDurationStyle.Render(fmt.Sprintf("%.1f ms", durationMs))
 
 	return fmt.Sprintf("%s  %s  %s  %s  %s", timeStr, methodStr, statusStr, pathStr, durationStr)
 }

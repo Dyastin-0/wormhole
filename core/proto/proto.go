@@ -62,8 +62,8 @@ const (
 	ResponseSize uint8 = 13
 	// MetricsSize is the fixed size of a metrics' fields in bytes (36).
 	MetricsSize uint8 = 40
-	// HTTPLogSize is the fixed size of an HTTPLog's non-string fields in bytes (20 bytes).
-	HTTPLogSize uint8 = 20
+	// HTTPLogSize is the fixed size of an HTTPLog's non-string fields in bytes (18 bytes).
+	HTTPLogSize uint8 = 18
 )
 
 // Constants definition of supported protocols for tunneling.
