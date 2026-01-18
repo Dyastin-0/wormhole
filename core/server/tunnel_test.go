@@ -68,7 +68,7 @@ func TestFromSuccess(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
 
-	err = tunnel.Proxy(ctx, streamClientConn, "", "")
+	err = tunnel.Proxy(ctx, streamClientConn)
 	if errors.Is(err, context.DeadlineExceeded) {
 		return
 	}
@@ -96,7 +96,7 @@ func TestFromSessionOpenFail(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
 
-	err = tunnel.Proxy(ctx, streamClientConn, "", "")
+	err = tunnel.Proxy(ctx, streamClientConn)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to open yamux session")
 }

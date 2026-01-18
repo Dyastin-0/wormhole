@@ -1,12 +1,9 @@
 package server
 
 import (
-	"bufio"
 	"context"
 	"fmt"
-	"io"
 	"net"
-	"net/http"
 	"time"
 
 	"github.com/Dyastin-0/wormhole/core/auth"
@@ -34,10 +31,9 @@ type Tunnel struct {
 	httpLogch chan *proto.HTTPLog
 }
 
-// Proxy opens a stream from the session then forwards the traffic.
-// If method and path are provided, it intercepts the response to log the status code.
-func (t *Tunnel) Proxy(ctx context.Context, localStream net.Conn, method, path string) error {
-	defer localStream.Close()
+// From opens a stream (remoteStream) from the session then forwards the stream to it.
+func (t *Tunnel) Proxy(ctx context.Context, stream net.Conn) error {
+	defer stream.Close()
 
 	if t.metrics != nil {
 		t.metrics.IncrementConnections()
@@ -56,7 +52,8 @@ func (t *Tunnel) Proxy(ctx context.Context, localStream net.Conn, method, path s
 		return fmt.Errorf("failed to serialize header: %w", err)
 	}
 
-	if _, err = remoteStream.Write(serializedHeader); err != nil {
+	_, err = remoteStream.Write(serializedHeader)
+	if err != nil {
 		return fmt.Errorf("failed to write access header: %w", err)
 	}
 
@@ -66,67 +63,16 @@ func (t *Tunnel) Proxy(ctx context.Context, localStream net.Conn, method, path s
 	go func() {
 		select {
 		case <-t.session.CloseChan():
-			localStream.Close()
+			stream.Close()
 			remoteStream.Close()
 		case <-proxyCtx.Done():
 			return
 		}
 	}()
 
-	var local io.ReadWriter = localStream
 	if t.metrics != nil {
-		local = t.metrics.NewProxyReadWriter(localStream)
+		proxyStream := t.metrics.NewProxyReadWriter(stream)
+		return proxy.StreamWithContext(proxyCtx, proxyStream, remoteStream)
 	}
-
-	if t.httpLogch != nil && method != "" {
-		return t.proxyAndLog(proxyCtx, local, remoteStream, method, path)
-	}
-
-	return proxy.StreamWithContext(proxyCtx, local, remoteStream)
-}
-
-func (t *Tunnel) proxyAndLog(ctx context.Context, local io.ReadWriter, remote io.ReadWriter, method, path string) error {
-	start := time.Now()
-
-	br := bufio.NewReader(remote)
-	resp, err := http.ReadResponse(br, nil)
-
-	if err == nil {
-		t.sendLog(start, method, path, int32(resp.StatusCode))
-
-		if err := resp.Write(local); err != nil {
-			return fmt.Errorf("failed to write response headers: %w", err)
-		}
-		resp.Body.Close()
-	} else {
-		t.sendLog(start, method, path, 0)
-	}
-
-	wrappedRemote := &ReadWriterWrapper{
-		Reader: br,
-		Writer: remote,
-	}
-
-	return proxy.StreamWithContext(ctx, local, wrappedRemote)
-}
-
-func (t *Tunnel) sendLog(start time.Time, method, path string, status int32) {
-	duration := uint32(time.Since(start).Microseconds())
-	logEntry := proto.NewHTTPLog(
-		time.Now().Unix(),
-		method,
-		path,
-		status,
-		duration,
-	)
-
-	select {
-	case t.httpLogch <- logEntry:
-	default:
-	}
-}
-
-type ReadWriterWrapper struct {
-	io.Reader
-	io.Writer
+	return proxy.StreamWithContext(proxyCtx, stream, remoteStream)
 }

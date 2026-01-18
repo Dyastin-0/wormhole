@@ -170,6 +170,7 @@ func (s *Server) RunTunnelerWithListener(ctx context.Context, ln net.Listener) e
 
 // tunnel forwards an incoming connection to the appropriate client session based on the SNI.
 func (s *Server) tunnel(ctx context.Context, conn net.Conn) error {
+	start := time.Now()
 	sni, tlsConn := getSNI(conn)
 	if sni == "" {
 		conn.Close()
@@ -192,21 +193,23 @@ func (s *Server) tunnel(ctx context.Context, conn net.Conn) error {
 
 	allowHTTP := tunnel.allowHTTP || tunnel.proto == proto.ProtoHTTP
 	isHTTP := detectedProtocol == ProtoHTTP
-	log.Debug().Str("detectedProtocol", detectedProtocol).Bool("http", isHTTP).Msg("proto")
 
 	if isHTTP && !allowHTTP {
 		s.writeForbidden(conn, sni)
 		return fmt.Errorf("http not allowed on tcp tunnel")
 	}
 
-	if isHTTP && tunnel.auth != nil && tunnel.httpLogch != nil {
+	if isHTTP && tunnel.auth != nil {
 		req, err := http.ReadRequest(br)
 		if err != nil {
+			s.sendUnauthorized(tlsConn, tunnel.auth)
+			s.logHTTPRequest(tunnel, start, "GET", "/", http.StatusUnauthorized)
 			return fmt.Errorf("failed to read http request: %w", err)
 		}
 
 		if !tunnel.auth.Authenticate(req) {
 			s.sendUnauthorized(tlsConn, tunnel.auth)
+			s.logHTTPRequest(tunnel, start, "GET", "/", http.StatusUnauthorized)
 			return fmt.Errorf("unauthorized")
 		}
 
@@ -215,40 +218,20 @@ func (s *Server) tunnel(ctx context.Context, conn net.Conn) error {
 			return fmt.Errorf("failed to serialize request: %w", err)
 		}
 
-		wrapped := &ConnWithReader{
-			Conn: conn,
-			r:    bufio.NewReader(io.MultiReader(&fullRequest, br)),
-		}
-		return tunnel.Proxy(ctx, wrapped, req.Method, req.URL.Path)
-	}
-
-	if isHTTP && tunnel.httpLogch != nil {
-		log.Debug().Msg("streaming with logging")
-
-		req, err := http.ReadRequest(br)
-		if err != nil {
-			return fmt.Errorf("failed to read http request: %w", err)
-		}
-
-		var fullRequest bytes.Buffer
-		if err := req.Write(&fullRequest); err != nil {
-			return fmt.Errorf("failed to serialize request: %w", err)
-		}
+		s.logHTTPRequest(tunnel, start, req.Method, req.URL.Path, http.StatusOK)
 
 		wrapped := &ConnWithReader{
 			Conn: conn,
 			r:    bufio.NewReader(io.MultiReader(&fullRequest, br)),
 		}
-		return tunnel.Proxy(ctx, wrapped, req.Method, req.URL.Path)
+		return tunnel.Proxy(ctx, wrapped)
 	}
-
-	log.Debug().Msg("SHESH")
 
 	wrapped := &ConnWithReader{
 		Conn: conn,
 		r:    br,
 	}
-	return tunnel.Proxy(ctx, wrapped, "", "")
+	return tunnel.Proxy(ctx, wrapped)
 }
 
 // logHTTPRequest logs an HTTP request to the tunnel's HTTP log channel.
@@ -673,7 +656,6 @@ func (s *Server) handleRequest(ctx context.Context, stream net.Conn, session *ya
 
 	if header.HasFlag(proto.FlagMetrics) {
 		tunnel.metrics = metrics.New()
-		tunnel.httpLogch = make(chan *proto.HTTPLog, 1024)
 		metricsCtx, metricsCancel := context.WithCancel(ctx)
 		defer metricsCancel()
 
