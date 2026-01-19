@@ -1,6 +1,8 @@
+![gopher](/snapshots/gopher-getting-suck-in-a-wormhole.png)
+
 # Wormhole
 
-A TCP-based reverse tunnel service written in Go.
+Tunneling using a multiplexed ([yamux](https://github.com/hashicorp/yamux)) TCP stream.
 
 ## Installation
 
@@ -20,7 +22,7 @@ go install github.com/Dyastin-0/wormhole@latest
 
 ### Running a Server
 
-Running a server requires a wildcard domain (e.g., `*.wormhole.dev`) and its base domain pointed to the wormhole server. You'll need to configure a reverse proxy that supports wildcards.
+Running a server requires a wildcard domain (e.g., `*.wormhole.dev`) and its base domain pointed to the wormhole server. You'll need to configure a reverse proxy that supports wildcards. Wormhole runs two services, a control, and tunnel endpoint.
 
 Configuration can be loaded in multiple ways:
 
