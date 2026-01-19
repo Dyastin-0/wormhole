@@ -79,7 +79,7 @@ func (t *Tunnel) Proxy(ctx context.Context, stream net.Conn) error {
 
 // ProxyWithInspect opens a stream from the session, forwards the stream to it,
 // then inspects and logs the response.
-func (t *Tunnel) ProxyWithInspect(ctx context.Context, stream net.Conn, start time.Time, method, path string) error {
+func (t *Tunnel) ProxyWithInspect(ctx context.Context, stream net.Conn) error {
 	defer stream.Close()
 
 	if t.metrics != nil {
@@ -119,7 +119,7 @@ func (t *Tunnel) ProxyWithInspect(ctx context.Context, stream net.Conn, start ti
 
 	if t.metrics != nil {
 		proxyStream := t.metrics.NewProxyReadWriter(stream)
-		return proxy.StreamWithContextInspect(proxyCtx, proxyStream, remoteStream, func(status int) {
+		return proxy.StreamHTTPWithInspect(proxyCtx, proxyStream, remoteStream, func(start time.Time, method, path string, status int) {
 			t.logHTTPRequest(start, method, path, status)
 		})
 	}

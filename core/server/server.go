@@ -180,7 +180,7 @@ func (s *Server) tunnel(ctx context.Context, conn net.Conn) error {
 	conn = tlsConn
 	defer conn.Close()
 
-	sniffer := &Sniff{peekN: 24}
+	sniffer := &Sniff{peekN: 64}
 	detectedProtocol, br := sniffer.Conn(tlsConn)
 
 	tunnel, ok := s.tunnels.Get(sni)
@@ -224,34 +224,24 @@ func (s *Server) tunnel(ctx context.Context, conn net.Conn) error {
 			r:    bufio.NewReader(io.MultiReader(&fullRequest, br)),
 		}
 
-		return tunnel.ProxyWithInspect(ctx, wrapped, start, req.Method, req.URL.Path)
+		return tunnel.ProxyWithInspect(ctx, wrapped)
 	}
 
 	if isHTTP && tunnel.httpLogch != nil {
-		req, err := http.ReadRequest(br)
-		if err != nil {
-			s.sendUnauthorized(tlsConn, tunnel.auth)
-			tunnel.logHTTPRequest(start, "GET", "/", http.StatusUnauthorized)
-			return fmt.Errorf("failed to read http request: %w", err)
-		}
-
-		var fullRequest bytes.Buffer
-		if err := req.Write(&fullRequest); err != nil {
-			return fmt.Errorf("failed to serialize request: %w", err)
-		}
 
 		wrapped := &ConnWithReader{
 			Conn: conn,
-			r:    bufio.NewReader(io.MultiReader(&fullRequest, br)),
+			r:    br,
 		}
 
-		return tunnel.ProxyWithInspect(ctx, wrapped, start, req.Method, req.URL.Path)
+		return tunnel.ProxyWithInspect(ctx, wrapped)
 	}
 
 	wrapped := &ConnWithReader{
 		Conn: conn,
 		r:    br,
 	}
+
 	return tunnel.Proxy(ctx, wrapped)
 }
 

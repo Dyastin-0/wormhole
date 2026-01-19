@@ -3,28 +3,25 @@ package proxy
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"io"
 	"net/http"
+	"time"
 )
 
 // Stream handles bidirectional streaming between src and dst.
 func Stream(src, dst io.ReadWriter) error {
 	errch := make(chan error, 2)
-
 	// Copy src -> dst
 	go func() {
 		_, err := io.Copy(dst, src)
 		errch <- err
 	}()
-
 	// Copy dst -> src
 	go func() {
 		_, err := io.Copy(src, dst)
 		errch <- err
 	}()
-
 	err := <-errch
 	closeConnection(src)
 	closeConnection(dst)
@@ -35,7 +32,6 @@ func Stream(src, dst io.ReadWriter) error {
 // StreamWithContext is Stream with context cancellation support.
 func StreamWithContext(ctx context.Context, src, dst io.ReadWriter) error {
 	errch := make(chan error, 2)
-
 	// Copy src -> dst
 	go func() {
 		_, err := io.Copy(dst, src)
@@ -43,7 +39,6 @@ func StreamWithContext(ctx context.Context, src, dst io.ReadWriter) error {
 		closeConnection(dst)
 		closeConnection(src)
 	}()
-
 	// Copy dst -> src
 	go func() {
 		_, err := io.Copy(src, dst)
@@ -51,7 +46,6 @@ func StreamWithContext(ctx context.Context, src, dst io.ReadWriter) error {
 		closeConnection(src)
 		closeConnection(dst)
 	}()
-
 	select {
 	case <-ctx.Done():
 		closeConnection(src)
@@ -71,59 +65,98 @@ func StreamWithContext(ctx context.Context, src, dst io.ReadWriter) error {
 	}
 }
 
-// StreamWithContextInspect is StreamWithContext with HTTP response inspection.
-func StreamWithContextInspect(ctx context.Context, src, dst io.ReadWriter, onStatus func(int)) error {
-	errch := make(chan error, 2)
+// StreamHTTPWithInspect is StreamWithContext with HTTP request-response inspection.
+func StreamHTTPWithInspect(ctx context.Context, src, dst io.ReadWriter, onRequest func(start time.Time, method, path string, status int)) error {
+	var srcBr *bufio.Reader
 
-	// Copy src -> dst
+	if br, ok := src.(interface{ GetReader() *bufio.Reader }); ok {
+		srcBr = br.GetReader()
+	} else {
+		srcBr = bufio.NewReader(src)
+	}
+
+	dstBr := bufio.NewReader(dst)
+
+	errch := make(chan error, 1)
+
 	go func() {
-		_, err := io.Copy(dst, src)
-		errch <- err
-		closeConnection(dst)
-	}()
+		defer func() {
+			closeConnection(src)
+			closeConnection(dst)
+		}()
 
-	// Copy dst -> src
-	go func() {
-		br := bufio.NewReader(dst)
+		for {
+			select {
+			case <-ctx.Done():
+				errch <- ctx.Err()
+				return
+			default:
+			}
 
-		resp, err := http.ReadResponse(br, nil)
-		if err == nil && resp != nil {
-			onStatus(resp.StatusCode)
-			bodyBytes, _ := io.ReadAll(resp.Body)
+			start := time.Now()
+
+			req, err := http.ReadRequest(srcBr)
+			if err != nil {
+				if err == io.EOF || err == io.ErrUnexpectedEOF {
+					errch <- nil
+					return
+				}
+				errch <- err
+				return
+			}
+
+			method, path := req.Method, req.URL.Path
+
+			if err = req.Write(dst); err != nil {
+				errch <- err
+				return
+			}
+
+			resp, err := http.ReadResponse(dstBr, req)
+			if err != nil {
+				errch <- err
+				return
+			}
+
+			status := resp.StatusCode
+
+			if err := resp.Write(src); err != nil {
+				resp.Body.Close()
+				errch <- err
+				return
+			}
+
 			resp.Body.Close()
-			resp.Body = io.NopCloser(bytes.NewReader(bodyBytes))
-		}
 
-		var copyErr error
-		if resp != nil {
-			var buf bytes.Buffer
-			resp.Write(&buf)
-			_, copyErr = io.Copy(src, io.MultiReader(&buf, br))
-		} else {
-			_, copyErr = io.Copy(src, br)
-		}
+			onRequest(start, method, path, status)
 
-		errch <- copyErr
-		closeConnection(src)
+			if !shouldKeepAlive(req, resp) {
+				errch <- nil
+				return
+			}
+		}
 	}()
 
 	select {
 	case <-ctx.Done():
 		closeConnection(src)
 		closeConnection(dst)
-		<-errch
-		<-errch
 		return ctx.Err()
 	case err := <-errch:
-		err2 := <-errch
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-		if err != nil {
-			return err
-		}
-		return err2
+		closeConnection(src)
+		closeConnection(dst)
+		return err
 	}
+}
+
+func shouldKeepAlive(req *http.Request, resp *http.Response) bool {
+	if req.Close || resp.Close {
+		return false
+	}
+	if resp.Header.Get("Connection") == "close" {
+		return false
+	}
+	return true
 }
 
 // closeConnection safely closes a connection if it implements io.Closer.
