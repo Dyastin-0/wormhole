@@ -414,7 +414,7 @@ func baseClientFlags(flags ...cli.Flag) []cli.Flag {
 		&cli.BoolFlag{
 			Name:    "http-log",
 			Usage:   "enable HTTP request logging (works with HTTP tunnels and TCP tunnels with --allow-http)",
-			Aliases: []string{"h"},
+			Aliases: []string{"hl"},
 			Value:   false,
 		},
 		&cli.StringFlag{
