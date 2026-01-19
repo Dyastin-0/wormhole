@@ -47,48 +47,52 @@ var (
 
 	labelStyle = lipgloss.NewStyle().
 			Foreground(subtle).
-			Width(22)
+			Width(20).
+			Align(lipgloss.Left)
 
 	valueStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("15")).
-			Align(lipgloss.Right).
-			Width(20)
+			Width(12).
+			Align(lipgloss.Right)
 
 	rateStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("244")).
-			Align(lipgloss.Right).
-			Width(20)
+			Width(12).
+			Align(lipgloss.Right)
 
 	logHeaderStyle = lipgloss.NewStyle().
 			Bold(true).
-			Foreground(lipgloss.Color("15")).
-			MarginTop(1).
-			MarginBottom(1)
+			Foreground(lipgloss.Color("15"))
 
 	logTimeStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("244")).
-			Width(10)
+			Width(8).
+			Align(lipgloss.Left)
 
 	logMethodStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("39")).
-			Width(8)
+			Width(7).
+			Align(lipgloss.Left)
 
 	logStatusOKStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("42")).
-				Width(5)
+				Width(3).
+				Align(lipgloss.Right)
 
 	logStatusErrorStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("196")).
-				Width(5)
+				Width(3).
+				Align(lipgloss.Right)
 
 	logPathStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("15")).
-			Width(30)
+			Width(40).
+			Align(lipgloss.Left)
 
 	logDurationStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("244")).
-				Align(lipgloss.Right).
-				Width(12)
+				Width(10).
+				Align(lipgloss.Right)
 )
 
 func newMetricsModel(name string) metricsModel {
@@ -136,8 +140,8 @@ func (m metricsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case HTTPLogMsg:
 		m.httpLogs = append(m.httpLogs, msg)
-		if len(m.httpLogs) > 10 {
-			m.httpLogs = m.httpLogs[len(m.httpLogs)-10:]
+		if len(m.httpLogs) > 12 {
+			m.httpLogs = m.httpLogs[len(m.httpLogs)-12:]
 		}
 
 	case spinner.TickMsg:
@@ -153,6 +157,7 @@ func (m metricsModel) View() string {
 	title := titleStyle.Render(fmt.Sprintf("%s %s", m.name, m.spinner.View()))
 
 	lines := []string{
+		"",
 		title,
 		"",
 		m.formatLine("Ingress", formatBytes(m.metrics.Ingress), fmt.Sprintf("%s/s", formatBytes(uint64(m.ingressRate)))),
@@ -175,7 +180,7 @@ func (m metricsModel) View() string {
 	}
 
 	lines = append(lines, "")
-	lines = append(lines, lipgloss.NewStyle().Foreground(subtle).Render("Press q to quit"))
+	lines = append(lines, lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Render("Press q to quit"))
 
 	return lipgloss.JoinVertical(lipgloss.Left, lines...)
 }
@@ -199,8 +204,8 @@ func (m metricsModel) formatHTTPLog(log HTTPLogMsg) string {
 	methodStr := logMethodStyle.Render(log.Method)
 
 	path := log.Path
-	if len(path) > 50 {
-		path = path[:47] + "..."
+	if len(path) > 40 {
+		path = path[:37] + "..."
 	}
 	pathStr := logPathStyle.Render(path)
 
@@ -214,7 +219,13 @@ func (m metricsModel) formatHTTPLog(log HTTPLogMsg) string {
 	durationMs := float64(log.Duration) / 1000.0
 	durationStr := logDurationStyle.Render(fmt.Sprintf("%.1f ms", durationMs))
 
-	return fmt.Sprintf("%s  %s  %s  %s  %s", timeStr, methodStr, statusStr, pathStr, durationStr)
+	return lipgloss.JoinHorizontal(lipgloss.Left,
+		timeStr, "  ",
+		methodStr, "  ",
+		statusStr, "  ",
+		pathStr, "  ",
+		durationStr,
+	)
 }
 
 // formatBytes converts bytes to human-readable format.
