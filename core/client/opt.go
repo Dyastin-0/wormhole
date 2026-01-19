@@ -80,3 +80,9 @@ func WithAllowHTTP(allowHTTP bool) OptFunc {
 		c.allowHTTP = allowHTTP
 	}
 }
+
+func WithHTTPLog(httpLog bool) OptFunc {
+	return func(c *Client) {
+		c.httpLog = httpLog
+	}
+}

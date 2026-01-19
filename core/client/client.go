@@ -37,6 +37,8 @@ type Client struct {
 	name string
 	// metrics specifies if the client want to stream the tunnel metrics.
 	metrics bool
+	// httpLog species if the client want to stream http logs.
+	httpLog bool
 	// domain specifies the approved requested domain name.
 	domain string
 	// apiKey specifies the server-issued JWT token.
@@ -53,8 +55,8 @@ type Client struct {
 	authToken string
 	// allowHTTP specifies if this tunnel allows HTTP requests, ignored if tunnel protocol is HTTP.
 	allowHTTP bool
-
-	metricsChan chan<- any
+	// metricsch i used to send http logs and metrics to bubbletea application.
+	metricsch chan<- any
 }
 
 // New creates a new Client with the specified configuration options.
@@ -272,6 +274,9 @@ func (c *Client) sendRequest(ctx context.Context, stream net.Conn) (*proto.Heade
 	if c.allowHTTP {
 		header.SetFlag(proto.FlagAllowHTTP)
 	}
+	if c.httpLog {
+		header.SetFlag(proto.FlagHTTPLog)
+	}
 
 	serializedHeader, err := proto.SerializeHeader(header)
 	if err != nil {
@@ -472,7 +477,7 @@ func (c *Client) handleHTTPLog(ctx context.Context, header *proto.Header, stream
 				return fmt.Errorf("failed to deserialize http log: %w", err)
 			}
 
-			c.metricsChan <- HTTPLogMsg{
+			c.metricsch <- HTTPLogMsg{
 				Method:    httpLog.Method,
 				Path:      httpLog.Path,
 				Duration:  httpLog.Duration,
@@ -540,8 +545,8 @@ func handlePingStream(ctx context.Context, stream net.Conn) {
 func (c *Client) handleMetrics(ctx context.Context, header *proto.Header, stream net.Conn, cancel context.CancelFunc) error {
 	defer stream.Close()
 
-	program, metricsChan := StartMetricsDisplay(c.domain)
-	defer close(metricsChan)
+	program, metricsch := StartMetricsDisplay(c.domain, c.metrics, c.httpLog)
+	defer close(metricsch)
 	go func() {
 		if _, err := program.Run(); err != nil {
 			log.Error().Err(err).Msg("metrics display error")
@@ -549,7 +554,7 @@ func (c *Client) handleMetrics(ctx context.Context, header *proto.Header, stream
 		cancel()
 	}()
 
-	c.metricsChan = metricsChan
+	c.metricsch = metricsch
 
 	buf := make([]byte, header.Length)
 	_, err := io.ReadFull(stream, buf)
@@ -562,7 +567,7 @@ func (c *Client) handleMetrics(ctx context.Context, header *proto.Header, stream
 		return fmt.Errorf("failed to deserialize metrics: %w", err)
 	}
 
-	metricsChan <- MetricsMsg{
+	metricsch <- MetricsMsg{
 		Ingress:           deserializedMetrics.Ingress,
 		Egress:            deserializedMetrics.Egress,
 		Uptime:            deserializedMetrics.Uptime,
@@ -601,7 +606,7 @@ func (c *Client) handleMetrics(ctx context.Context, header *proto.Header, stream
 				return fmt.Errorf("failed to deserialize metrics: %w", err)
 			}
 
-			metricsChan <- MetricsMsg{
+			metricsch <- MetricsMsg{
 				Ingress:           deserializedMetrics.Ingress,
 				Egress:            deserializedMetrics.Egress,
 				Uptime:            deserializedMetrics.Uptime,

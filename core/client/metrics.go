@@ -27,15 +27,17 @@ type HTTPLogMsg struct {
 }
 
 type metricsModel struct {
-	name        string
-	spinner     spinner.Model
-	metrics     MetricsMsg
-	prevMetrics MetricsMsg
-	lastUpdate  time.Time
-	ingressRate float64
-	egressRate  float64
-	startTime   time.Time
-	httpLogs    []HTTPLogMsg
+	name           string
+	spinner        spinner.Model
+	metrics        MetricsMsg
+	prevMetrics    MetricsMsg
+	lastUpdate     time.Time
+	ingressRate    float64
+	egressRate     float64
+	startTime      time.Time
+	httpLogs       []HTTPLogMsg
+	hasMetrics     bool
+	hasHTTPLogging bool
 }
 
 var (
@@ -95,19 +97,21 @@ var (
 				Align(lipgloss.Right)
 )
 
-func newMetricsModel(name string) metricsModel {
+func newMetricsModel(name string, hasMetrics, hasHTTPLogging bool) metricsModel {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
 
 	return metricsModel{
-		name:        name,
-		spinner:     s,
-		metrics:     MetricsMsg{},
-		prevMetrics: MetricsMsg{},
-		lastUpdate:  time.Now(),
-		startTime:   time.Now(),
-		httpLogs:    []HTTPLogMsg{},
+		name:           name,
+		spinner:        s,
+		metrics:        MetricsMsg{},
+		prevMetrics:    MetricsMsg{},
+		lastUpdate:     time.Now(),
+		startTime:      time.Now(),
+		httpLogs:       []HTTPLogMsg{},
+		hasMetrics:     hasMetrics,
+		hasHTTPLogging: hasHTTPLogging,
 	}
 }
 
@@ -140,8 +144,8 @@ func (m metricsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case HTTPLogMsg:
 		m.httpLogs = append(m.httpLogs, msg)
-		if len(m.httpLogs) > 12 {
-			m.httpLogs = m.httpLogs[len(m.httpLogs)-12:]
+		if len(m.httpLogs) > 10 {
+			m.httpLogs = m.httpLogs[len(m.httpLogs)-10:]
 		}
 
 	case spinner.TickMsg:
@@ -160,18 +164,26 @@ func (m metricsModel) View() string {
 		"",
 		title,
 		"",
-		m.formatLine("Ingress", formatBytes(m.metrics.Ingress), fmt.Sprintf("%s/s", formatBytes(uint64(m.ingressRate)))),
-		m.formatLine("Egress", formatBytes(m.metrics.Egress), fmt.Sprintf("%s/s", formatBytes(uint64(m.egressRate)))),
-		"",
-		m.formatLine("Active connections", fmt.Sprintf("%d", m.metrics.ActiveConnections), ""),
-		m.formatLine("Total connections", fmt.Sprintf("%d", m.metrics.ConnectionCount), ""),
-		"",
-		m.formatLine("Uptime", formatDuration(time.Duration(m.metrics.Uptime)), ""),
-		m.formatLine("RTT", fmt.Sprintf("%.2f ms", float64(m.metrics.RTT)/1000.0), ""),
 	}
 
-	if len(m.httpLogs) > 0 {
-		lines = append(lines, "")
+	if m.hasMetrics {
+		lines = append(lines,
+			m.formatLine("Ingress", formatBytes(m.metrics.Ingress), fmt.Sprintf("%s/s", formatBytes(uint64(m.ingressRate)))),
+			m.formatLine("Egress", formatBytes(m.metrics.Egress), fmt.Sprintf("%s/s", formatBytes(uint64(m.egressRate)))),
+			"",
+			m.formatLine("Active connections", fmt.Sprintf("%d", m.metrics.ActiveConnections), ""),
+			m.formatLine("Total connections", fmt.Sprintf("%d", m.metrics.ConnectionCount), ""),
+			"",
+			m.formatLine("Uptime", formatDuration(time.Duration(m.metrics.Uptime)), ""),
+			m.formatLine("RTT", fmt.Sprintf("%.2f ms", float64(m.metrics.RTT)/1000.0), ""),
+		)
+	}
+
+	if m.hasHTTPLogging && len(m.httpLogs) > 0 {
+		if m.hasMetrics {
+			lines = append(lines, "")
+		}
+
 		lines = append(lines, logHeaderStyle.Render("Requests"))
 
 		for _, log := range m.httpLogs {
@@ -261,10 +273,10 @@ func formatDuration(d time.Duration) string {
 }
 
 // StartMetricsDisplay starts the metrics display UI.
-func StartMetricsDisplay(name string) (*tea.Program, chan<- any) {
+func StartMetricsDisplay(name string, hasMetrics, hasHTTPLogging bool) (*tea.Program, chan<- any) {
 	metricsChan := make(chan any, 10)
 
-	p := tea.NewProgram(newMetricsModel(name))
+	p := tea.NewProgram(newMetricsModel(name, hasMetrics, hasHTTPLogging))
 
 	go func() {
 		for msg := range metricsChan {

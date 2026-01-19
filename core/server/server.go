@@ -200,7 +200,7 @@ func (s *Server) tunnel(ctx context.Context, conn net.Conn) error {
 		return fmt.Errorf("http not allowed on tcp tunnel")
 	}
 
-	if isHTTP && tunnel.auth != nil && tunnel.httpLogch != nil {
+	if isHTTP && tunnel.auth != nil {
 		req, err := http.ReadRequest(br)
 		if err != nil {
 			s.sendUnauthorized(tlsConn, tunnel.auth)
@@ -224,7 +224,11 @@ func (s *Server) tunnel(ctx context.Context, conn net.Conn) error {
 			r:    bufio.NewReader(io.MultiReader(&fullRequest, br)),
 		}
 
-		return tunnel.ProxyWithInspect(ctx, wrapped)
+		if tunnel.httpLogch != nil {
+			return tunnel.ProxyWithInspect(ctx, wrapped)
+		}
+
+		return tunnel.Proxy(ctx, wrapped)
 	}
 
 	if isHTTP && tunnel.httpLogch != nil {
@@ -643,33 +647,33 @@ func (s *Server) handleRequest(ctx context.Context, stream net.Conn, session *ya
 		tunnel.allowHTTP = true
 	}
 
-	if header.HasFlag(proto.FlagMetrics) {
-		tunnel.metrics = metrics.New()
+	if header.HasFlag(proto.FlagHTTPLog) {
 		tunnel.httpLogch = make(chan *proto.HTTPLog, 1024)
-
-		metricsCtx, metricsCancel := context.WithCancel(ctx)
-		defer metricsCancel()
-
-		go func(ctx context.Context, tunnel *Tunnel) {
-			er := s.streamMetrics(ctx, tunnel)
-			if er != nil {
-				log.Error().Err(er).Str("domain", domain).Msg("metrics stream stopped")
-			}
-		}(metricsCtx, tunnel)
-
-		go func(ctx context.Context, tunnel *Tunnel) {
-			er := s.handlePingStream(ctx, tunnel)
-			if er != nil {
-				log.Error().Err(er).Str("domain", domain).Msg("ping stream stopped")
-			}
-		}(metricsCtx, tunnel)
 
 		go func(ctx context.Context, tunnel *Tunnel) {
 			er := s.streamHTTPLogs(ctx, tunnel)
 			if er != nil {
 				log.Error().Err(er).Str("domain", domain).Msg("http log stream stopped")
 			}
-		}(metricsCtx, tunnel)
+		}(ctx, tunnel)
+	}
+
+	if header.HasFlag(proto.FlagMetrics) {
+		tunnel.metrics = metrics.New()
+
+		go func(ctx context.Context, tunnel *Tunnel) {
+			er := s.streamMetrics(ctx, tunnel)
+			if er != nil {
+				log.Error().Err(er).Str("domain", domain).Msg("metrics stream stopped")
+			}
+		}(ctx, tunnel)
+
+		go func(ctx context.Context, tunnel *Tunnel) {
+			er := s.handlePingStream(ctx, tunnel)
+			if er != nil {
+				log.Error().Err(er).Str("domain", domain).Msg("ping stream stopped")
+			}
+		}(ctx, tunnel)
 	}
 
 	s.tunnels.Set(domain, tunnel)

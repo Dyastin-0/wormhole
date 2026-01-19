@@ -262,6 +262,7 @@ func http(ctx context.Context, cmd *cli.Command) error {
 	apiKey := cmd.String("api-key")
 	ttl := cmd.Uint64("ttl")
 	metrics := cmd.Bool("metrics")
+	httpLog := cmd.Bool("http-log")
 
 	authType := cmd.String("auth-type")
 	authUser := cmd.String("auth-user")
@@ -274,6 +275,7 @@ func http(ctx context.Context, cmd *cli.Command) error {
 		wclient.WithAddr(addr),
 		wclient.WithTargetAddr(targetAddr),
 		wclient.WithMetrics(metrics),
+		wclient.WithHTTPLog(httpLog),
 		wclient.WithAPIKey(apiKey),
 		wclient.WithTTL(ttl),
 	}
@@ -315,6 +317,7 @@ func tcp(ctx context.Context, cmd *cli.Command) error {
 	apiKey := cmd.String("api-key")
 	ttl := cmd.Uint64("ttl")
 	metrics := cmd.Bool("metrics")
+	httpLog := cmd.Bool("http-log")
 	allowHTTP := cmd.Bool("allow-http")
 
 	authType := cmd.String("auth-type")
@@ -328,6 +331,7 @@ func tcp(ctx context.Context, cmd *cli.Command) error {
 		wclient.WithAddr(addr),
 		wclient.WithTargetAddr(targetAddr),
 		wclient.WithMetrics(metrics),
+		wclient.WithHTTPLog(httpLog),
 		wclient.WithAPIKey(apiKey),
 		wclient.WithTTL(ttl),
 		wclient.WithAllowHTTP(allowHTTP),
@@ -403,7 +407,14 @@ func baseClientFlags(flags ...cli.Flag) []cli.Flag {
 		},
 		&cli.BoolFlag{
 			Name:    "metrics",
+			Usage:   "enable metrics streaming",
 			Aliases: []string{"m"},
+			Value:   false,
+		},
+		&cli.BoolFlag{
+			Name:    "http-log",
+			Usage:   "enable HTTP request logging (works with HTTP tunnels and TCP tunnels with --allow-http)",
+			Aliases: []string{"h"},
 			Value:   false,
 		},
 		&cli.StringFlag{
