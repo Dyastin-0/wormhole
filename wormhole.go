@@ -153,6 +153,10 @@ func startCommand() *cli.Command {
 				Value: ":7060",
 			},
 			&cli.StringFlag{
+				Name:  "secret",
+				Usage: "set the secret used for validating api keys",
+			},
+			&cli.StringFlag{
 				Name:  "config-path",
 				Usage: "wormhole config path (override if config is somewhere else or not using linux)",
 				Value: DefaultConfigPath,

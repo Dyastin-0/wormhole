@@ -185,6 +185,7 @@ func (m metricsModel) View() string {
 		}
 
 		lines = append(lines, logHeaderStyle.Render("Requests"))
+		lines = append(lines, "")
 
 		for _, log := range m.httpLogs {
 			lines = append(lines, m.formatHTTPLog(log))

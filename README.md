@@ -75,8 +75,6 @@ wormhole http \
 
 If `--address` is omitted, the client connects to the default server at `wormhole.dyastin.dev:443`.
 
-Both `http` and `tcp` commands can tunnel HTTP servers. Add the `-m` flag to display live tunnel metrics.
-
 #### TCP Tunnel
 ```bash
 wormhole tcp \
@@ -95,6 +93,61 @@ wormhole tcp \
 ```
 
 This is useful when you want to tunnel HTTP applications through a TCP tunnel or need the flexibility of raw TCP with optional HTTP support.
+
+### Monitoring and Observability
+
+#### Metrics
+
+Enable real-time metrics streaming to monitor your tunnel's performance:
+```bash
+wormhole http \
+    --name <subdomain> \
+    --target-address <:port-number> \
+    --metrics
+```
+
+Displays:
+- Ingress/egress bandwidth and rates
+- Active and total connections
+- Tunnel uptime
+- Round-trip time (RTT)
+
+#### HTTP Request Logging
+
+Enable HTTP request logging to see all incoming requests in real-time:
+```bash
+wormhole http \
+    --name <subdomain> \
+    --target-address <:port-number> \
+    --http-log
+```
+
+Displays each HTTP request with:
+- Timestamp
+- HTTP method (GET, POST, etc.)
+- Path
+- Status code
+- Response time
+
+HTTP logging works with both HTTP tunnels and TCP tunnels that have `--allow-http` enabled:
+```bash
+wormhole tcp \
+    --name <subdomain> \
+    --target-address <:port-number> \
+    --allow-http \
+    --http-log
+```
+
+#### Combined Monitoring
+
+Enable both metrics and HTTP logging for comprehensive observability:
+```bash
+wormhole http \
+    --name <subdomain> \
+    --target-address <:port-number> \
+    --metrics \
+    --http-log
+```
 
 #### Tunnel Authentication
 
@@ -179,9 +232,9 @@ wormhole http \
 
 If `--ttl` is omitted when using an API key, the tunnel defaults to 1 hour unless the key has a specific TTL claim.
 
-### Complete Example with Authentication
+### Complete Example with Authentication and Monitoring
 
-Create an authenticated tunnel with a custom TTL:
+Create an authenticated tunnel with metrics and HTTP logging:
 ```bash
 wormhole http \
     --name myapp \
@@ -190,7 +243,9 @@ wormhole http \
     --api-key eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9... \
     --ttl 24 \
     --auth-type bearer \
-    --auth-token my-secret-token-123
+    --auth-token my-secret-token-123 \
+    --metrics \
+    --http-log
 ```
 
 Access the tunnel:
@@ -198,9 +253,9 @@ Access the tunnel:
 curl -H "Authorization: Bearer my-secret-token-123" https://myapp.wormhole.dyastin.dev
 ```
 
-### TCP Tunnel with HTTP Support and Authentication
+### TCP Tunnel with HTTP Support, Authentication, and Logging
 
-Create a TCP tunnel that allows HTTP traffic with authentication:
+Create a TCP tunnel that allows HTTP traffic with authentication and request logging:
 ```bash
 wormhole tcp \
     --name secure-app \
@@ -209,7 +264,8 @@ wormhole tcp \
     --allow-http \
     --auth-type basic \
     --auth-user admin \
-    --auth-password secret123
+    --auth-password secret123 \
+    --http-log
 ```
 
 Access the tunnel:
