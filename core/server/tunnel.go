@@ -123,7 +123,9 @@ func (t *Tunnel) ProxyWithInspect(ctx context.Context, stream net.Conn) error {
 			t.logHTTPRequest(start, method, path, status)
 		})
 	}
-	return proxy.StreamWithContext(proxyCtx, stream, remoteStream)
+	return proxy.StreamHTTPWithInspect(proxyCtx, stream, remoteStream, func(start time.Time, method, path string, status int) {
+		t.logHTTPRequest(start, method, path, status)
+	})
 }
 
 // logHTTPRequest logs an HTTP request to the tunnel's HTTP log channel.

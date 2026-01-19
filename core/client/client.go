@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"sync"
 	"time"
 
 	"github.com/Dyastin-0/wormhole/core/proto"
@@ -57,6 +58,7 @@ type Client struct {
 	allowHTTP bool
 	// metricsch i used to send http logs and metrics to bubbletea application.
 	metricsch chan<- any
+	metricsmu sync.Mutex
 }
 
 // New creates a new Client with the specified configuration options.
@@ -386,9 +388,35 @@ func (c *Client) handleMessages(ctx context.Context, session *yamux.Session) err
 				}
 			}(cancelCtx, stream)
 		case proto.TypeMetrics:
-			go c.handleMetrics(cancelCtx, header, stream, cancel)
+			c.metricsmu.Lock()
+			if c.metricsch == nil {
+				program, metricsch := StartMetricsDisplay(c.domain, c.metrics, c.httpLog)
+				defer close(metricsch)
+				go func() {
+					if _, err := program.Run(); err != nil {
+						log.Error().Err(err).Msg("metrics display error")
+					}
+					cancel()
+				}()
+				c.metricsch = metricsch
+			}
+			c.metricsmu.Unlock()
+			go c.handleMetrics(cancelCtx, header, stream)
 		case proto.TypeHTTPLog:
-			go c.handleHTTPLog(cancelCtx, header, stream, cancel)
+			c.metricsmu.Lock()
+			if c.metricsch == nil {
+				program, metricsch := StartMetricsDisplay(c.domain, c.metrics, c.httpLog)
+				defer close(metricsch)
+				go func() {
+					if _, err := program.Run(); err != nil {
+						log.Error().Err(err).Msg("metrics display error")
+					}
+					cancel()
+				}()
+				c.metricsch = metricsch
+			}
+			c.metricsmu.Unlock()
+			go c.handleHTTPLog(cancelCtx, header, stream)
 		case proto.TypeEnd:
 			stream.Close()
 			cancel()
@@ -418,9 +446,8 @@ func isDialError(err error) bool {
 }
 
 // handleHTTPLog handles incoming HTTP log entries from the server.
-func (c *Client) handleHTTPLog(ctx context.Context, header *proto.Header, stream net.Conn, cancel context.CancelFunc) error {
+func (c *Client) handleHTTPLog(ctx context.Context, header *proto.Header, stream net.Conn) error {
 	defer stream.Close()
-	defer cancel()
 
 	buf := make([]byte, header.Length)
 	_, err := io.ReadFull(stream, buf)
@@ -542,19 +569,8 @@ func handlePingStream(ctx context.Context, stream net.Conn) {
 }
 
 // handleMetrics handles metrics display.
-func (c *Client) handleMetrics(ctx context.Context, header *proto.Header, stream net.Conn, cancel context.CancelFunc) error {
+func (c *Client) handleMetrics(ctx context.Context, header *proto.Header, stream net.Conn) error {
 	defer stream.Close()
-
-	program, metricsch := StartMetricsDisplay(c.domain, c.metrics, c.httpLog)
-	defer close(metricsch)
-	go func() {
-		if _, err := program.Run(); err != nil {
-			log.Error().Err(err).Msg("metrics display error")
-		}
-		cancel()
-	}()
-
-	c.metricsch = metricsch
 
 	buf := make([]byte, header.Length)
 	_, err := io.ReadFull(stream, buf)
@@ -567,7 +583,7 @@ func (c *Client) handleMetrics(ctx context.Context, header *proto.Header, stream
 		return fmt.Errorf("failed to deserialize metrics: %w", err)
 	}
 
-	metricsch <- MetricsMsg{
+	c.metricsch <- MetricsMsg{
 		Ingress:           deserializedMetrics.Ingress,
 		Egress:            deserializedMetrics.Egress,
 		Uptime:            deserializedMetrics.Uptime,
@@ -606,7 +622,7 @@ func (c *Client) handleMetrics(ctx context.Context, header *proto.Header, stream
 				return fmt.Errorf("failed to deserialize metrics: %w", err)
 			}
 
-			metricsch <- MetricsMsg{
+			c.metricsch <- MetricsMsg{
 				Ingress:           deserializedMetrics.Ingress,
 				Egress:            deserializedMetrics.Egress,
 				Uptime:            deserializedMetrics.Uptime,

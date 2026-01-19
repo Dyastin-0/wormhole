@@ -204,13 +204,17 @@ func (s *Server) tunnel(ctx context.Context, conn net.Conn) error {
 		req, err := http.ReadRequest(br)
 		if err != nil {
 			s.sendUnauthorized(tlsConn, tunnel.auth)
-			tunnel.logHTTPRequest(start, "GET", "/", http.StatusUnauthorized)
+			if tunnel.httpLogch != nil {
+				tunnel.logHTTPRequest(start, "GET", "/", http.StatusUnauthorized)
+			}
 			return fmt.Errorf("failed to read http request: %w", err)
 		}
 
 		if !tunnel.auth.Authenticate(req) {
 			s.sendUnauthorized(tlsConn, tunnel.auth)
-			tunnel.logHTTPRequest(start, "GET", "/", http.StatusUnauthorized)
+			if tunnel.httpLogch != nil {
+				tunnel.logHTTPRequest(start, "GET", "/", http.StatusUnauthorized)
+			}
 			return fmt.Errorf("unauthorized")
 		}
 
@@ -232,12 +236,10 @@ func (s *Server) tunnel(ctx context.Context, conn net.Conn) error {
 	}
 
 	if isHTTP && tunnel.httpLogch != nil {
-
 		wrapped := &ConnWithReader{
 			Conn: conn,
 			r:    br,
 		}
-
 		return tunnel.ProxyWithInspect(ctx, wrapped)
 	}
 
@@ -245,7 +247,6 @@ func (s *Server) tunnel(ctx context.Context, conn net.Conn) error {
 		Conn: conn,
 		r:    br,
 	}
-
 	return tunnel.Proxy(ctx, wrapped)
 }
 
