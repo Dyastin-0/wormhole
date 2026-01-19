@@ -47,7 +47,7 @@ const (
 	// FlagAllowHTTP indicates that the client explicitly allows HTTP requests regardless of protocol.
 	FlagAllowHTTP = 0x02
 	// FlagHTTPLog indicates the the client wants to receive HTTP request logs.
-	FlagHTTPLog
+	FlagHTTPLog = 0x04
 )
 
 // Constants definition for protocol limits and sizes.
