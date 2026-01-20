@@ -57,24 +57,11 @@ func (t *Tunnel) Proxy(ctx context.Context, stream net.Conn) error {
 		return fmt.Errorf("failed to write access header: %w", err)
 	}
 
-	proxyCtx, proxyCancel := context.WithCancel(ctx)
-	defer proxyCancel()
-
-	go func() {
-		select {
-		case <-t.session.CloseChan():
-			stream.Close()
-			remoteStream.Close()
-		case <-proxyCtx.Done():
-			return
-		}
-	}()
-
 	if t.metrics != nil {
 		proxyStream := t.metrics.NewProxyReadWriter(stream)
-		return proxy.StreamWithContext(proxyCtx, proxyStream, remoteStream)
+		return proxy.StreamWithContext(ctx, proxyStream, remoteStream)
 	}
-	return proxy.StreamWithContext(proxyCtx, stream, remoteStream)
+	return proxy.StreamWithContext(ctx, stream, remoteStream)
 }
 
 // ProxyWithInspect opens a stream from the session, forwards the stream to it,
@@ -104,26 +91,13 @@ func (t *Tunnel) ProxyWithInspect(ctx context.Context, stream net.Conn) error {
 		return fmt.Errorf("failed to write access header: %w", err)
 	}
 
-	proxyCtx, proxyCancel := context.WithCancel(ctx)
-	defer proxyCancel()
-
-	go func() {
-		select {
-		case <-t.session.CloseChan():
-			stream.Close()
-			remoteStream.Close()
-		case <-proxyCtx.Done():
-			return
-		}
-	}()
-
 	if t.metrics != nil {
 		proxyStream := t.metrics.NewProxyReadWriter(stream)
-		return proxy.StreamHTTPWithInspect(proxyCtx, proxyStream, remoteStream, func(start time.Time, method, path string, status int) {
+		return proxy.StreamHTTPWithInspect(ctx, proxyStream, remoteStream, func(start time.Time, method, path string, status int) {
 			t.logHTTPRequest(start, method, path, status)
 		})
 	}
-	return proxy.StreamHTTPWithInspect(proxyCtx, stream, remoteStream, func(start time.Time, method, path string, status int) {
+	return proxy.StreamHTTPWithInspect(ctx, stream, remoteStream, func(start time.Time, method, path string, status int) {
 		t.logHTTPRequest(start, method, path, status)
 	})
 }

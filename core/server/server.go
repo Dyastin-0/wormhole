@@ -110,7 +110,6 @@ func (s *Server) RunTunneler(ctx context.Context) error {
 
 	go func() {
 		<-ctx.Done()
-		time.Sleep(2 * time.Second)
 		ln.Close()
 	}()
 
@@ -142,7 +141,6 @@ func (s *Server) RunWithListener(ctx context.Context, ln net.Listener) error {
 func (s *Server) RunTunnelerWithListener(ctx context.Context, ln net.Listener) error {
 	go func() {
 		<-ctx.Done()
-		time.Sleep(2 * time.Second)
 		ln.Close()
 	}()
 
@@ -309,7 +307,6 @@ func (s *Server) sendUnauthorized(conn net.Conn, authenticator auth.Authenticato
 func (s *Server) handleConnections(ctx context.Context, ln net.Listener) error {
 	go func() {
 		<-ctx.Done()
-		time.Sleep(2 * time.Second)
 		ln.Close()
 	}()
 
@@ -473,7 +470,7 @@ func (s *Server) handleRequest(ctx context.Context, stream net.Conn, session *ya
 	}
 
 	if header.HasFlag(proto.FlagHTTPLog) {
-		tunnel.httpLogch = make(chan *proto.HTTPLog, 1024)
+		tunnel.httpLogch = make(chan *proto.HTTPLog, 100)
 
 		go func(ctx context.Context, tunnel *Tunnel) {
 			er := s.streamHTTPLogs(ctx, tunnel)
