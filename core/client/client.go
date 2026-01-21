@@ -94,7 +94,7 @@ func (c *Client) RunWithTCP(ctx context.Context) error {
 	defer conn.Close()
 
 	yamuxConfig := yamux.DefaultConfig()
-	yamuxConfig.KeepAliveInterval = 1 * time.Second
+	yamuxConfig.EnableKeepAlive = false
 
 	session, err := yamux.Client(conn, yamuxConfig)
 	if err != nil {

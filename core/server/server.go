@@ -338,7 +338,7 @@ func (s *Server) handleMessages(ctx context.Context, conn net.Conn) error {
 	}
 
 	yamuxConfig := yamux.DefaultConfig()
-	yamuxConfig.KeepAliveInterval = 1 * time.Second
+	yamuxConfig.EnableKeepAlive = false
 
 	wrappedConn := &ConnWithReader{
 		conn,
@@ -684,13 +684,15 @@ func (s *Server) handlePingStream(ctx context.Context, tunnel *Tunnel) error {
 			_, err = stream.Write(serialized)
 			if err != nil {
 				log.Error().Err(err).Msg("failed to write ping")
-				continue
+				tunnel.session.Close()
+				return err
 			}
 
 			_, err = io.ReadFull(stream, *bufPtr)
 			if err != nil {
 				log.Error().Err(err).Msg("failed to read pong")
-				continue
+				tunnel.session.Close()
+				return err
 			}
 
 			rtt := time.Since(start)
