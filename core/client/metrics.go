@@ -41,11 +41,12 @@ type metricsModel struct {
 }
 
 var (
-	subtle = lipgloss.AdaptiveColor{Light: "#999", Dark: "#666"}
+	subtle  = lipgloss.AdaptiveColor{Light: "#666666", Dark: "#808080"}
+	primary = lipgloss.AdaptiveColor{Light: "#000000", Dark: "#FFFFFF"}
 
 	titleStyle = lipgloss.NewStyle().
 			Bold(true).
-			Foreground(lipgloss.Color("15"))
+			Foreground(primary)
 
 	labelStyle = lipgloss.NewStyle().
 			Foreground(subtle).
@@ -53,21 +54,21 @@ var (
 			Align(lipgloss.Left)
 
 	valueStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("15")).
+			Foreground(primary).
 			Width(12).
 			Align(lipgloss.Right)
 
 	rateStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("244")).
+			Foreground(subtle).
 			Width(12).
 			Align(lipgloss.Right)
 
 	logHeaderStyle = lipgloss.NewStyle().
 			Bold(true).
-			Foreground(lipgloss.Color("15"))
+			Foreground(primary)
 
 	logTimeStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("244")).
+			Foreground(subtle).
 			Width(8).
 			Align(lipgloss.Left)
 
@@ -87,20 +88,22 @@ var (
 				Align(lipgloss.Right)
 
 	logPathStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("15")).
+			Foreground(primary).
 			Width(40).
 			Align(lipgloss.Left)
 
 	logDurationStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("244")).
+				Foreground(subtle).
 				Width(10).
 				Align(lipgloss.Right)
+
+	footerStyle = lipgloss.NewStyle().Foreground(subtle)
 )
 
 func newMetricsModel(name string, hasMetrics, hasHTTPLogging bool) metricsModel {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
-	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
+	s.Style = lipgloss.NewStyle().Foreground(subtle)
 
 	return metricsModel{
 		name:           name,
@@ -193,7 +196,7 @@ func (m metricsModel) View() string {
 	}
 
 	lines = append(lines, "")
-	lines = append(lines, lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Render("Press q to quit"))
+	lines = append(lines, footerStyle.Render("Press q to quit"))
 
 	return lipgloss.JoinVertical(lipgloss.Left, lines...)
 }
