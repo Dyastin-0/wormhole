@@ -409,3 +409,13 @@ func CalculateTunnelRequestSize(req *Request) uint64 {
 func CalculateTunnelResponseSize(resp *Response) uint64 {
 	return uint64(HeaderSize) + uint64(ResponseSize) + uint64(len(resp.Domain))
 }
+
+func ProtoString(proto uint8) string {
+	if proto == ProtoHTTP {
+		return "http"
+	}
+	if proto == ProtoTCP {
+		return "tcp"
+	}
+	return ""
+}

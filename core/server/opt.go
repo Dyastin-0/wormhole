@@ -1,5 +1,7 @@
 package server
 
+import "github.com/Dyastin-0/wormhole/observer"
+
 type OptFunc func(*Server)
 
 func WithAddr(addr string) OptFunc {
@@ -23,5 +25,11 @@ func WithDomain(domain string) OptFunc {
 func WithAPIKeyIssuer(apiKeyIssuer *APIKeyIssuer) OptFunc {
 	return func(s *Server) {
 		s.apiKeyIssuer = apiKeyIssuer
+	}
+}
+
+func WithObserver(observer observer.Observer) OptFunc {
+	return func(s *Server) {
+		s.observer = observer
 	}
 }

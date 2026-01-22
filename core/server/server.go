@@ -19,9 +19,11 @@ import (
 	"github.com/Dyastin-0/wormhole/core/auth"
 	"github.com/Dyastin-0/wormhole/core/metrics"
 	"github.com/Dyastin-0/wormhole/core/proto"
+	"github.com/Dyastin-0/wormhole/observer"
 	"github.com/caddyserver/certmagic"
 	"github.com/hashicorp/yamux"
 	cmap "github.com/orcaman/concurrent-map/v2"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/zerolog/log"
 )
 
@@ -58,11 +60,15 @@ type Server struct {
 	tunnels *cmap.ConcurrentMap[string, *Tunnel]
 	// apiKeyIssuer is used to validate api key from requests.
 	apiKeyIssuer *APIKeyIssuer
+	// observer is used for telemetry.
+	observer observer.Observer
 }
 
 // New creates a new Server with the specified configuration options.
 func New(opts ...OptFunc) (*Server, error) {
-	s := &Server{}
+	s := &Server{
+		observer: &observer.NoopObserver{}, // Default to noop
+	}
 
 	for _, opt := range opts {
 		opt(s)
@@ -134,6 +140,16 @@ func (s *Server) RunTunneler(ctx context.Context) error {
 	}
 }
 
+// RunObserver starts the metrics/health HTTP server.
+func (s *Server) RunObserver(addr string) error {
+	mux := http.NewServeMux()
+
+	mux.Handle("/metrics", promhttp.Handler())
+
+	log.Info().Str("addr", addr).Msg("starting observer server")
+	return http.ListenAndServe(addr, mux)
+}
+
 func (s *Server) RunWithListener(ctx context.Context, ln net.Listener) error {
 	return s.handleConnections(ctx, ln)
 }
@@ -189,6 +205,13 @@ func (s *Server) tunnel(ctx context.Context, conn net.Conn) error {
 		return fmt.Errorf("no tunnel for %s", sni)
 	}
 
+	protoStr := proto.ProtoString(tunnel.proto)
+
+	s.observer.RecordConnectionStart(tunnel.domain, protoStr)
+	defer func() {
+		s.observer.RecordConnectionEnd(sni, protoStr, time.Since(start))
+	}()
+
 	allowHTTP := tunnel.allowHTTP || tunnel.proto == proto.ProtoHTTP
 	isHTTP := detectedProtocol == ProtoHTTP
 
@@ -202,7 +225,7 @@ func (s *Server) tunnel(ctx context.Context, conn net.Conn) error {
 		if err != nil {
 			s.sendUnauthorized(tlsConn, tunnel.auth)
 			if tunnel.httpLogch != nil {
-				tunnel.logHTTPRequest(start, "GET", "/", http.StatusUnauthorized)
+				tunnel.logHTTPRequest(start, req.Method, req.URL.Path, http.StatusUnauthorized)
 			}
 			return fmt.Errorf("failed to read http request: %w", err)
 		}
@@ -210,7 +233,7 @@ func (s *Server) tunnel(ctx context.Context, conn net.Conn) error {
 		if !tunnel.auth.Authenticate(req) {
 			s.sendUnauthorized(tlsConn, tunnel.auth)
 			if tunnel.httpLogch != nil {
-				tunnel.logHTTPRequest(start, "GET", "/", http.StatusUnauthorized)
+				tunnel.logHTTPRequest(start, req.Method, req.URL.Path, http.StatusUnauthorized)
 			}
 			return fmt.Errorf("unauthorized")
 		}
@@ -265,6 +288,7 @@ func (s *Server) streamHTTPLogs(ctx context.Context, tunnel *Tunnel) error {
 		case <-tunnel.session.CloseChan():
 			return nil
 		case httpLog := <-tunnel.httpLogch:
+			s.observer.RecordHTTPRequest(tunnel.domain, httpLog.Method, fmt.Sprint(httpLog.Status), time.Duration(httpLog.Duration))
 			if err := s.sendHTTPLog(stream, httpLog); err != nil {
 				return fmt.Errorf("failed to send http log: %w", err)
 			}
@@ -378,7 +402,7 @@ func (s *Server) handleMessages(ctx context.Context, conn net.Conn) error {
 	}
 }
 
-// handleRequest processes a client’s tunnel request.
+// handleRequest processes a client's tunnel request.
 func (s *Server) handleRequest(ctx context.Context, stream net.Conn, session *yamux.Session, header *proto.Header) error {
 	bufPtr := payloadBufferPool.Get().(*[]byte)
 	defer payloadBufferPool.Put(bufPtr)
@@ -444,12 +468,12 @@ func (s *Server) handleRequest(ctx context.Context, stream net.Conn, session *ya
 	case proto.AuthTypeBasic:
 		authenticator, err = auth.NewBasicAuth(req.AuthUsername, req.AuthPassword)
 		if err != nil {
-			log.Warn().Err(err).Msg("failed to ues basic auth")
+			log.Warn().Err(err).Msg("failed to use basic auth")
 		}
 	case proto.AuthTypeBearer:
 		authenticator, err = auth.NewBearerAuth(req.AuthToken)
 		if err != nil {
-			log.Warn().Err(err).Msg("failed to ues bearer auth")
+			log.Warn().Err(err).Msg("failed to use bearer auth")
 		}
 	case proto.AuthTypeNone:
 		fallthrough
@@ -459,10 +483,12 @@ func (s *Server) handleRequest(ctx context.Context, stream net.Conn, session *ya
 	}
 
 	tunnel := &Tunnel{
-		session: session,
-		proto:   req.Proto,
-		ttl:     ttl,
-		auth:    authenticator,
+		session:   session,
+		proto:     req.Proto,
+		ttl:       ttl,
+		auth:      authenticator,
+		domain:    domain,
+		createdAt: time.Now(),
 	}
 
 	if header.HasFlag(proto.FlagAllowHTTP) {
@@ -500,19 +526,27 @@ func (s *Server) handleRequest(ctx context.Context, stream net.Conn, session *ya
 
 	s.tunnels.Set(domain, tunnel)
 
+	protoStr := proto.ProtoString(req.Proto)
+	s.observer.RecordTunnelCreated(protoStr)
+
 	resp := proto.NewResponse(proto.StatusOK, uint64(tunnel.ttl), domain)
 	err = s.sendResp(stream, resp)
 	if err != nil {
 		err = fmt.Errorf("failed to send response: %w", err)
 		s.tunnels.Remove(domain)
+		s.observer.RecordTunnelClosed(protoStr, "error", 0)
 		return err
 	}
 
+	var closeReason string
 	select {
 	case <-ctx.Done():
+		closeReason = "context_cancelled"
 	case <-session.CloseChan():
+		closeReason = "client_disconnect"
 		log.Info().Str("domain", domain).Msg("session closed")
 	case <-time.After(tunnel.ttl):
+		closeReason = "timeout"
 		log.Info().Str("domain", domain).Msg("tunnel timed out")
 	}
 
@@ -522,6 +556,9 @@ func (s *Server) handleRequest(ctx context.Context, stream net.Conn, session *ya
 	}
 
 	s.tunnels.Remove(domain)
+
+	duration := time.Since(tunnel.createdAt)
+	s.observer.RecordTunnelClosed(protoStr, closeReason, duration)
 
 	return nil
 }
@@ -607,6 +644,10 @@ func (s *Server) streamMetrics(ctx context.Context, tunnel *Tunnel) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-ticker.C:
+			ingress := tunnel.metrics.GetIngressBytes()
+			egress := tunnel.metrics.GetEgressBytes()
+			s.observer.RecordTraffic(tunnel.domain, ingress, egress)
+
 			if err := s.sendMetrics(stream, tunnel); err != nil {
 				return fmt.Errorf("failed to send metrics: %w", err)
 			}
@@ -709,6 +750,7 @@ func (s *Server) handlePingStream(ctx context.Context, tunnel *Tunnel) error {
 			}
 
 			tunnel.metrics.SetRTT(uint32(rtt.Microseconds()))
+			s.observer.UpdateRTT(tunnel.domain, uint32(rtt.Microseconds()))
 		}
 	}
 }

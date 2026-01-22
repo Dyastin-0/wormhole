@@ -29,6 +29,10 @@ type Tunnel struct {
 	allowHTTP bool
 	// httpLogch is used to send HTTP logs to the client.
 	httpLogch chan *proto.HTTPLog
+	// domain specifies the tunnel's subdomain.
+	domain string
+	// createdAt specifies the tunnel's creation time.
+	createdAt time.Time
 }
 
 // Proxy opens a stream from the session then forwards the stream to it.
