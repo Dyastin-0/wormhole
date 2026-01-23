@@ -116,6 +116,7 @@ func (s *Server) RunTunneler(ctx context.Context) error {
 
 	go func() {
 		<-ctx.Done()
+		time.Sleep(500 * time.Millisecond)
 		ln.Close()
 	}()
 
@@ -170,6 +171,7 @@ func (s *Server) RunWithListener(ctx context.Context, ln net.Listener) error {
 func (s *Server) RunTunnelerWithListener(ctx context.Context, ln net.Listener) error {
 	go func() {
 		<-ctx.Done()
+		time.Sleep(500 * time.Millisecond)
 		ln.Close()
 	}()
 
@@ -344,6 +346,7 @@ func (s *Server) sendUnauthorized(conn net.Conn, authenticator auth.Authenticato
 func (s *Server) handleConnections(ctx context.Context, ln net.Listener) error {
 	go func() {
 		<-ctx.Done()
+		time.Sleep(500 * time.Millisecond)
 		ln.Close()
 	}()
 
