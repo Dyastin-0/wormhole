@@ -116,7 +116,6 @@ func (s *Server) RunTunneler(ctx context.Context) error {
 
 	go func() {
 		<-ctx.Done()
-		time.Sleep(500 * time.Millisecond)
 		ln.Close()
 	}()
 
@@ -155,10 +154,8 @@ func (s *Server) RunObserver(ctx context.Context, addr string) error {
 
 	go func(ctx context.Context) {
 		<-ctx.Done()
-
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+		shutdownCtx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-
 		if err := observerServer.Shutdown(shutdownCtx); err != nil {
 			log.Err(err).Msg("observer shutdown")
 		}
@@ -174,7 +171,6 @@ func (s *Server) RunWithListener(ctx context.Context, ln net.Listener) error {
 func (s *Server) RunTunnelerWithListener(ctx context.Context, ln net.Listener) error {
 	go func() {
 		<-ctx.Done()
-		time.Sleep(500 * time.Millisecond)
 		ln.Close()
 	}()
 
@@ -349,7 +345,6 @@ func (s *Server) sendUnauthorized(conn net.Conn, authenticator auth.Authenticato
 func (s *Server) handleConnections(ctx context.Context, ln net.Listener) error {
 	go func() {
 		<-ctx.Done()
-		time.Sleep(500 * time.Millisecond)
 		ln.Close()
 	}()
 
