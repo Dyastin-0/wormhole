@@ -155,10 +155,13 @@ func (s *Server) RunObserver(ctx context.Context, addr string) error {
 
 	go func(ctx context.Context) {
 		<-ctx.Done()
-		cancelCtx, cancel := context.WithCancel(context.Background())
+
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 		defer cancel()
 
-		observerServer.Shutdown(cancelCtx)
+		if err := observerServer.Shutdown(shutdownCtx); err != nil {
+			log.Err(err).Msg("observer shutdown")
+		}
 	}(ctx)
 
 	return observerServer.ListenAndServe()
