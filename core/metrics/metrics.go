@@ -138,3 +138,11 @@ func (m *Metrics) GetRTT() uint32 {
 func (m *Metrics) GetUptime() time.Duration {
 	return time.Since(m.StartTime)
 }
+
+// NewProxyReadWriter return a new MetricsReadWriter using the underlying metrics.
+func (m *Metrics) NewProxyReadWriter(rw io.ReadWriter) *MetricsReadWriter {
+	return &MetricsReadWriter{
+		rw:      rw,
+		metrics: m,
+	}
+}
