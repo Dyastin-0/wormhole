@@ -141,13 +141,26 @@ func (s *Server) RunTunneler(ctx context.Context) error {
 }
 
 // RunObserver starts the metrics/health HTTP server.
-func (s *Server) RunObserver(addr string) error {
+func (s *Server) RunObserver(ctx context.Context, addr string) error {
 	mux := http.NewServeMux()
-
 	mux.Handle("/metrics", promhttp.Handler())
 
+	observerServer := &http.Server{
+		Addr:    addr,
+		Handler: mux,
+	}
+
 	log.Info().Str("addr", addr).Msg("starting observer server")
-	return http.ListenAndServe(addr, mux)
+
+	go func(ctx context.Context) {
+		<-ctx.Done()
+		cancelCtx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		observerServer.Shutdown(cancelCtx)
+	}(ctx)
+
+	return observerServer.ListenAndServe()
 }
 
 func (s *Server) RunWithListener(ctx context.Context, ln net.Listener) error {

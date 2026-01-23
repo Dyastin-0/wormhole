@@ -308,6 +308,12 @@ func start(ctx context.Context, cmd *cli.Command) error {
 		})
 	}
 
+	if runObserver {
+		g.Go(func() error {
+			return wormholeServer.RunObserver(observerAddr)
+		})
+	}
+
 	g.Go(func() error {
 		return wormholeServer.Run(gCtx)
 	})
@@ -315,12 +321,6 @@ func start(ctx context.Context, cmd *cli.Command) error {
 	g.Go(func() error {
 		return wormholeServer.RunTunneler(gCtx)
 	})
-
-	if runObserver {
-		g.Go(func() error {
-			return wormholeServer.RunObserver(observerAddr)
-		})
-	}
 
 	if err := g.Wait(); err != nil {
 		return err
