@@ -310,7 +310,7 @@ func start(ctx context.Context, cmd *cli.Command) error {
 
 	if runObserver {
 		g.Go(func() error {
-			return wormholeServer.RunObserver(observerAddr)
+			return wormholeServer.RunObserver(ctx, observerAddr)
 		})
 	}
 
