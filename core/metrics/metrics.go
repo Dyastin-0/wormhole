@@ -43,7 +43,7 @@ func (mrw *MetricsReadWriter) Write(p []byte) (n int, err error) {
 type Metrics struct {
 	// IngressBytes represents the total bytes received from external connections (ingress).
 	IngressBytes uint64
-	// EgressBytes represents the total outgoing total bytes (egressactive ).
+	// EgressBytes represents the total outgoing total bytes (egress).
 	EgressBytes uint64
 	// ConnectionCount specifies the total number of connections.
 	ConnectionCount uint64
@@ -53,6 +53,9 @@ type Metrics struct {
 	ActiveConnections int32
 	// RTT represent the single roundtrip latency.
 	RTT uint32
+	// Track last reported values for delta calculation.
+	lastIngressBytes uint64
+	lastEgressBytes  uint64
 }
 
 // New creates a new Metrics instance.
@@ -103,44 +106,35 @@ func (m *Metrics) GetActiveConnections() int32 {
 	return atomic.LoadInt32(&m.ActiveConnections)
 }
 
-// GetUptime returns how long metrics have been collected.
-func (m *Metrics) GetUptime() time.Duration {
-	return time.Since(m.StartTime)
+// GetIngressBytesDelta returns the delta since last check and updates the last value.
+func (m *Metrics) GetIngressBytesDelta() uint64 {
+	current := atomic.LoadUint64(&m.IngressBytes)
+	last := atomic.LoadUint64(&m.lastIngressBytes)
+	delta := current - last
+	atomic.StoreUint64(&m.lastIngressBytes, current)
+	return delta
 }
 
-// GetIngressRate return bytes per second since start.
-func (m *Metrics) GetIngressRate() float64 {
-	uptime := m.GetUptime()
-	if uptime == 0 {
-		return 0
-	}
-	return float64(m.GetIngressBytes()) / uptime.Seconds()
+// GetEgressBytesDelta returns the delta since last check and updates the last value.
+func (m *Metrics) GetEgressBytesDelta() uint64 {
+	current := atomic.LoadUint64(&m.EgressBytes)
+	last := atomic.LoadUint64(&m.lastEgressBytes)
+	delta := current - last
+	atomic.StoreUint64(&m.lastEgressBytes, current)
+	return delta
 }
 
-// GetEgressRate return bytes per second since start.
-func (m *Metrics) GetEgressRate() float64 {
-	uptime := m.GetUptime()
-	if uptime == 0 {
-		return 0
-	}
-
-	return float64(m.GetEgressBytes()) / uptime.Seconds()
-}
-
-// SetRTT atomically sets latency.
+// SetRTT atomically sets the RTT value.
 func (m *Metrics) SetRTT(rtt uint32) {
 	atomic.StoreUint32(&m.RTT, rtt)
 }
 
-// GetRTT atomically loads Latency.
+// GetRTT atomically gets the RTT value.
 func (m *Metrics) GetRTT() uint32 {
 	return atomic.LoadUint32(&m.RTT)
 }
 
-// NewProxyReadWriter return a new MetricsReadWriter using the underlying metrics.
-func (m *Metrics) NewProxyReadWriter(rw io.ReadWriter) *MetricsReadWriter {
-	return &MetricsReadWriter{
-		rw:      rw,
-		metrics: m,
-	}
+// GetUptime returns the duration since metrics started.
+func (m *Metrics) GetUptime() time.Duration {
+	return time.Since(m.StartTime)
 }

@@ -644,9 +644,12 @@ func (s *Server) streamMetrics(ctx context.Context, tunnel *Tunnel) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-ticker.C:
-			ingress := tunnel.metrics.GetIngressBytes()
-			egress := tunnel.metrics.GetEgressBytes()
-			s.observer.RecordTraffic(tunnel.domain, ingress, egress)
+			ingressDelta := tunnel.metrics.GetIngressBytesDelta()
+			egressDelta := tunnel.metrics.GetEgressBytesDelta()
+
+			if ingressDelta > 0 || egressDelta > 0 {
+				s.observer.RecordTraffic(tunnel.domain, ingressDelta, egressDelta)
+			}
 
 			if err := s.sendMetrics(stream, tunnel); err != nil {
 				return fmt.Errorf("failed to send metrics: %w", err)
