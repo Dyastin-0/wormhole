@@ -337,6 +337,8 @@ func start(ctx context.Context, cmd *cli.Command) error {
 		go func() {
 			<-ctx.Done()
 
+			time.Sleep(2 * time.Second)
+
 			shutdownCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			defer cancel()
 
