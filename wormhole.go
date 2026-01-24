@@ -43,7 +43,9 @@ type Config struct {
 	PprofAddress    string `yaml:"pprofAddress"`
 	Pprof           bool   `yaml:"withPprof"`
 	ObserverAddress string `yaml:"observerAddress"`
-	Observer        bool   `yaml:"withObserver"`
+	Observer        string `yaml:"withObserver"`
+	Tracer          bool   `yaml:"withTracer"`
+	TempoAddress    string `yaml:"tempoAddress"`
 }
 
 func loadConfig(path string) (*Config, error) {
@@ -187,15 +189,24 @@ func startCommand() *cli.Command {
 				Usage: "wormhole config path (override if config is somewhere else or not using linux)",
 				Value: DefaultConfigPath,
 			},
-			&cli.BoolFlag{
+			&cli.StringFlag{
 				Name:  "with-observer",
 				Usage: "enable telemetry",
-				Value: false,
+				Value: "prom",
 			},
 			&cli.StringFlag{
 				Name:  "observer-address",
 				Usage: "address where telemetry will run (e.g., :9090)",
 				Value: ":9090",
+			},
+			&cli.BoolFlag{
+				Name:  "with-tracer",
+				Usage: "enable tracer with open telemetry",
+			},
+			&cli.StringFlag{
+				Name:  "tempo-address",
+				Usage: "set tempo address for tracer",
+				Value: ":4317",
 			},
 		},
 		Action: start,
@@ -238,7 +249,12 @@ func start(ctx context.Context, cmd *cli.Command) error {
 		return err
 	}
 
-	runObserver, err := getValue(cfg.Observer, os.Getenv("WITH_OBSERVER"), cmd.Bool("with-observer"), "with-observer")
+	strObserver, err := getValue(cfg.Observer, os.Getenv("WITH_OBSERVER"), cmd.String("with-observer"), "with-observer")
+	if err != nil {
+		return err
+	}
+
+	withTracer, err := getValue(cfg.Tracer, os.Getenv("WITH_TRACER"), cmd.Bool("with-tracer"), "with-tracer")
 	if err != nil {
 		return err
 	}
@@ -247,6 +263,8 @@ func start(ctx context.Context, cmd *cli.Command) error {
 	if err != nil {
 		return err
 	}
+
+	tempoAddr, err := getValue(cfg.TempoAddress, os.Getenv("TEMPO_ADDRESS"), cmd.String("tempo-address"), "tempo-address")
 
 	secret, err := base64.StdEncoding.DecodeString(secretStr)
 	if err != nil {
@@ -263,22 +281,50 @@ func start(ctx context.Context, cmd *cli.Command) error {
 		return err
 	}
 
-	// Setup observer
 	var newObserver observer.Observer
-	if runObserver {
-		fmt.Printf("wormhole [inf] metrics enabled on %s\n", observerAddr)
+	switch strObserver {
+	case "prom":
 		newObserver = observer.NewPrometheusObserver(prometheus.DefaultRegisterer)
-	} else {
+	case "otel":
+		fmt.Printf("wormhole [inf] metrics enabled on %s\n", observerAddr)
+		newObserver, err = observer.NewOTelObserver(ctx)
+		if err != nil {
+			return err
+		}
+	default:
 		newObserver = &observer.NoopObserver{}
 	}
 
-	wormholeServer, err := wserver.New(
+	serverOpts := []wserver.OptFunc{
 		wserver.WithAddr(addr),
 		wserver.WithServeAddr(serveAddr),
 		wserver.WithDomain(domain),
 		wserver.WithAPIKeyIssuer(apiKeyIssuer),
 		wserver.WithObserver(newObserver),
-	)
+	}
+
+	if withTracer {
+		tp, errr := observer.NewTracer(ctx, "wormhole", tempoAddr)
+		if errr != nil {
+			return errr
+		}
+		tracer := tp.Tracer("wormhole")
+
+		go func() {
+			<-ctx.Done()
+
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+
+			if errr := tp.Shutdown(shutdownCtx); err != nil {
+				fmt.Printf("wormhole [err] failed to shutdown tracer: %v\n", errr)
+			}
+		}()
+
+		serverOpts = append(serverOpts, wserver.WithTracer(tracer))
+	}
+
+	wormholeServer, err := wserver.New(serverOpts...)
 	if err != nil {
 		return fmt.Errorf("failed to create server: %w", err)
 	}
@@ -308,7 +354,7 @@ func start(ctx context.Context, cmd *cli.Command) error {
 		})
 	}
 
-	if runObserver {
+	if strObserver == "prom" || strObserver == "otel" {
 		g.Go(func() error {
 			return wormholeServer.RunObserver(ctx, observerAddr)
 		})

@@ -1,6 +1,9 @@
 package server
 
-import "github.com/Dyastin-0/wormhole/observer"
+import (
+	"github.com/Dyastin-0/wormhole/observer"
+	"go.opentelemetry.io/otel/trace"
+)
 
 type OptFunc func(*Server)
 
@@ -31,5 +34,11 @@ func WithAPIKeyIssuer(apiKeyIssuer *APIKeyIssuer) OptFunc {
 func WithObserver(observer observer.Observer) OptFunc {
 	return func(s *Server) {
 		s.observer = observer
+	}
+}
+
+func WithTracer(tracer trace.Tracer) OptFunc {
+	return func(s *Server) {
+		s.tracer = tracer
 	}
 }
