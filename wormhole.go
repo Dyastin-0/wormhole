@@ -105,7 +105,6 @@ func main() {
 		sigCh := make(chan os.Signal, 1)
 		signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
 		<-sigCh
-		time.Sleep(2 * time.Second)
 		cancel()
 	}()
 
@@ -302,7 +301,7 @@ func start(ctx context.Context, cmd *cli.Command) error {
 		g.Go(func() error {
 			<-gCtx.Done()
 
-			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			defer cancel()
 
 			return pprofServer.Shutdown(shutdownCtx)
