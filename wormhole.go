@@ -41,10 +41,11 @@ type Config struct {
 	Address         string `yaml:"address"`
 	ServeAddress    string `yaml:"serveAddress"`
 	PprofAddress    string `yaml:"pprofAddress"`
-	Pprof           bool   `yaml:"withPprof"`
+	WithPprof       bool   `yaml:"withPprof"`
 	ObserverAddress string `yaml:"observerAddress"`
-	Observer        string `yaml:"withObserver"`
-	Tracer          bool   `yaml:"withTracer"`
+	WithObserver    bool   `yaml:"withObserver"`
+	Observer        string `yaml:"observer"`
+	WithTracer      bool   `yaml:"withTracer"`
 	TempoAddress    string `yaml:"tempoAddress"`
 }
 
@@ -62,25 +63,33 @@ func loadConfig(path string) (*Config, error) {
 	return &cfg, nil
 }
 
-func getValue[T any](configVal T, envVar string, flagVal T, fieldName string) (T, error) {
+// getValue returns a configuration value with precedence: flag > env > config.
+func getValue[T any](configVal T, envVar string, flagVal T, flagCount int, fieldName string) (T, error) {
 	var zero T
 
-	// For string type
-	if str, ok := any(flagVal).(string); ok {
+	// string
+	if _, ok := any(flagVal).(string); ok {
+		if flagStr, ok := any(flagVal).(string); ok && flagStr != "" {
+			return flagVal, nil
+		}
+
 		if envVar != "" {
 			return any(envVar).(T), nil
 		}
-		if str != "" && str != any(zero).(string) {
-			return flagVal, nil
-		}
+
 		if cfgStr, ok := any(configVal).(string); ok && cfgStr != "" {
 			return configVal, nil
 		}
+
 		return zero, fmt.Errorf("%s not found. Set via --%s flag, config file, or environment variable", fieldName, fieldName)
 	}
 
-	// For bool type
+	// bool
 	if _, ok := any(flagVal).(bool); ok {
+		if flagCount > 0 {
+			return flagVal, nil
+		}
+
 		if envVar != "" {
 			boolVal, err := strconv.ParseBool(envVar)
 			if err != nil {
@@ -88,9 +97,7 @@ func getValue[T any](configVal T, envVar string, flagVal T, fieldName string) (T
 			}
 			return any(boolVal).(T), nil
 		}
-		if any(flagVal).(bool) != any(zero).(bool) {
-			return flagVal, nil
-		}
+
 		return configVal, nil
 	}
 
@@ -189,9 +196,13 @@ func startCommand() *cli.Command {
 				Usage: "wormhole config path (override if config is somewhere else or not using linux)",
 				Value: DefaultConfigPath,
 			},
-			&cli.StringFlag{
+			&cli.BoolFlag{
 				Name:  "with-observer",
 				Usage: "enable telemetry",
+			},
+			&cli.StringFlag{
+				Name:  "observer",
+				Usage: "observer to use (prom or otel)",
 				Value: "prom",
 			},
 			&cli.StringFlag{
@@ -224,47 +235,59 @@ func start(ctx context.Context, cmd *cli.Command) error {
 		cfg = &Config{}
 	}
 
-	addr, err := getValue(cfg.Address, os.Getenv("ADDRESS"), cmd.String("address"), "address")
+	// wormhole addresses
+	addr, err := getValue(cfg.Address, os.Getenv("ADDRESS"), cmd.String("address"), 0, "address")
 	if err != nil {
 		return err
 	}
 
-	serveAddr, err := getValue(cfg.ServeAddress, os.Getenv("SERVE_ADDRESS"), cmd.String("serve-address"), "serve-address")
+	serveAddr, err := getValue(cfg.ServeAddress, os.Getenv("SERVE_ADDRESS"), cmd.String("serve-address"), 0, "serve-address")
 	if err != nil {
 		return err
 	}
 
-	pprofAddr, err := getValue(cfg.PprofAddress, os.Getenv("PPROF_ADDRESS"), cmd.String("pprof-address"), "pprof-address")
+	// pprof
+	pprofAddr, err := getValue(cfg.PprofAddress, os.Getenv("PPROF_ADDRESS"), cmd.String("pprof-address"), 0, "pprof-address")
 	if err != nil {
 		return err
 	}
 
-	observerAddr, err := getValue(cfg.ObserverAddress, os.Getenv("OBSERVER_ADDRESS"), cmd.String("observer-address"), "observer-address")
+	withPprof, err := getValue(cfg.WithPprof, os.Getenv("WITH_PPROF"), cmd.Bool("with-pprof"), cmd.Count("with-pprof"), "with-pprof")
 	if err != nil {
 		return err
 	}
 
-	runPprof, err := getValue(cfg.Pprof, os.Getenv("WITH_PPROF"), cmd.Bool("with-pprof"), "with-pprof")
+	// observer
+	withObserver, err := getValue(cfg.WithObserver, os.Getenv("WITH_OBSERVER"), cmd.Bool("with-observer"), cmd.Count("with-observer"), "with-observer")
 	if err != nil {
 		return err
 	}
 
-	strObserver, err := getValue(cfg.Observer, os.Getenv("WITH_OBSERVER"), cmd.String("with-observer"), "with-observer")
+	observerAddr, err := getValue(cfg.ObserverAddress, os.Getenv("OBSERVER_ADDRESS"), cmd.String("observer-address"), 0, "observer-address")
 	if err != nil {
 		return err
 	}
 
-	withTracer, err := getValue(cfg.Tracer, os.Getenv("WITH_TRACER"), cmd.Bool("with-tracer"), "with-tracer")
+	strObserver, err := getValue(cfg.Observer, os.Getenv("OBSERVER"), cmd.String("observer"), 0, "observer")
 	if err != nil {
 		return err
 	}
 
-	secretStr, err := getValue(cfg.Secret, os.Getenv("SECRET"), cmd.String("secret"), "secret")
+	// tracer
+	withTracer, err := getValue(cfg.WithTracer, os.Getenv("WITH_TRACER"), cmd.Bool("with-tracer"), cmd.Count("with-tracer"), "with-tracer")
 	if err != nil {
 		return err
 	}
 
-	tempoAddr, err := getValue(cfg.TempoAddress, os.Getenv("TEMPO_ADDRESS"), cmd.String("tempo-address"), "tempo-address")
+	tempoAddr, err := getValue(cfg.TempoAddress, os.Getenv("TEMPO_ADDRESS"), cmd.String("tempo-address"), 0, "tempo-address")
+	if err != nil {
+		return err
+	}
+
+	secretStr, err := getValue(cfg.Secret, os.Getenv("SECRET"), cmd.String("secret"), 0, "secret")
+	if err != nil {
+		return err
+	}
 
 	secret, err := base64.StdEncoding.DecodeString(secretStr)
 	if err != nil {
@@ -276,23 +299,9 @@ func start(ctx context.Context, cmd *cli.Command) error {
 		return err
 	}
 
-	domain, err := getValue(cfg.Domain, os.Getenv("DOMAIN"), cmd.String("domain"), "domain")
+	domain, err := getValue(cfg.Domain, os.Getenv("DOMAIN"), cmd.String("domain"), 0, "domain")
 	if err != nil {
 		return err
-	}
-
-	var newObserver observer.Observer
-	switch strObserver {
-	case "prom":
-		newObserver = observer.NewPrometheusObserver(prometheus.DefaultRegisterer)
-	case "otel":
-		fmt.Printf("wormhole [inf] metrics enabled on %s\n", observerAddr)
-		newObserver, err = observer.NewOTelObserver(ctx)
-		if err != nil {
-			return err
-		}
-	default:
-		newObserver = &observer.NoopObserver{}
 	}
 
 	serverOpts := []wserver.OptFunc{
@@ -300,7 +309,22 @@ func start(ctx context.Context, cmd *cli.Command) error {
 		wserver.WithServeAddr(serveAddr),
 		wserver.WithDomain(domain),
 		wserver.WithAPIKeyIssuer(apiKeyIssuer),
-		wserver.WithObserver(newObserver),
+	}
+
+	if withObserver {
+		switch strObserver {
+		case "prom":
+			newObserver := observer.NewPrometheusObserver(prometheus.DefaultRegisterer)
+			serverOpts = append(serverOpts, wserver.WithObserver(newObserver))
+		case "otel":
+			fmt.Printf("wormhole [inf] metrics enabled on %s\n", observerAddr)
+			newObserver, errr := observer.NewOTelObserver(ctx)
+			if errr != nil {
+				return errr
+			}
+			serverOpts = append(serverOpts, wserver.WithObserver(newObserver))
+		default:
+		}
 	}
 
 	if withTracer {
@@ -331,7 +355,7 @@ func start(ctx context.Context, cmd *cli.Command) error {
 
 	g, gCtx := errgroup.WithContext(ctx)
 
-	if runPprof {
+	if withPprof {
 		fmt.Printf("wormhole [inf] pprof enabled on %s\n", pprofAddr)
 		pprofServer := &nethttp.Server{
 			Addr: pprofAddr,
@@ -601,6 +625,10 @@ func issueTokenCommand() *cli.Command {
 				Usage: "wormhole config path (override if config is somewhere else or not using linux)",
 				Value: DefaultConfigPath,
 			},
+			&cli.StringFlag{
+				Name:  "secret",
+				Usage: "set secret to be used when issuing tokens",
+			},
 		},
 		Action: issueToken,
 	}
@@ -617,7 +645,7 @@ func issueToken(ctx context.Context, cmd *cli.Command) error {
 		cfg = &Config{}
 	}
 
-	secretStr, err := getValue(cfg.Secret, os.Getenv("SECRET"), cmd.String("secret"), "secret")
+	secretStr, err := getValue(cfg.Secret, os.Getenv("SECRET"), cmd.String("secret"), 0, "secret")
 	if err != nil {
 		return err
 	}
