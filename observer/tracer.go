@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/Dyastin-0/wormhole/core/proto"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	"go.opentelemetry.io/otel/propagation"
@@ -17,8 +18,7 @@ func NewTracer(ctx context.Context, serviceName, tempoEndpoint string) (*sdktrac
 	res, err := resource.New(ctx,
 		resource.WithAttributes(
 			semconv.ServiceName(serviceName),
-			semconv.ServiceVersion("1.0.0"),
-			semconv.DeploymentEnvironment("local"),
+			semconv.ServiceVersion(proto.VERSION),
 		),
 	)
 	if err != nil {

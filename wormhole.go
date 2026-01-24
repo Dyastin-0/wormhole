@@ -339,6 +339,14 @@ func start(ctx context.Context, cmd *cli.Command) error {
 
 			time.Sleep(2 * time.Second)
 
+			flushCtx, flushCancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer flushCancel()
+
+			err = tp.ForceFlush(flushCtx)
+			if err != nil {
+				fmt.Printf("wormhole [err] failed to flush traces: %v\n", err)
+			}
+
 			shutdownCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			defer cancel()
 
