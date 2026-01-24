@@ -154,6 +154,8 @@ func (s *Server) RunObserver(ctx context.Context, addr string) error {
 
 	go func(ctx context.Context) {
 		<-ctx.Done()
+
+		// This may be adjusted based on how often observer scrapes metrics
 		time.Sleep(2 * time.Second)
 
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -541,7 +543,7 @@ func (s *Server) handleRequest(ctx context.Context, stream net.Conn, session *ya
 		}(ctx, tunnel)
 	}
 
-	s.tunnels.Set(domain, tunnel)
+	s.tunnels.SetIfAbsent(domain, tunnel)
 
 	protoStr := proto.ProtoString(req.Proto)
 	s.observer.RecordTunnelCreated(protoStr)
