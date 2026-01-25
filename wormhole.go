@@ -342,7 +342,14 @@ func start(ctx context.Context, cmd *cli.Command) error {
 
 			go func() {
 				<-ctx.Done()
-				time.Sleep(2 * time.Second)
+
+				flushCtx, flushCancel := context.WithTimeout(context.Background(), 2*time.Second)
+				defer flushCancel()
+				err = mp.ForceFlush(flushCtx)
+				if err != nil {
+					fmt.Printf("wormhole [err] failed to flush metrics: %v\n", err)
+				}
+
 				shutdownCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 				defer cancel()
 				if err = mp.Shutdown(shutdownCtx); err != nil {
@@ -369,8 +376,6 @@ func start(ctx context.Context, cmd *cli.Command) error {
 
 		go func() {
 			<-ctx.Done()
-
-			time.Sleep(2 * time.Second)
 
 			flushCtx, flushCancel := context.WithTimeout(context.Background(), 2*time.Second)
 			defer flushCancel()

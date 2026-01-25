@@ -35,7 +35,7 @@ func NewMeterProvider(ctx context.Context, endpoint string) (*metric.MeterProvid
 
 	provider := metric.NewMeterProvider(
 		metric.WithReader(metric.NewPeriodicReader(exporter,
-			metric.WithInterval(10*time.Second),
+			metric.WithInterval(1*time.Second),
 		)),
 	)
 
