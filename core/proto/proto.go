@@ -89,9 +89,9 @@ const (
 // Constants definition of the protocol version.
 const (
 	// Version is the current protocol version (0x10).
-	Version uint8 = 0x10
+	Version uint8 = 0x11
 	// VERSION is the human-readable protocol version ("1.0").
-	VERSION = "1.0"
+	VERSION = "1.1"
 )
 
 // Errors returned by the Wormhole protocol.

@@ -45,7 +45,7 @@ func TestResponseSerializeDeserialize(t *testing.T) {
 
 func TestValidateHeaderInvalidVersion(t *testing.T) {
 	header := &Header{
-		Version:  0x11,
+		Version:  0x10,
 		Type:     TypeRequest,
 		Length:   100,
 		Reserved: 0,

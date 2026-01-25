@@ -13,8 +13,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/Dyastin-0/wormhole/core"
 	wclient "github.com/Dyastin-0/wormhole/core/client"
+	"github.com/Dyastin-0/wormhole/core/proto"
 	wserver "github.com/Dyastin-0/wormhole/core/server"
 	"github.com/Dyastin-0/wormhole/observer"
 	"github.com/common-nighthawk/go-figure"
@@ -133,7 +133,7 @@ func New() *cli.Command {
 	return &cli.Command{
 		Name:    "wormhole",
 		Usage:   "a tcp-based reverse tunnel service",
-		Version: core.VERSION,
+		Version: proto.VERSION,
 		Action:  wormholeCommand,
 		Commands: []*cli.Command{
 			startCommand(),
