@@ -6,6 +6,7 @@ withPprof: true
 pprofAddress: "3001"
 withObserver: true
 observer: "prom"
+withPromExporter: true
 observerAddress: ":3002"
 tempoAddress: ":3003"
 collectorAddress: ":3004"
