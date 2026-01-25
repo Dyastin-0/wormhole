@@ -17,8 +17,8 @@ import (
 	"time"
 
 	"github.com/Dyastin-0/wormhole/core/auth"
-	"github.com/Dyastin-0/wormhole/core/metrics"
 	"github.com/Dyastin-0/wormhole/core/proto"
+	"github.com/Dyastin-0/wormhole/metrics"
 	"github.com/Dyastin-0/wormhole/observer"
 	"github.com/caddyserver/certmagic"
 	"github.com/hashicorp/yamux"
@@ -184,8 +184,6 @@ func (s *Server) RunObserver(ctx context.Context, addr string) error {
 		Addr:    addr,
 		Handler: mux,
 	}
-
-	log.Info().Str("addr", addr).Msg("starting observer server")
 
 	go func(ctx context.Context) {
 		<-ctx.Done()

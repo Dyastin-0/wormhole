@@ -20,6 +20,7 @@ import (
 	"github.com/common-nighthawk/go-figure"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/urfave/cli/v3"
+	"go.opentelemetry.io/otel"
 	"golang.org/x/sync/errgroup"
 	"gopkg.in/yaml.v3"
 
@@ -314,16 +315,38 @@ func start(ctx context.Context, cmd *cli.Command) error {
 	if withObserver {
 		switch strObserver {
 		case "prom":
+			fmt.Printf("wormhole [inf] metrics enabled (prom)\n")
+
 			newObserver := observer.NewPrometheusObserver(prometheus.DefaultRegisterer)
 			serverOpts = append(serverOpts, wserver.WithObserver(newObserver))
 		case "otel":
-			fmt.Printf("wormhole [inf] metrics enabled on %s\n", observerAddr)
+			fmt.Printf("wormhole [inf] metrics enabled (otel)\n")
+
+			// Uses otel prometheus exporter. maybe add an option in the future
+			mp, errr := observer.NewMeterProvider(ctx)
+			if errr != nil {
+				return fmt.Errorf("failed to create meter provider: %w", errr)
+			}
+
+			otel.SetMeterProvider(mp)
+
+			go func() {
+				<-ctx.Done()
+				time.Sleep(2 * time.Second)
+				shutdownCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+				defer cancel()
+				if err := mp.Shutdown(shutdownCtx); err != nil {
+					fmt.Printf("wormhole [err] failed to shutdown meter provider: %v\n", err)
+				}
+			}()
+
 			newObserver, errr := observer.NewOTelObserver(ctx)
 			if errr != nil {
 				return errr
 			}
 			serverOpts = append(serverOpts, wserver.WithObserver(newObserver))
 		default:
+			return fmt.Errorf("invalid observer type: %s (valid options: prom, otel)", strObserver)
 		}
 	}
 

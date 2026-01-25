@@ -7,9 +7,9 @@ import (
 	"time"
 
 	"github.com/Dyastin-0/wormhole/core/auth"
-	"github.com/Dyastin-0/wormhole/core/metrics"
 	"github.com/Dyastin-0/wormhole/core/proto"
 	"github.com/Dyastin-0/wormhole/core/proxy"
+	"github.com/Dyastin-0/wormhole/metrics"
 	"github.com/hashicorp/yamux"
 )
 

@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Dyastin-0/wormhole/core/metrics"
 	"github.com/Dyastin-0/wormhole/core/proto"
+	"github.com/Dyastin-0/wormhole/metrics"
 	"github.com/hashicorp/yamux"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
