@@ -20,7 +20,7 @@ import (
 	"github.com/common-nighthawk/go-figure"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/urfave/cli/v3"
-	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/sdk/metric"
 	"golang.org/x/sync/errgroup"
 	"gopkg.in/yaml.v3"
 
@@ -46,6 +46,7 @@ type Config struct {
 	ObserverAddress  string `yaml:"observerAddress"`
 	WithObserver     bool   `yaml:"withObserver"`
 	Observer         string `yaml:"observer"`
+	WithPromExporter bool   `yaml:"withPromExporter"`
 	WithTracer       bool   `yaml:"withTracer"`
 	TempoAddress     string `yaml:"tempoAddress"`
 	CollectorAddress string `yaml:"collectorAddress"`
@@ -213,6 +214,10 @@ func startCommand() *cli.Command {
 				Value: ":9090",
 			},
 			&cli.BoolFlag{
+				Name:  "--with-prom-exporter",
+				Usage: "run otel meter provider with prometheus exporter",
+			},
+			&cli.BoolFlag{
 				Name:  "with-tracer",
 				Usage: "enable tracer with open telemetry",
 			},
@@ -254,14 +259,17 @@ func start(ctx context.Context, cmd *cli.Command) error {
 	}
 
 	// pprof
-	pprofAddr, err := getValue(cfg.PprofAddress, os.Getenv("PPROF_ADDRESS"), cmd.String("pprof-address"), 0, "pprof-address")
+	withPprof, err := getValue(cfg.WithPprof, os.Getenv("WITH_PPROF"), cmd.Bool("with-pprof"), cmd.Count("with-pprof"), "with-pprof")
 	if err != nil {
 		return err
 	}
 
-	withPprof, err := getValue(cfg.WithPprof, os.Getenv("WITH_PPROF"), cmd.Bool("with-pprof"), cmd.Count("with-pprof"), "with-pprof")
-	if err != nil {
-		return err
+	var pprofAddr string
+	if withPprof {
+		pprofAddr, err = getValue(cfg.PprofAddress, os.Getenv("PPROF_ADDRESS"), cmd.String("pprof-address"), 0, "pprof-address")
+		if err != nil {
+			return err
+		}
 	}
 
 	// observer
@@ -270,19 +278,25 @@ func start(ctx context.Context, cmd *cli.Command) error {
 		return err
 	}
 
-	observerAddr, err := getValue(cfg.ObserverAddress, os.Getenv("OBSERVER_ADDRESS"), cmd.String("observer-address"), 0, "observer-address")
-	if err != nil {
-		return err
-	}
+	var observerAddr, strObserver, collectorAddr string
+	var withPromExporter bool
+	if withObserver {
+		observerAddr, err = getValue(cfg.ObserverAddress, os.Getenv("OBSERVER_ADDRESS"), cmd.String("observer-address"), 0, "observer-address")
+		if err != nil {
+			return err
+		}
 
-	strObserver, err := getValue(cfg.Observer, os.Getenv("OBSERVER"), cmd.String("observer"), 0, "observer")
-	if err != nil {
-		return err
-	}
+		strObserver, err = getValue(cfg.Observer, os.Getenv("OBSERVER"), cmd.String("observer"), 0, "observer")
+		if err != nil {
+			return err
+		}
 
-	collectorAddr, err := getValue(cfg.CollectorAddress, os.Getenv("COLLECTOR_ADDRESS"), cmd.String("collector-address"), 0, "observer")
-	if err != nil {
-		return err
+		collectorAddr, err = getValue(cfg.CollectorAddress, os.Getenv("COLLECTOR_ADDRESS"), cmd.String("collector-address"), 0, "observer")
+		if err != nil {
+			return err
+		}
+
+		withPromExporter, err = getValue(cfg.WithPromExporter, os.Getenv("WITH_PROM_EXPORTER"), cmd.Bool("with-prom-exporter"), cmd.Count("with-prom-exporter"), "with-prom-exporter")
 	}
 
 	// tracer
@@ -291,9 +305,12 @@ func start(ctx context.Context, cmd *cli.Command) error {
 		return err
 	}
 
-	tempoAddr, err := getValue(cfg.TempoAddress, os.Getenv("TEMPO_ADDRESS"), cmd.String("tempo-address"), 0, "tempo-address")
-	if err != nil {
-		return err
+	var tempoAddr string
+	if withTracer {
+		tempoAddr, err = getValue(cfg.TempoAddress, os.Getenv("TEMPO_ADDRESS"), cmd.String("tempo-address"), 0, "tempo-address")
+		if err != nil {
+			return err
+		}
 	}
 
 	secretStr, err := getValue(cfg.Secret, os.Getenv("SECRET"), cmd.String("secret"), 0, "secret")
@@ -333,12 +350,18 @@ func start(ctx context.Context, cmd *cli.Command) error {
 		case "otel":
 			fmt.Printf("wormhole [inf] metrics enabled with otel\n")
 
-			mp, errr := observer.NewMeterProvider(ctx, collectorAddr)
-			if errr != nil {
-				return fmt.Errorf("failed to create meter provider: %w", errr)
+			var mp *metric.MeterProvider
+			if withPromExporter {
+				mp, err = observer.NewMeterProviderWithPromExporter(ctx)
+				if err != nil {
+					return fmt.Errorf("failed to create meter provider: %w", err)
+				}
+			} else {
+				mp, err = observer.NewMeterProvider(ctx, collectorAddr)
+				if err != nil {
+					return fmt.Errorf("failed to create meter provider: %w", err)
+				}
 			}
-
-			otel.SetMeterProvider(mp)
 
 			go func() {
 				<-ctx.Done()
@@ -357,7 +380,7 @@ func start(ctx context.Context, cmd *cli.Command) error {
 				}
 			}()
 
-			newObserver, errr := observer.NewOTelObserver(ctx)
+			newObserver, errr := observer.NewOTelObserver(ctx, mp)
 			if errr != nil {
 				return errr
 			}

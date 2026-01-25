@@ -9,8 +9,8 @@ import (
 	"go.opentelemetry.io/otel/sdk/metric"
 )
 
-// NewMeterProviderProm returns a MeterProvider with prometheus exporter.
-func NewMeterProviderProm(ctx context.Context) (*metric.MeterProvider, error) {
+// NewMeterProviderWithPromExporter returns a MeterProvider with prometheus exporter.
+func NewMeterProviderWithPromExporter(ctx context.Context) (*metric.MeterProvider, error) {
 	exporter, err := prometheus.New()
 	if err != nil {
 		return nil, err

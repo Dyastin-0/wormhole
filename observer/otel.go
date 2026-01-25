@@ -5,7 +5,6 @@ import (
 	"context"
 	"time"
 
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 )
@@ -38,8 +37,8 @@ type OTelObserver struct {
 }
 
 // NewOTelObserver creates a new OpenTelemetry-based observer.
-func NewOTelObserver(ctx context.Context) (*OTelObserver, error) {
-	meter := otel.Meter("wormhole")
+func NewOTelObserver(ctx context.Context, mp metric.MeterProvider) (*OTelObserver, error) {
+	meter := mp.Meter("wormhole")
 
 	tunnelsActive, err := meter.Int64UpDownCounter(
 		"wormhole.tunnels.active",
