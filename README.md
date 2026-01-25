@@ -2,9 +2,30 @@
 
 # Wormhole
 
-Tunneling using a multiplexed ([yamux](https://github.com/hashicorp/yamux)) TCP stream.
+Expose your local services to the internet through secure tunnels. Perfect for webhooks, demos, and development.
+
+Wormhole uses a single multiplexed ([yamux](https://github.com/hashicorp/yamux)) TCP stream for efficient tunneling.
+
+## Quick Start
+
+**Server:**
+```bash
+# Generate a secret and start the server
+SECRET=$(wormhole admin generate-secret --length 32)
+wormhole start --secret $SECRET --domain wormhole.dev
+```
+
+**Client:**
+```bash
+# Create a tunnel to your local service
+wormhole http --name myapp --address wormhole.dev:443 --target-address :3000
+# → https://myapp.wormhole.dev
+```
 
 ## Installation
+
+### Requirements
+- Go 1.24 or later
 
 ### From Source
 ```bash
@@ -18,26 +39,35 @@ go install .
 go install github.com/Dyastin-0/wormhole@latest
 ```
 
-## Usage
+## Server Deployment
 
-### Running a Server
+Running a Wormhole server requires:
+- A wildcard domain (e.g., `*.wormhole.dev`) pointed to your server
+- The base domain (e.g., `wormhole.dev`) pointed to your server
+- A reverse proxy that supports wildcard routing (nginx, Caddy, etc.)
 
-Running a server requires a wildcard domain (e.g., `*.wormhole.dev`) and its base domain pointed to the wormhole server. You'll need to configure a reverse proxy that supports wildcards. Wormhole runs two services, a control, and tunnel endpoint.
+Wormhole operates two core services:
+- **Control endpoint** (default `:8881`): Handles client connections
+- **Tunnel endpoint** (default `:8889`): Routes tunnel traffic based on SNI
 
-Configuration can be loaded in multiple ways:
+### Configuration
+
+Configuration can be loaded through multiple sources with the following precedence: CLI flags > environment variables > config file.
 
 #### Environment Variables (Recommended)
 
-The safest approach is to use environment variables. See `.example.env` for reference. If running the server as a systemd service, inject your `.env` file via:
+The most secure approach for production deployments. Reference `.example.env` for all available variables.
+
+For systemd services, inject your environment file:
 ```ini
 EnvironmentFile=/path/to/wormhole/.env
 ```
 
-#### Config File
+#### Configuration File
 
-Store a configuration file at the default path (see `DefaultConfigPath` in `wormhole.go`) to automatically load settings. See `example.config.yaml` for reference.
+Store a configuration file at the default path (`/etc/wormhole/config.yaml` on Linux) to automatically load settings. See `example.config.yaml` for reference.
 
-#### CLI Flags
+#### Command Line Flags
 ```bash
 wormhole start \
     --secret <api-key-secret> \
@@ -46,28 +76,68 @@ wormhole start \
     --serve-address <:port-number>
 ```
 
-**Flag Descriptions:**
+**Available Flags:**
 
-- `--address`: TCP server address for handling Wormhole client connections
-- `--serve-address`: TLS server address that routes connections to configured tunnels based on SNI
-- `--secret`: Secret key used to generate and validate API keys
-- `--domain`: Base domain for tunnels (e.g., `wormhole.dev` with wildcard `*.wormhole.dev` for tunnel clients)
+- `--address`: TCP server address for handling client connections (default: `:8881`)
+- `--serve-address`: TLS server address that routes tunnel traffic based on SNI (default: `:8889`)
+- `--secret`: Secret key used to generate and validate API keys (required)
+- `--domain`: Base domain for tunnels (e.g., `wormhole.dev`)
+- `--config-path`: Custom path to configuration file (default: `/etc/wormhole/config.yaml`)
 
-If using environment variables or a config file, simply run:
+**Observability and Profiling Options:**
+
+- `--with-pprof`: Enable pprof profiling for performance analysis
+- `--pprof-address`: Address for pprof endpoint (default: `:7060`)
+- `--with-observer`: Enable telemetry and metrics collection
+- `--observer`: Observer backend to use (`prom` or `otel`, default: `prom`)
+- `--with-prom-exporter`: Use Prometheus exporter with the observer (applies when `--observer` is set to `otel`)
+- `--observer-address`: Address where metrics endpoint will run (default: `:9090`)
+- `--collector-address`: OpenTelemetry collector address, used when observer is set to `otel` (default: `:4327`, required when `--observer` is set to `otel`)
+- `--with-tracer`: Enable distributed tracing with OpenTelemetry (uses Tempo, `--tempo-address` must be set)
+- `--tempo-address`: Tempo endpoint for trace collection (default: `:4317`)
+
+**Starting the Server:**
+
+With environment variables or config file:
 ```bash
 wormhole start
 ```
 
-For custom config paths:
+With custom config path:
 ```bash
 wormhole start --config-path "/path/to/config.yaml"
 ```
 
-### Creating Tunnels
+With observability enabled:
+```bash
+wormhole start \
+    --with-observer \
+    --observer prom \
+    --observer-address :9090
+```
 
-#### Basic HTTP Tunnel
+With OpenTelemetry and Prometheus exporter:
+```bash
+wormhole start \
+    --with-observer \
+    --observer otel \
+    --with-prom-exporter \
+    --observer-address :9090
+```
 
-Create a tunnel by specifying your desired subdomain, target address, and wormhole server address:
+With OpenTelemetry and collector:
+```bash
+wormhole start \
+    --with-observer \
+    --observer otel \
+    --collector-address :4327
+```
+
+## Client Usage
+
+### HTTP Tunnels
+
+Create an HTTP tunnel by specifying your subdomain, target address, and server address:
 ```bash
 wormhole http \
     --name <subdomain> \
@@ -75,9 +145,20 @@ wormhole http \
     --address <wormhole.server.address:443>
 ```
 
-If `--address` is omitted, the client connects to the default server at `wormhole.dyastin.dev:443`.
+The `--address` flag is optional and defaults to `wormhole.dyastin.dev:443`.
 
-#### TCP Tunnel
+**Example:**
+```bash
+wormhole http \
+    --name myapp \
+    --target-address :3000
+```
+
+This creates a tunnel accessible at `https://myapp.wormhole.dyastin.dev` that forwards traffic to your local port 3000.
+
+### TCP Tunnels
+
+Create a raw TCP tunnel:
 ```bash
 wormhole tcp \
     --name <subdomain> \
@@ -85,22 +166,66 @@ wormhole tcp \
     --address <wormhole.server.address:443>
 ```
 
-By default, TCP tunnels block HTTP traffic for security. To allow HTTP traffic on a TCP tunnel, use the `--allow-http` flag:
+By default, TCP tunnels block HTTP traffic. To allow HTTP traffic on a TCP tunnel, use the `--allow-http` flag:
 ```bash
 wormhole tcp \
     --name <subdomain> \
     --target-address <:port-number> \
-    --address <wormhole.server.address:443> \
     --allow-http
 ```
 
-This is useful when you want to tunnel HTTP applications through a TCP tunnel or need the flexibility of raw TCP with optional HTTP support.
+This allows you to use HTTP-specific features like HTTP request logging and authentication with TCP tunnels.
 
-### Monitoring and Observability
+## Tunnel Security
 
-#### Metrics
+### Authentication
 
-Enable real-time metrics streaming to monitor your tunnel's performance:
+Authentication only applies to HTTP tunnels, or TCP tunnels with `--allow-http`.
+
+#### Basic Authentication
+```bash
+wormhole http \
+    --name <subdomain> \
+    --target-address <:port-number> \
+    --auth-type basic \
+    --auth-user <username> \
+    --auth-password <password>
+```
+
+Clients will be prompted for credentials:
+```bash
+curl -u username:password https://<subdomain>.wormhole.dev
+```
+
+#### Bearer Token Authentication
+```bash
+wormhole http \
+    --name <subdomain> \
+    --target-address <:port-number> \
+    --auth-type bearer \
+    --auth-token <your-secret-token>
+```
+
+Clients must include the token in the Authorization header:
+```bash
+curl -H "Authorization: Bearer <your-secret-token>" https://<subdomain>.wormhole.dev
+```
+
+#### Disable Authentication
+
+Explicitly disable authentication (default behavior):
+```bash
+wormhole http \
+    --name <subdomain> \
+    --target-address <:port-number> \
+    --auth-type none
+```
+
+## Monitoring and Observability
+
+### Real-time Metrics
+
+Stream live tunnel performance metrics:
 ```bash
 wormhole http \
     --name <subdomain> \
@@ -109,14 +234,14 @@ wormhole http \
 ```
 
 Displays:
-- Ingress/egress bandwidth and rates
-- Active and total connections
+- Ingress and egress bandwidth with transfer rates
+- Active and total connection counts
 - Tunnel uptime
 - Round-trip time (RTT)
 
-#### HTTP Request Logging
+### HTTP Request Logging
 
-Enable HTTP request logging to see all incoming requests in real-time:
+Monitor all incoming HTTP requests in real-time:
 ```bash
 wormhole http \
     --name <subdomain> \
@@ -124,12 +249,12 @@ wormhole http \
     --http-log
 ```
 
-Displays each HTTP request with:
+Each request displays:
 - Timestamp
-- HTTP method (GET, POST, etc.)
-- Path
-- Status code
-- Response time
+- HTTP method (GET, POST, PUT, DELETE, etc.)
+- Request path
+- Response status code
+- Response time in milliseconds
 
 HTTP logging works with both HTTP tunnels and TCP tunnels that have `--allow-http` enabled:
 ```bash
@@ -140,9 +265,9 @@ wormhole tcp \
     --http-log
 ```
 
-#### Combined Monitoring
+### Combined Monitoring
 
-Enable both metrics and HTTP logging for comprehensive observability:
+Enable comprehensive observability with both metrics and request logging:
 ```bash
 wormhole http \
     --name <subdomain> \
@@ -151,92 +276,53 @@ wormhole http \
     --http-log
 ```
 
-#### Tunnel Authentication
+## API Key Management
 
-Wormhole supports authentication to restrict access to your tunnels. You can protect tunnels with either Basic Auth or Bearer token authentication.
+### Generating a Secret
 
-##### Basic Authentication
-```bash
-wormhole http \
-    --name <subdomain> \
-    --target-address <:port-number> \
-    --auth-type basic \
-    --auth-user <username> \
-    --auth-password <password>
-```
-
-Clients accessing this tunnel will be prompted for credentials. Example curl request:
-```bash
-curl -u username:password https://<subdomain>.wormhole.dev
-```
-
-##### Bearer Token Authentication
-```bash
-wormhole http \
-    --name <subdomain> \
-    --target-address <:port-number> \
-    --auth-type bearer \
-    --auth-token <your-secret-token>
-```
-
-Clients must include the bearer token in the Authorization header:
-```bash
-curl -H "Authorization: Bearer <your-secret-token>" https://<subdomain>.wormhole.dev
-```
-
-##### No Authentication
-
-To explicitly disable authentication (default behavior):
-```bash
-wormhole http \
-    --name <subdomain> \
-    --target-address <:port-number> \
-    --auth-type none
-```
-
-### API Key Management
-
-#### Generating a Secret
-
-First, generate a signing secret for API key generation:
+Generate a cryptographically secure secret for API key signing:
 ```bash
 wormhole admin generate-secret --length 32
 ```
 
-Store this secret securely and set it as the `WORMHOLE_SECRET` environment variable or in your config file.
+Store this secret securely and configure it via the `SECRET` environment variable or in your config file.
 
-#### Issuing API Keys
+### Issuing API Keys
 
 Issue API keys to grant clients extended tunnel lifetimes:
 ```bash
-wormhole admin issue-token --expires 30d --ttl 4
+wormhole admin issue-token --ttl 4 --expires 30d
 ```
 
-**Parameter Descriptions:**
+**Parameters:**
 
-- `--expires`: JWT expiration duration (e.g., `30d`, `720h`, `1y`)
 - `--ttl`: Time-to-live in hours for tunnels created with this key
+- `--expires`: JWT expiration duration (e.g., `30d`, `720h`, `1y`, `52w`)
 
 **TTL Behavior:**
 
-- **Fixed TTL** (TTL > 0): Tunnels will have the specified TTL (e.g., `--ttl 4` creates tunnels with 4-hour lifetimes)
+- **Fixed TTL** (TTL > 0): All tunnels created with this key will have the specified TTL (e.g., `--ttl 4` creates 4-hour tunnels)
 - **Flexible TTL** (TTL = 0): Clients can specify their own `--ttl` value up to a server-defined maximum
-- **No API Key**: Clients without an API key default to 1-hour tunnel lifetimes
+- **No API Key**: Tunnels default to 1-hour lifetimes without an API key
 
-#### Using API Keys
+### Using API Keys
+
+Create tunnels with extended lifetimes using your API key:
 ```bash
 wormhole http \
     --name <subdomain> \
     --target-address <:port-number> \
-    --api-key <api-key> \
+    --api-key <api-key-token> \
     --ttl 24
 ```
 
-If `--ttl` is omitted when using an API key, the tunnel defaults to 1 hour unless the key has a specific TTL claim.
+If `--ttl` is omitted, the tunnel defaults to 1 hour unless the API key has a specific TTL claim.
 
-### Complete Example with Authentication and Monitoring
+## Complete Examples
 
-Create an authenticated tunnel with metrics and HTTP logging:
+### Authenticated HTTP Tunnel with Full Monitoring
+
+Create a production-ready tunnel with authentication, metrics, and request logging:
 ```bash
 wormhole http \
     --name myapp \
@@ -255,9 +341,9 @@ Access the tunnel:
 curl -H "Authorization: Bearer my-secret-token-123" https://myapp.wormhole.dyastin.dev
 ```
 
-### TCP Tunnel with HTTP Support, Authentication, and Logging
+### TCP Tunnel with HTTP Support and Basic Auth
 
-Create a TCP tunnel that allows HTTP traffic with authentication and request logging:
+Create a flexible TCP tunnel that supports HTTP traffic with authentication:
 ```bash
 wormhole tcp \
     --name secure-app \
@@ -273,6 +359,21 @@ wormhole tcp \
 Access the tunnel:
 ```bash
 curl -u admin:secret123 https://secure-app.wormhole.dyastin.dev
+```
+
+### Long-lived Tunnel with API Key
+
+Create a tunnel that stays active for 7 days:
+```bash
+# First, issue a long-lived API key
+wormhole admin issue-token --ttl 168 --expires 30d
+
+# Then create the tunnel
+wormhole http \
+    --name longlived \
+    --target-address :8080 \
+    --api-key <issued-key> \
+    --ttl 168
 ```
 
 ## Demo

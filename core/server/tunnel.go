@@ -7,9 +7,9 @@ import (
 	"time"
 
 	"github.com/Dyastin-0/wormhole/core/auth"
-	"github.com/Dyastin-0/wormhole/core/metrics"
 	"github.com/Dyastin-0/wormhole/core/proto"
 	"github.com/Dyastin-0/wormhole/core/proxy"
+	"github.com/Dyastin-0/wormhole/metrics"
 	"github.com/hashicorp/yamux"
 )
 
@@ -29,6 +29,10 @@ type Tunnel struct {
 	allowHTTP bool
 	// httpLogch is used to send HTTP logs to the client.
 	httpLogch chan *proto.HTTPLog
+	// domain specifies the tunnel's subdomain.
+	domain string
+	// createdAt specifies the tunnel's creation time.
+	createdAt time.Time
 }
 
 // Proxy opens a stream from the session then forwards the stream to it.

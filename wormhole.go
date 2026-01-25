@@ -9,14 +9,18 @@ import (
 	nethttp "net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
-	"github.com/Dyastin-0/wormhole/core"
 	wclient "github.com/Dyastin-0/wormhole/core/client"
+	"github.com/Dyastin-0/wormhole/core/proto"
 	wserver "github.com/Dyastin-0/wormhole/core/server"
+	"github.com/Dyastin-0/wormhole/observer"
 	"github.com/common-nighthawk/go-figure"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/urfave/cli/v3"
+	"go.opentelemetry.io/otel/sdk/metric"
 	"golang.org/x/sync/errgroup"
 	"gopkg.in/yaml.v3"
 
@@ -33,8 +37,19 @@ var (
 const DefaultConfigPath = "/etc/wormhole/config.yaml"
 
 type Config struct {
-	Secret string `yaml:"secret"`
-	Domain string `yaml:"domain"`
+	Secret           string `yaml:"secret"`
+	Domain           string `yaml:"domain"`
+	Address          string `yaml:"address"`
+	ServeAddress     string `yaml:"serveAddress"`
+	PprofAddress     string `yaml:"pprofAddress"`
+	WithPprof        bool   `yaml:"withPprof"`
+	ObserverAddress  string `yaml:"observerAddress"`
+	WithObserver     bool   `yaml:"withObserver"`
+	Observer         string `yaml:"observer"`
+	WithPromExporter bool   `yaml:"withPromExporter"`
+	WithTracer       bool   `yaml:"withTracer"`
+	TempoAddress     string `yaml:"tempoAddress"`
+	CollectorAddress string `yaml:"collectorAddress"`
 }
 
 func loadConfig(path string) (*Config, error) {
@@ -51,22 +66,45 @@ func loadConfig(path string) (*Config, error) {
 	return &cfg, nil
 }
 
-func getConfigValue(configVal, envVar, flagVal, fieldName string) (string, error) {
-	// Priority: environment variable > CLI flag > config file
+// getValue returns a configuration value with precedence: flag > env > config.
+func getValue[T any](configVal T, envVar string, flagVal T, flagCount int, fieldName string) (T, error) {
+	var zero T
 
-	if envVar != "" {
-		return envVar, nil
+	// string
+	if _, ok := any(flagVal).(string); ok {
+		if flagStr, ok := any(flagVal).(string); ok && flagStr != "" {
+			return flagVal, nil
+		}
+
+		if envVar != "" {
+			return any(envVar).(T), nil
+		}
+
+		if cfgStr, ok := any(configVal).(string); ok && cfgStr != "" {
+			return configVal, nil
+		}
+
+		return zero, fmt.Errorf("%s not found. Set via --%s flag, config file, or environment variable", fieldName, fieldName)
 	}
 
-	if flagVal != "" {
-		return flagVal, nil
-	}
+	// bool
+	if _, ok := any(flagVal).(bool); ok {
+		if flagCount > 0 {
+			return flagVal, nil
+		}
 
-	if configVal != "" {
+		if envVar != "" {
+			boolVal, err := strconv.ParseBool(envVar)
+			if err != nil {
+				return zero, fmt.Errorf("invalid boolean value for %s: %w", fieldName, err)
+			}
+			return any(boolVal).(T), nil
+		}
+
 		return configVal, nil
 	}
 
-	return "", fmt.Errorf("%s not found. Set via --%s flag, config file, or environment variable", fieldName, fieldName)
+	return zero, fmt.Errorf("unsupported type for getValue")
 }
 
 func main() {
@@ -95,7 +133,7 @@ func New() *cli.Command {
 	return &cli.Command{
 		Name:    "wormhole",
 		Usage:   "a tcp-based reverse tunnel service",
-		Version: core.VERSION,
+		Version: proto.VERSION,
 		Action:  wormholeCommand,
 		Commands: []*cli.Command{
 			startCommand(),
@@ -128,22 +166,22 @@ func startCommand() *cli.Command {
 			&cli.StringFlag{
 				Name:    "address",
 				Aliases: []string{"a", "addr"},
-				Value:   ":8888",
+				Value:   ":8881",
 				Usage:   "set the address where wormhole server will run",
 			},
 			&cli.StringFlag{
 				Name:    "serve-address",
-				Aliases: []string{"sa", "serve-address"},
+				Aliases: []string{"sa"},
 				Value:   ":8889",
 				Usage:   "set the address where wormhole tunnel handler will run",
 			},
 			&cli.StringFlag{
 				Name:    "domain",
 				Aliases: []string{"d"},
-				Usage:   "set base domain for tunnels (can be set via config file or WORMHOLE_DOMAIN env var)",
+				Usage:   "set base domain for tunnels (can be set via config file or DOMAIN env var)",
 			},
 			&cli.BoolFlag{
-				Name:  "pprof",
+				Name:  "with-pprof",
 				Usage: "run wormhole with pprof",
 				Value: false,
 			},
@@ -161,16 +199,44 @@ func startCommand() *cli.Command {
 				Usage: "wormhole config path (override if config is somewhere else or not using linux)",
 				Value: DefaultConfigPath,
 			},
+			&cli.BoolFlag{
+				Name:  "with-observer",
+				Usage: "enable telemetry",
+			},
+			&cli.StringFlag{
+				Name:  "observer",
+				Usage: "observer to use (prom or otel)",
+				Value: "prom",
+			},
+			&cli.StringFlag{
+				Name:  "observer-address",
+				Usage: "address where telemetry will run (e.g., :9090)",
+				Value: ":9090",
+			},
+			&cli.BoolFlag{
+				Name:  "--with-prom-exporter",
+				Usage: "run otel meter provider with prometheus exporter",
+			},
+			&cli.BoolFlag{
+				Name:  "with-tracer",
+				Usage: "enable tracer with open telemetry",
+			},
+			&cli.StringFlag{
+				Name:  "tempo-address",
+				Usage: "set tempo address for tracer",
+				Value: ":4317",
+			},
+			&cli.StringFlag{
+				Name:  "collector-address",
+				Usage: "set the otel collector address, used when using otel observer",
+				Value: ":4327",
+			},
 		},
 		Action: start,
 	}
 }
 
 func start(ctx context.Context, cmd *cli.Command) error {
-	addr := cmd.String("addr")
-	serveAddr := cmd.String("serve-address")
-	pprofAddr := cmd.String("pprof-address")
-	runPprof := cmd.Bool("pprof")
 	configPath := cmd.String("config-path")
 
 	cfg, err := loadConfig(configPath)
@@ -181,7 +247,73 @@ func start(ctx context.Context, cmd *cli.Command) error {
 		cfg = &Config{}
 	}
 
-	secretStr, err := getConfigValue(cfg.Secret, os.Getenv("WORMHOLE_SECRET"), cmd.String("secret"), "secret")
+	// wormhole addresses
+	addr, err := getValue(cfg.Address, os.Getenv("ADDRESS"), cmd.String("address"), 0, "address")
+	if err != nil {
+		return err
+	}
+
+	serveAddr, err := getValue(cfg.ServeAddress, os.Getenv("SERVE_ADDRESS"), cmd.String("serve-address"), 0, "serve-address")
+	if err != nil {
+		return err
+	}
+
+	// pprof
+	withPprof, err := getValue(cfg.WithPprof, os.Getenv("WITH_PPROF"), cmd.Bool("with-pprof"), cmd.Count("with-pprof"), "with-pprof")
+	if err != nil {
+		return err
+	}
+
+	var pprofAddr string
+	if withPprof {
+		pprofAddr, err = getValue(cfg.PprofAddress, os.Getenv("PPROF_ADDRESS"), cmd.String("pprof-address"), 0, "pprof-address")
+		if err != nil {
+			return err
+		}
+	}
+
+	// observer
+	withObserver, err := getValue(cfg.WithObserver, os.Getenv("WITH_OBSERVER"), cmd.Bool("with-observer"), cmd.Count("with-observer"), "with-observer")
+	if err != nil {
+		return err
+	}
+
+	var observerAddr, strObserver, collectorAddr string
+	var withPromExporter bool
+	if withObserver {
+		observerAddr, err = getValue(cfg.ObserverAddress, os.Getenv("OBSERVER_ADDRESS"), cmd.String("observer-address"), 0, "observer-address")
+		if err != nil {
+			return err
+		}
+
+		strObserver, err = getValue(cfg.Observer, os.Getenv("OBSERVER"), cmd.String("observer"), 0, "observer")
+		if err != nil {
+			return err
+		}
+
+		collectorAddr, err = getValue(cfg.CollectorAddress, os.Getenv("COLLECTOR_ADDRESS"), cmd.String("collector-address"), 0, "observer")
+		if err != nil {
+			return err
+		}
+
+		withPromExporter, err = getValue(cfg.WithPromExporter, os.Getenv("WITH_PROM_EXPORTER"), cmd.Bool("with-prom-exporter"), cmd.Count("with-prom-exporter"), "with-prom-exporter")
+	}
+
+	// tracer
+	withTracer, err := getValue(cfg.WithTracer, os.Getenv("WITH_TRACER"), cmd.Bool("with-tracer"), cmd.Count("with-tracer"), "with-tracer")
+	if err != nil {
+		return err
+	}
+
+	var tempoAddr string
+	if withTracer {
+		tempoAddr, err = getValue(cfg.TempoAddress, os.Getenv("TEMPO_ADDRESS"), cmd.String("tempo-address"), 0, "tempo-address")
+		if err != nil {
+			return err
+		}
+	}
+
+	secretStr, err := getValue(cfg.Secret, os.Getenv("SECRET"), cmd.String("secret"), 0, "secret")
 	if err != nil {
 		return err
 	}
@@ -196,24 +328,106 @@ func start(ctx context.Context, cmd *cli.Command) error {
 		return err
 	}
 
-	domain, err := getConfigValue(cfg.Domain, os.Getenv("WORMHOLE_DOMAIN"), cmd.String("domain"), "domain")
+	domain, err := getValue(cfg.Domain, os.Getenv("DOMAIN"), cmd.String("domain"), 0, "domain")
 	if err != nil {
 		return err
 	}
 
-	wormholeServer, err := wserver.New(
+	serverOpts := []wserver.OptFunc{
 		wserver.WithAddr(addr),
 		wserver.WithServeAddr(serveAddr),
 		wserver.WithDomain(domain),
 		wserver.WithAPIKeyIssuer(apiKeyIssuer),
-	)
+	}
+
+	if withObserver {
+		switch strObserver {
+		case "prom":
+			fmt.Printf("wormhole [inf] metrics enabled with prom\n")
+
+			newObserver := observer.NewPrometheusObserver(prometheus.DefaultRegisterer)
+			serverOpts = append(serverOpts, wserver.WithObserver(newObserver))
+		case "otel":
+			fmt.Printf("wormhole [inf] metrics enabled with otel\n")
+
+			var mp *metric.MeterProvider
+			if withPromExporter {
+				mp, err = observer.NewMeterProviderWithPromExporter(ctx)
+				if err != nil {
+					return fmt.Errorf("failed to create meter provider: %w", err)
+				}
+			} else {
+				mp, err = observer.NewMeterProvider(ctx, collectorAddr)
+				if err != nil {
+					return fmt.Errorf("failed to create meter provider: %w", err)
+				}
+			}
+
+			go func() {
+				<-ctx.Done()
+
+				flushCtx, flushCancel := context.WithTimeout(context.Background(), 2*time.Second)
+				defer flushCancel()
+				err = mp.ForceFlush(flushCtx)
+				if err != nil {
+					fmt.Printf("wormhole [err] failed to flush metrics: %v\n", err)
+				}
+
+				shutdownCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+				defer cancel()
+				if err = mp.Shutdown(shutdownCtx); err != nil {
+					fmt.Printf("wormhole [err] failed to shutdown meter provider: %v\n", err)
+				}
+			}()
+
+			newObserver, errr := observer.NewOTelObserver(ctx, mp)
+			if errr != nil {
+				return errr
+			}
+			serverOpts = append(serverOpts, wserver.WithObserver(newObserver))
+		default:
+			return fmt.Errorf("invalid observer type: %s (valid options: prom, otel)", strObserver)
+		}
+	}
+
+	if withTracer {
+		tp, errr := observer.NewTracer(ctx, "wormhole", tempoAddr)
+		if errr != nil {
+			return errr
+		}
+		tracer := tp.Tracer("wormhole")
+
+		go func() {
+			<-ctx.Done()
+
+			flushCtx, flushCancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer flushCancel()
+
+			err = tp.ForceFlush(flushCtx)
+			if err != nil {
+				fmt.Printf("wormhole [err] failed to flush traces: %v\n", err)
+			}
+
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+
+			if errr := tp.Shutdown(shutdownCtx); err != nil {
+				fmt.Printf("wormhole [err] failed to shutdown tracer: %v\n", errr)
+			}
+		}()
+
+		serverOpts = append(serverOpts, wserver.WithTracer(tracer))
+	}
+
+	wormholeServer, err := wserver.New(serverOpts...)
 	if err != nil {
 		return fmt.Errorf("failed to create server: %w", err)
 	}
 
 	g, gCtx := errgroup.WithContext(ctx)
 
-	if runPprof {
+	if withPprof {
+		fmt.Printf("wormhole [inf] pprof enabled on %s\n", pprofAddr)
 		pprofServer := &nethttp.Server{
 			Addr: pprofAddr,
 		}
@@ -228,10 +442,16 @@ func start(ctx context.Context, cmd *cli.Command) error {
 		g.Go(func() error {
 			<-gCtx.Done()
 
-			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			defer cancel()
 
 			return pprofServer.Shutdown(shutdownCtx)
+		})
+	}
+
+	if strObserver == "prom" || strObserver == "otel" {
+		g.Go(func() error {
+			return wormholeServer.RunObserver(ctx, observerAddr)
 		})
 	}
 
@@ -476,6 +696,10 @@ func issueTokenCommand() *cli.Command {
 				Usage: "wormhole config path (override if config is somewhere else or not using linux)",
 				Value: DefaultConfigPath,
 			},
+			&cli.StringFlag{
+				Name:  "secret",
+				Usage: "set secret to be used when issuing tokens",
+			},
 		},
 		Action: issueToken,
 	}
@@ -492,7 +716,7 @@ func issueToken(ctx context.Context, cmd *cli.Command) error {
 		cfg = &Config{}
 	}
 
-	secretStr, err := getConfigValue(cfg.Secret, os.Getenv("WORMHOLE_SECRET"), cmd.String("secret"), "secret")
+	secretStr, err := getValue(cfg.Secret, os.Getenv("SECRET"), cmd.String("secret"), 0, "secret")
 	if err != nil {
 		return err
 	}
@@ -565,7 +789,7 @@ func generateSecret(ctx context.Context, cmd *cli.Command) error {
 	fmt.Printf("Length:       %d bytes\n", length)
 	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	fmt.Printf("\nSecret (base64):\n%s\n", encoded)
-	fmt.Println("\nStore this securely! Set as WORMHOLE_SECRET environment variable.")
+	fmt.Println("\nStore this securely! Set as SECRET environment variable.")
 
 	return nil
 }

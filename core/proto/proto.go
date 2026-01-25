@@ -89,9 +89,9 @@ const (
 // Constants definition of the protocol version.
 const (
 	// Version is the current protocol version (0x10).
-	Version uint8 = 0x10
+	Version uint8 = 0x11
 	// VERSION is the human-readable protocol version ("1.0").
-	VERSION = "1.0"
+	VERSION = "1.1"
 )
 
 // Errors returned by the Wormhole protocol.
@@ -408,4 +408,14 @@ func CalculateTunnelRequestSize(req *Request) uint64 {
 // CalculateTunnelResponseSize calculates the total size of a serialized Response, including its header.
 func CalculateTunnelResponseSize(resp *Response) uint64 {
 	return uint64(HeaderSize) + uint64(ResponseSize) + uint64(len(resp.Domain))
+}
+
+func ProtoString(proto uint8) string {
+	if proto == ProtoHTTP {
+		return "http"
+	}
+	if proto == ProtoTCP {
+		return "tcp"
+	}
+	return ""
 }
