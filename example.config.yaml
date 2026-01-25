@@ -5,4 +5,7 @@ serveAddress: ":3000"
 withPprof: true
 pprofAddress: "3001"
 withObserver: true
+observer: "prom"
 observerAddress: ":3002"
+tempoAddress: ":3003"
+collectorAddress: ":3004"

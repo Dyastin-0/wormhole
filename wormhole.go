@@ -37,17 +37,18 @@ var (
 const DefaultConfigPath = "/etc/wormhole/config.yaml"
 
 type Config struct {
-	Secret          string `yaml:"secret"`
-	Domain          string `yaml:"domain"`
-	Address         string `yaml:"address"`
-	ServeAddress    string `yaml:"serveAddress"`
-	PprofAddress    string `yaml:"pprofAddress"`
-	WithPprof       bool   `yaml:"withPprof"`
-	ObserverAddress string `yaml:"observerAddress"`
-	WithObserver    bool   `yaml:"withObserver"`
-	Observer        string `yaml:"observer"`
-	WithTracer      bool   `yaml:"withTracer"`
-	TempoAddress    string `yaml:"tempoAddress"`
+	Secret           string `yaml:"secret"`
+	Domain           string `yaml:"domain"`
+	Address          string `yaml:"address"`
+	ServeAddress     string `yaml:"serveAddress"`
+	PprofAddress     string `yaml:"pprofAddress"`
+	WithPprof        bool   `yaml:"withPprof"`
+	ObserverAddress  string `yaml:"observerAddress"`
+	WithObserver     bool   `yaml:"withObserver"`
+	Observer         string `yaml:"observer"`
+	WithTracer       bool   `yaml:"withTracer"`
+	TempoAddress     string `yaml:"tempoAddress"`
+	CollectorAddress string `yaml:"collectorAddress"`
 }
 
 func loadConfig(path string) (*Config, error) {
@@ -220,6 +221,11 @@ func startCommand() *cli.Command {
 				Usage: "set tempo address for tracer",
 				Value: ":4317",
 			},
+			&cli.StringFlag{
+				Name:  "collector-address",
+				Usage: "set the otel collector address, used when using otel observer",
+				Value: ":4327",
+			},
 		},
 		Action: start,
 	}
@@ -274,6 +280,11 @@ func start(ctx context.Context, cmd *cli.Command) error {
 		return err
 	}
 
+	collectorAddr, err := getValue(cfg.CollectorAddress, os.Getenv("COLLECTOR_ADDRESS"), cmd.String("collector-address"), 0, "observer")
+	if err != nil {
+		return err
+	}
+
 	// tracer
 	withTracer, err := getValue(cfg.WithTracer, os.Getenv("WITH_TRACER"), cmd.Bool("with-tracer"), cmd.Count("with-tracer"), "with-tracer")
 	if err != nil {
@@ -315,15 +326,12 @@ func start(ctx context.Context, cmd *cli.Command) error {
 	if withObserver {
 		switch strObserver {
 		case "prom":
-			fmt.Printf("wormhole [inf] metrics enabled (prom)\n")
-
 			newObserver := observer.NewPrometheusObserver(prometheus.DefaultRegisterer)
 			serverOpts = append(serverOpts, wserver.WithObserver(newObserver))
 		case "otel":
-			fmt.Printf("wormhole [inf] metrics enabled (otel)\n")
+			fmt.Printf("wormhole [inf] metrics enabled with otel\n")
 
-			// Uses otel prometheus exporter. maybe add an option in the future
-			mp, errr := observer.NewMeterProvider(ctx)
+			mp, errr := observer.NewMeterProvider(ctx, collectorAddr)
 			if errr != nil {
 				return fmt.Errorf("failed to create meter provider: %w", errr)
 			}
@@ -335,7 +343,7 @@ func start(ctx context.Context, cmd *cli.Command) error {
 				time.Sleep(2 * time.Second)
 				shutdownCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 				defer cancel()
-				if err := mp.Shutdown(shutdownCtx); err != nil {
+				if err = mp.Shutdown(shutdownCtx); err != nil {
 					fmt.Printf("wormhole [err] failed to shutdown meter provider: %v\n", err)
 				}
 			}()
