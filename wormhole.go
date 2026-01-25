@@ -165,7 +165,7 @@ func startCommand() *cli.Command {
 			&cli.StringFlag{
 				Name:    "address",
 				Aliases: []string{"a", "addr"},
-				Value:   ":8888",
+				Value:   ":8881",
 				Usage:   "set the address where wormhole server will run",
 			},
 			&cli.StringFlag{
@@ -326,6 +326,8 @@ func start(ctx context.Context, cmd *cli.Command) error {
 	if withObserver {
 		switch strObserver {
 		case "prom":
+			fmt.Printf("wormhole [inf] metrics enabled with prom\n")
+
 			newObserver := observer.NewPrometheusObserver(prometheus.DefaultRegisterer)
 			serverOpts = append(serverOpts, wserver.WithObserver(newObserver))
 		case "otel":
