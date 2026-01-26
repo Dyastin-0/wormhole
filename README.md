@@ -4,23 +4,7 @@
 
 Expose your local services to the internet through secure tunnels. Perfect for webhooks, demos, and development.
 
-Wormhole uses a single multiplexed ([yamux](https://github.com/hashicorp/yamux)) TCP stream for efficient tunneling.
-
-## Quick Start
-
-**Server:**
-```bash
-# Generate a secret and start the server
-SECRET=$(wormhole admin generate-secret --length 32)
-wormhole start --secret $SECRET --domain wormhole.dev
-```
-
-**Client:**
-```bash
-# Create a tunnel to your local service
-wormhole http --name myapp --address wormhole.dev:443 --target-address :3000
-# → https://myapp.wormhole.dev
-```
+Wormhole uses a single multiplexed ([yamux](https://github.com/hashicorp/yamux)) TCP stream.
 
 ## Installation
 
