@@ -60,8 +60,8 @@ const (
 	HeaderSize uint8 = 12
 	// RequestSize is the fixed size of a request's non-string fields in bytes (30 bytes).
 	RequestSize = 30
-	// ResponseSize is the fixed size of a response's non-string fields in bytes (13 bytes).
-	ResponseSize uint8 = 13
+	// ResponseSize is the fixed size of a response's non-string fields in bytes (15 bytes).
+	ResponseSize uint8 = 15
 	// MetricsSize is the fixed size of a metrics' fields in bytes (36).
 	MetricsSize uint8 = 40
 	// HTTPLogSize is the fixed size of an HTTPLog's non-string fields in bytes (18 bytes).
@@ -74,6 +74,8 @@ const (
 	ProtoHTTP uint8 = 0x01
 	// ProtoTCP indicates a TCP-based tunnel.
 	ProtoTCP uint8 = 0x02
+	// ProtoTLS indicates a TLS wrapped TCP tunnel.
+	ProtoTLS uint8 = 0x03
 )
 
 // Constants definition of response status codes.
@@ -192,6 +194,8 @@ type Response struct {
 	Status uint8
 	// TTLHours specifies the tunnel's lifetime in hours.
 	TTLHours uint64
+	// Port specifies the allocated TCP port for TCP tunnels (443 if not a TCP tunnel).
+	Port uint16
 	// DomainLength is the length of the Domain field in bytes (must not exceed MaxStringLength).
 	DomainLength uint32
 	// Domain is the assigned domain for the tunnel (e.g., "example.domain.com").
@@ -273,6 +277,9 @@ func SerializeResponse(resp *Response) ([]byte, error) {
 	if err := binary.Write(buf, binary.BigEndian, resp.TTLHours); err != nil {
 		return nil, fmt.Errorf("failed to write ttl: %w", err)
 	}
+	if err := binary.Write(buf, binary.BigEndian, resp.Port); err != nil {
+		return nil, fmt.Errorf("failed to write tcp port: %w", err)
+	}
 	if err := binary.Write(buf, binary.BigEndian, resp.DomainLength); err != nil {
 		return nil, fmt.Errorf("failed to write domain length: %w", err)
 	}
@@ -299,6 +306,9 @@ func DeserializeResponse(data []byte) (*Response, error) {
 	}
 	if err := binary.Read(reader, binary.BigEndian, &resp.TTLHours); err != nil {
 		return nil, fmt.Errorf("failed to read TTL: %w", err)
+	}
+	if err := binary.Read(reader, binary.BigEndian, &resp.Port); err != nil {
+		return nil, fmt.Errorf("failed to read tcp port: %w", err)
 	}
 	if err := binary.Read(reader, binary.BigEndian, &resp.DomainLength); err != nil {
 		return nil, fmt.Errorf("failed to read domain length: %w", err)
@@ -395,6 +405,7 @@ func NewResponse(status uint8, ttlHours uint64, domain string) *Response {
 	return &Response{
 		Status:       status,
 		TTLHours:     ttlHours,
+		Port:         0,
 		DomainLength: uint32(len(domain)),
 		Domain:       domain,
 	}
@@ -416,6 +427,9 @@ func ProtoString(proto uint8) string {
 	}
 	if proto == ProtoTCP {
 		return "tcp"
+	}
+	if proto == ProtoTLS {
+		return "tls"
 	}
 	return ""
 }

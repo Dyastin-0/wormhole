@@ -33,6 +33,13 @@ type Tunnel struct {
 	domain string
 	// createdAt specifies the tunnel's creation time.
 	createdAt time.Time
+
+	// TCP-specific fields
+
+	// tcpPort is the allocated port for this tunnel.
+	tcpPort int
+	// tcpListener is the tunnel's listener.
+	tcpListener net.Listener
 }
 
 // Proxy opens a stream from the session then forwards the stream to it.

@@ -30,6 +30,10 @@ func WithProto(proto uint8) OptFunc {
 	}
 }
 
+func WithProtoTLS(c *Client) {
+	c.proto = proto.ProtoTLS
+}
+
 func WithProtoTCP(c *Client) {
 	c.proto = proto.ProtoTCP
 }

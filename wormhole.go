@@ -139,6 +139,7 @@ func New() *cli.Command {
 			startCommand(),
 			httpCommand(),
 			tcpCommand(),
+			tlsCommand(),
 			adminCommand(),
 		},
 	}
@@ -529,7 +530,8 @@ func tcpCommand() *cli.Command {
 			&cli.BoolFlag{
 				Name:  "allow-http",
 				Usage: "allow HTTP traffic on this TCP tunnel",
-			}),
+			},
+		),
 		Action: tcp,
 	}
 }
@@ -551,6 +553,64 @@ func tcp(ctx context.Context, cmd *cli.Command) error {
 
 	opts := []wclient.OptFunc{
 		wclient.WithProtoTCP,
+		wclient.WithName(name),
+		wclient.WithAddr(addr),
+		wclient.WithTargetAddr(targetAddr),
+		wclient.WithMetrics(metrics),
+		wclient.WithHTTPLog(httpLog),
+		wclient.WithAPIKey(apiKey),
+		wclient.WithTTL(ttl),
+		wclient.WithAllowHTTP(allowHTTP),
+	}
+
+	if err := addAuthOptions(&opts, authType, authUser, authPass, authToken); err != nil {
+		return err
+	}
+
+	wormholeClient, err := wclient.New(opts...)
+	if err != nil {
+		return fmt.Errorf("failed to initialize wormhole client: %w", err)
+	}
+
+	err = wormholeClient.Run(ctx)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func tlsCommand() *cli.Command {
+	return &cli.Command{
+		Name:  "tcp",
+		Usage: "start a wormhole tcp reverse tunnel client",
+		Flags: append(baseClientFlags(),
+			&cli.BoolFlag{
+				Name:  "allow-http",
+				Usage: "allow HTTP traffic on this TCP tunnel",
+			},
+		),
+		Action: tls,
+	}
+}
+
+func tls(ctx context.Context, cmd *cli.Command) error {
+	name := cmd.String("name")
+	addr := cmd.String("address")
+	targetAddr := cmd.String("target-address")
+	apiKey := cmd.String("api-key")
+	ttl := cmd.Uint64("ttl")
+	metrics := cmd.Bool("metrics")
+	httpLog := cmd.Bool("http-log")
+	allowHTTP := cmd.Bool("allow-http")
+
+	authType := cmd.String("auth-type")
+	authUser := cmd.String("auth-user")
+	authPass := cmd.String("auth-password")
+	authToken := cmd.String("auth-token")
+
+	opts := []wclient.OptFunc{
+		wclient.WithProtoTLS,
 		wclient.WithName(name),
 		wclient.WithAddr(addr),
 		wclient.WithTargetAddr(targetAddr),

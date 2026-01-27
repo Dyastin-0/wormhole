@@ -73,8 +73,8 @@ type Server struct {
 // New creates a new Server with the specified configuration options.
 func New(opts ...OptFunc) (*Server, error) {
 	s := &Server{
-		observer: &observer.NoopObserver{},                           // Default to noop
-		tracer:   noop.NewTracerProvider().Tracer("wormhole-server"), // Default to noop
+		observer: &observer.NoopObserver{},
+		tracer:   noop.NewTracerProvider().Tracer("wormhole-server"),
 	}
 
 	for _, opt := range opts {
@@ -600,7 +600,9 @@ func (s *Server) handleRequest(ctx context.Context, stream net.Conn, session *ya
 		attribute.String("protocol", proto.ProtoString(req.Proto)),
 	)
 
-	if s.tunnels.Has(domain) {
+	isTCP := req.Proto == proto.ProtoTCP
+
+	if !isTCP && s.tunnels.Has(domain) {
 		err = ErrNameTaken
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "name already taken")
@@ -715,18 +717,47 @@ func (s *Server) handleRequest(ctx context.Context, stream net.Conn, session *ya
 		}(ctx, tunnel)
 	}
 
-	s.tunnels.SetIfAbsent(domain, tunnel)
+	if isTCP {
+		span.SetAttributes(attribute.Bool("has_tcp_flag", true))
+
+		port, listener, errr := s.allocateListener()
+		if errr != nil {
+			span.RecordError(errr)
+			span.SetStatus(codes.Error, "failed to allocate port")
+			s.sendErr(stream, fmt.Sprintf("failed to allocate listener: %s", errr.Error()))
+			return errr
+		}
+
+		tunnel.tcpPort = port
+		tunnel.tcpListener = listener
+
+		span.SetAttributes(attribute.Int("tcp_port", port))
+
+		go s.handleTCPTunnel(ctx, tunnel)
+	} else {
+		s.tunnels.SetIfAbsent(domain, tunnel)
+	}
 
 	protoStr := proto.ProtoString(req.Proto)
 	s.observer.RecordTunnelCreated(protoStr)
 
 	resp := proto.NewResponse(proto.StatusOK, uint64(tunnel.ttl), domain)
+	if isTCP && tunnel.tcpPort > 0 {
+		resp.Port = uint16(tunnel.tcpPort)
+	} else {
+		// set to standard TLS port
+		resp.Port = uint16(443)
+	}
+
 	err = s.sendResp(stream, resp)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "failed to send response")
 		err = fmt.Errorf("failed to send response: %w", err)
 		s.tunnels.Remove(domain)
+		if tunnel.tcpListener != nil {
+			tunnel.tcpListener.Close()
+		}
 		s.observer.RecordTunnelClosed(protoStr, "error", 0)
 		return err
 	}
@@ -752,13 +783,68 @@ func (s *Server) handleRequest(ctx context.Context, stream net.Conn, session *ya
 		log.Error().Err(err).Msg("failed to send end")
 	}
 
-	s.tunnels.Remove(domain)
+	if isTCP {
+		tunnel.tcpListener.Close()
+	} else {
+		s.tunnels.Remove(domain)
+	}
 
 	duration := time.Since(tunnel.createdAt)
 	span.SetAttributes(attribute.Int64("tunnel_duration_seconds", int64(duration.Seconds())))
 	s.observer.RecordTunnelClosed(protoStr, closeReason, duration)
 
 	return nil
+}
+
+// allocateListener allocates a TCP listener with a random port for a plain TCP tunnel.
+func (s *Server) allocateListener() (int, net.Listener, error) {
+	listener, err := net.Listen("tcp", ":0")
+	if err != nil {
+		return 0, nil, fmt.Errorf("failed to allocate port: %w", err)
+	}
+
+	addr := listener.Addr().(*net.TCPAddr)
+	return addr.Port, listener, nil
+}
+
+// handleTCPTunnel listens for connections from the allocated listener.
+func (s *Server) handleTCPTunnel(ctx context.Context, tunnel *Tunnel) {
+	ctx, span := s.tracer.Start(ctx, "server.handleTCPTunnel",
+		trace.WithAttributes(
+			attribute.String("domain", tunnel.domain),
+			attribute.Int("tcp_port", tunnel.tcpPort),
+		),
+	)
+	defer span.End()
+
+	log.Info().
+		Str("domain", tunnel.domain).
+		Int("port", tunnel.tcpPort).
+		Msg("TCP tunnel listening")
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-tunnel.session.CloseChan():
+			return
+		default:
+			conn, err := tunnel.tcpListener.Accept()
+			if err != nil {
+				if ctx.Err() != nil {
+					return
+				}
+				log.Error().Err(err).Msg("failed to accept TCP tunnel connection")
+				continue
+			}
+
+			go func() {
+				if err := tunnel.Proxy(ctx, conn); err != nil {
+					log.Error().Err(err).Msg("TCP tunnel proxy error")
+				}
+			}()
+		}
+	}
 }
 
 func (s *Server) sendEnd(session *yamux.Session) error {

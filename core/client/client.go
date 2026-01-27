@@ -30,8 +30,6 @@ type Client struct {
 	addr string
 	// targetAddr is the TCP address (host:port) where incoming connections are forwarded.
 	targetAddr string
-	// withTLS specifies whether to use TLS when connecting to the targetAddr.
-	withTLS bool
 	// proto specifies the tunnel protocol (e.g., proto.ProtoHTTP, proto.ProtoTCP).
 	proto uint8
 	// name is the desired subdomain for the tunnel (e.g., "example" for "example.domain.com").
@@ -151,11 +149,22 @@ func (c *Client) RunWithTCP(ctx context.Context) error {
 		return fmt.Errorf("unexpected response status: %v", response.Status)
 	}
 
+	endpoint := response.Domain
+
+	switch c.proto {
+	case proto.ProtoHTTP:
+		endpoint = fmt.Sprintf("https://%s", endpoint)
+	case proto.ProtoTCP:
+		endpoint = fmt.Sprintf("%s:%d", endpoint, response.Port)
+	case proto.ProtoTLS:
+		endpoint = fmt.Sprintf("%s:%d", endpoint, response.Port)
+	}
+
 	expiresAt := time.Now().Add(time.Duration(response.TTLHours))
 	prettyPrint(
 		"inf",
 		"tunnel created!",
-		fmt.Sprintf("%s%s", Proto(c.proto), response.Domain),
+		endpoint,
 		fmt.Sprintf("tunnel expires at %s", expiresAt.Format("Jan 2, 2006 3:04 PM")),
 	)
 
@@ -238,12 +247,22 @@ func (c *Client) Run(ctx context.Context) error {
 		return fmt.Errorf("unexpected response status: %v", response.Status)
 	}
 
-	c.domain = response.Domain
+	endpoint := response.Domain
+
+	switch c.proto {
+	case proto.ProtoHTTP:
+		endpoint = fmt.Sprintf("https://%s", endpoint)
+	case proto.ProtoTCP:
+		endpoint = fmt.Sprintf("%s:%d", endpoint, response.Port)
+	case proto.ProtoTLS:
+		endpoint = fmt.Sprintf("%s:%d", endpoint, response.Port)
+	}
+
 	expiresAt := time.Now().Add(time.Duration(response.TTLHours))
 	prettyPrint(
 		"inf",
 		"tunnel created!",
-		fmt.Sprintf("%s%s", Proto(c.proto), response.Domain),
+		endpoint,
 		fmt.Sprintf("tunnel expires at %s", expiresAt.Format("Jan 2, 2006 3:04 PM")),
 	)
 
@@ -314,20 +333,9 @@ func (c *Client) ForwardStream(ctx context.Context, stream net.Conn) error {
 	var localConn net.Conn
 	var err error
 
-	if c.withTLS {
-		localConn, err = (&tls.Dialer{
-			Config: &tls.Config{
-				InsecureSkipVerify: true,
-			},
-		}).DialContext(ctx, "tcp", c.targetAddr)
-		if err != nil {
-			return fmt.Errorf("failed to dial tls target address: %w", err)
-		}
-	} else {
-		localConn, err = (&net.Dialer{}).DialContext(ctx, "tcp", c.targetAddr)
-		if err != nil {
-			return fmt.Errorf("failed to dial tcp target address: %w", err)
-		}
+	localConn, err = (&net.Dialer{}).DialContext(ctx, "tcp", c.targetAddr)
+	if err != nil {
+		return fmt.Errorf("failed to dial tcp target address: %w", err)
 	}
 
 	return proxy.StreamWithContext(ctx, localConn, stream)
@@ -631,18 +639,6 @@ func (c *Client) handleMetrics(ctx context.Context, header *proto.Header, stream
 				RTT:               deserializedMetrics.RTT,
 			}
 		}
-	}
-}
-
-// Proto converts a protocol constant to its string representation.
-func Proto(p uint8) string {
-	switch p {
-	case proto.ProtoHTTP:
-		return "https://"
-	case proto.ProtoTCP:
-		return "tcp:"
-	default:
-		return ""
 	}
 }
 

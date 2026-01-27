@@ -237,7 +237,7 @@ func DeserializeRequest(data []byte) (*Request, error) {
 
 // validateRequest validates a Request's fields.
 func validateRequest(req *Request) error {
-	if req.Proto != ProtoHTTP && req.Proto != ProtoTCP {
+	if req.Proto != ProtoHTTP && req.Proto != ProtoTCP && req.Proto != ProtoTLS {
 		return ErrInvalidProtocol
 	}
 
