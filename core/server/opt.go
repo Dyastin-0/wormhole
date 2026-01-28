@@ -44,5 +44,5 @@ func WithTracer(tracer trace.Tracer) OptFunc {
 }
 
 func WithAllowTCP(s *Server) {
-	s.allowTCPTunnels = true
+	s.allowTCP = true
 }
