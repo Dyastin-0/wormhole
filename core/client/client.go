@@ -82,95 +82,6 @@ func New(opts ...OptFunc) (*Client, error) {
 	return c, nil
 }
 
-func (c *Client) RunWithTCP(ctx context.Context) error {
-	dialer := net.Dialer{}
-
-	conn, err := dialer.DialContext(ctx, "tcp", c.addr)
-	if err != nil {
-		return fmt.Errorf("failed to dial server: %w", err)
-	}
-	defer conn.Close()
-
-	yamuxConfig := yamux.DefaultConfig()
-	yamuxConfig.EnableKeepAlive = false
-
-	session, err := yamux.Client(conn, yamuxConfig)
-	if err != nil {
-		return fmt.Errorf("failed to create yamux client: %w", err)
-	}
-	defer session.Close()
-
-	stream, err := session.Open()
-	if err != nil {
-		return fmt.Errorf("failed to open yamux session: %w", err)
-	}
-	defer stream.Close()
-
-	responseHeader, err := c.sendRequest(ctx, stream)
-	if err != nil {
-		return err
-	}
-
-	switch responseHeader.Type {
-	case proto.TypeResponse:
-		// OK
-	case proto.TypeError:
-		buf := make([]byte, responseHeader.Length)
-		_, err = io.ReadFull(stream, buf)
-		if err != nil {
-			return fmt.Errorf("failed to read error payload: %w", err)
-		}
-		return fmt.Errorf("server error: %s", string(buf))
-	default:
-		return fmt.Errorf("unexpected header type: %v", responseHeader.Type)
-	}
-
-	buf := make([]byte, responseHeader.Length)
-	_, err = io.ReadFull(stream, buf)
-	if err != nil {
-		return fmt.Errorf("failed to read response payload: %w", err)
-	}
-
-	response, err := proto.DeserializeResponse(buf)
-	if err != nil {
-		return fmt.Errorf("failed to deserialize response: %w", err)
-	}
-
-	switch response.Status {
-	case proto.StatusNameTaken:
-		prettyPrint("err", fmt.Sprintf("subdomain '%s' is already in use", c.name))
-		return ErrNameTaken
-	case proto.StatusUnsupportedProto:
-		prettyPrint("err", fmt.Sprintf("protocol '%v' is not supported", c.proto))
-		return ErrUnsupportedProto
-	case proto.StatusOK:
-	default:
-		prettyPrint("err", fmt.Sprintf("unexpected response status: %v", response.Status))
-		return fmt.Errorf("unexpected response status: %v", response.Status)
-	}
-
-	endpoint := response.Domain
-
-	switch c.proto {
-	case proto.ProtoHTTP:
-		endpoint = fmt.Sprintf("https://%s", endpoint)
-	case proto.ProtoTCP:
-		endpoint = fmt.Sprintf("%s:%d", endpoint, response.Port)
-	case proto.ProtoTLS:
-		endpoint = fmt.Sprintf("%s:%d", endpoint, response.Port)
-	}
-
-	expiresAt := time.Now().Add(time.Duration(response.TTLHours))
-	prettyPrint(
-		"inf",
-		"tunnel created!",
-		endpoint,
-		fmt.Sprintf("tunnel expires at %s", expiresAt.Format("Jan 2, 2006 3:04 PM")),
-	)
-
-	return c.handleMessages(ctx, session)
-}
-
 // Run initiates a tunnel handshake with the Wormhole server and manages incoming connections.
 func (c *Client) Run(ctx context.Context) error {
 	host, _, err := net.SplitHostPort(c.addr)
@@ -241,6 +152,96 @@ func (c *Client) Run(ctx context.Context) error {
 	case proto.StatusUnsupportedProto:
 		prettyPrint("err", fmt.Sprintf("protocol '%v' is not supported", c.proto))
 		return nil
+	case proto.StatusOK:
+	default:
+		prettyPrint("err", fmt.Sprintf("unexpected response status: %v", response.Status))
+		return fmt.Errorf("unexpected response status: %v", response.Status)
+	}
+
+	endpoint := response.Domain
+
+	switch c.proto {
+	case proto.ProtoHTTP:
+		endpoint = fmt.Sprintf("https://%s", endpoint)
+	case proto.ProtoTCP:
+		endpoint = fmt.Sprintf("%s:%d", endpoint, response.Port)
+	case proto.ProtoTLS:
+		endpoint = fmt.Sprintf("%s:%d", endpoint, response.Port)
+	}
+
+	expiresAt := time.Now().Add(time.Duration(response.TTLHours))
+	prettyPrint(
+		"inf",
+		"tunnel created!",
+		endpoint,
+		fmt.Sprintf("tunnel expires at %s", expiresAt.Format("Jan 2, 2006 3:04 PM")),
+	)
+
+	return c.handleMessages(ctx, session)
+}
+
+// RunWithTCP is the same as Run, but dials without TLS, useful for testing.
+func (c *Client) RunWithTCP(ctx context.Context) error {
+	dialer := net.Dialer{}
+
+	conn, err := dialer.DialContext(ctx, "tcp", c.addr)
+	if err != nil {
+		return fmt.Errorf("failed to dial server: %w", err)
+	}
+	defer conn.Close()
+
+	yamuxConfig := yamux.DefaultConfig()
+	yamuxConfig.EnableKeepAlive = false
+
+	session, err := yamux.Client(conn, yamuxConfig)
+	if err != nil {
+		return fmt.Errorf("failed to create yamux client: %w", err)
+	}
+	defer session.Close()
+
+	stream, err := session.Open()
+	if err != nil {
+		return fmt.Errorf("failed to open yamux session: %w", err)
+	}
+	defer stream.Close()
+
+	responseHeader, err := c.sendRequest(ctx, stream)
+	if err != nil {
+		return err
+	}
+
+	switch responseHeader.Type {
+	case proto.TypeResponse:
+		// OK
+	case proto.TypeError:
+		buf := make([]byte, responseHeader.Length)
+		_, err = io.ReadFull(stream, buf)
+		if err != nil {
+			return fmt.Errorf("failed to read error payload: %w", err)
+		}
+		return fmt.Errorf("server error: %s", string(buf))
+	default:
+		return fmt.Errorf("unexpected header type: %v", responseHeader.Type)
+	}
+
+	buf := make([]byte, responseHeader.Length)
+	_, err = io.ReadFull(stream, buf)
+	if err != nil {
+		return fmt.Errorf("failed to read response payload: %w", err)
+	}
+
+	response, err := proto.DeserializeResponse(buf)
+	if err != nil {
+		return fmt.Errorf("failed to deserialize response: %w", err)
+	}
+
+	switch response.Status {
+	case proto.StatusNameTaken:
+		prettyPrint("err", fmt.Sprintf("subdomain '%s' is already in use", c.name))
+		return ErrNameTaken
+	case proto.StatusUnsupportedProto:
+		prettyPrint("err", fmt.Sprintf("protocol '%v' is not supported", c.proto))
+		return ErrUnsupportedProto
 	case proto.StatusOK:
 	default:
 		prettyPrint("err", fmt.Sprintf("unexpected response status: %v", response.Status))

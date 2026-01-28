@@ -33,11 +33,8 @@ type Tunnel struct {
 	domain string
 	// createdAt specifies the tunnel's creation time.
 	createdAt time.Time
-
-	// TCP-specific fields
-
-	// tcpPort is the allocated port for this tunnel.
-	tcpPort int
+	// port is the allocated port for this tunnel (443 if HTTP/TLS).
+	port int
 	// tcpListener is the tunnel's listener.
 	tcpListener net.Listener
 }

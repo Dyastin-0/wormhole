@@ -32,9 +32,13 @@ import (
 )
 
 // DefaultTunnelTTL is the default time-to-live for tunnels (1 hour).
-const DefaultTunnelTTL = 1 * time.Hour
-
-var ErrNameTaken = errors.New("name taken")
+const (
+	DefaultTunnelTTL = 1 * time.Hour
+	// Used for allocating TCP listeners for TCP tunnels.
+	MinPort      = 30000
+	MaxPort      = 31000
+	MaxRandRetry = 50
+)
 
 var (
 	headerBufferPool = sync.Pool{
@@ -68,6 +72,10 @@ type Server struct {
 	observer observer.Observer
 	// tracer is the OpenTelemetry tracer for distributed tracing.
 	tracer trace.Tracer
+	// allowTCPTunnels specifies if this server should accept plain TCP tunnel requests.
+	allowTCPTunnels bool
+	// portAllocator handles port allocation for plain TCP tunnels.
+	portAllocator *PortAllocator
 }
 
 // New creates a new Server with the specified configuration options.
@@ -79,6 +87,11 @@ func New(opts ...OptFunc) (*Server, error) {
 
 	for _, opt := range opts {
 		opt(s)
+	}
+
+	if s.allowTCPTunnels {
+		// Use defaults for now
+		s.portAllocator = NewPortAllocator(MinPort, MaxPort, MaxRandRetry)
 	}
 
 	if s.tunnels == nil {
@@ -95,7 +108,7 @@ func New(opts ...OptFunc) (*Server, error) {
 	}
 
 	if s.serveAddr == "" {
-		return nil, errors.New("serverAddr must be set")
+		return nil, errors.New("serveAddr must be set")
 	}
 
 	return s, nil
@@ -111,6 +124,9 @@ func (s *Server) Run(ctx context.Context) error {
 	)
 	defer span.End()
 
+	// NOTE: this listens for plain TCP connections
+	// and should be put behind a reverse proxy.
+	// all traffic for <domain> should be routed here.
 	ln, err := net.Listen("tcp", s.addr)
 	if err != nil {
 		span.RecordError(err)
@@ -135,6 +151,9 @@ func (s *Server) RunTunneler(ctx context.Context) error {
 	magic := certmagic.NewDefault()
 	magic.ManageAsync(ctx, []string{fmt.Sprintf("*.%s", s.domain)})
 
+	// NOTE: this listens for TLS Connections
+	// either expose the s.serveAddr, or put it behind a reverse proxy.
+	// all traffic for *.<domain> should be routed here.
 	ln, err := tls.Listen("tcp", s.serveAddr, magic.TLSConfig())
 	if err != nil {
 		span.RecordError(err)
@@ -170,41 +189,7 @@ func (s *Server) RunTunneler(ctx context.Context) error {
 	}
 }
 
-// RunObserver starts the metrics/health HTTP server.
-func (s *Server) RunObserver(ctx context.Context, addr string) error {
-	ctx, span := s.tracer.Start(ctx, "server.RunObserver",
-		trace.WithAttributes(attribute.String("addr", addr)),
-	)
-	defer span.End()
-
-	mux := http.NewServeMux()
-	mux.Handle("/metrics", promhttp.Handler())
-
-	observerServer := &http.Server{
-		Addr:    addr,
-		Handler: mux,
-	}
-
-	go func(ctx context.Context) {
-		<-ctx.Done()
-
-		// This may be adjusted based on how often observer scrapes metrics,
-		// because you could miss metrics when the server closes faster than
-		// how often observer (e.g., prometheus) scrape metrics.
-		time.Sleep(2 * time.Second)
-
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-
-		if err := observerServer.Shutdown(shutdownCtx); err != nil {
-			log.Err(err).Msg("observer shutdown")
-		}
-	}(ctx)
-
-	span.SetStatus(codes.Ok, "observer server started")
-	return observerServer.ListenAndServe()
-}
-
+// RunWithListener is Run but accepts a listener, useful for testing.
 func (s *Server) RunWithListener(ctx context.Context, ln net.Listener) error {
 	ctx, span := s.tracer.Start(ctx, "server.RunWithListener")
 	defer span.End()
@@ -212,6 +197,7 @@ func (s *Server) RunWithListener(ctx context.Context, ln net.Listener) error {
 	return s.handleConnections(ctx, ln)
 }
 
+// RunTunnelerWithListener is RunTunneler but accepts a listener, useful for testing.
 func (s *Server) RunTunnelerWithListener(ctx context.Context, ln net.Listener) error {
 	ctx, span := s.tracer.Start(ctx, "server.RunTunnelerWithListener")
 	defer span.End()
@@ -241,6 +227,41 @@ func (s *Server) RunTunnelerWithListener(ctx context.Context, ln net.Listener) e
 			go s.tunnel(ctx, conn)
 		}
 	}
+}
+
+// RunObserver starts the metrics/health HTTP server.
+func (s *Server) RunObserver(ctx context.Context, addr string) error {
+	ctx, span := s.tracer.Start(ctx, "server.RunObserver",
+		trace.WithAttributes(attribute.String("addr", addr)),
+	)
+	defer span.End()
+
+	mux := http.NewServeMux()
+	mux.Handle("/metrics", promhttp.Handler())
+
+	observerServer := &http.Server{
+		Addr:    addr,
+		Handler: mux,
+	}
+
+	go func(ctx context.Context) {
+		<-ctx.Done()
+
+		// This may be adjusted based on how often observer scrapes metrics,
+		// you could miss metrics when the server closes faster than
+		// how often observer (e.g., prometheus) scrape metrics.
+		time.Sleep(2 * time.Second)
+
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+
+		if err := observerServer.Shutdown(shutdownCtx); err != nil {
+			log.Err(err).Msg("observer shutdown")
+		}
+	}(ctx)
+
+	span.SetStatus(codes.Ok, "observer server started")
+	return observerServer.ListenAndServe()
 }
 
 // tunnel forwards an incoming connection to the appropriate client session based on the SNI.
@@ -603,7 +624,7 @@ func (s *Server) handleRequest(ctx context.Context, stream net.Conn, session *ya
 	isTCP := req.Proto == proto.ProtoTCP
 
 	if !isTCP && s.tunnels.Has(domain) {
-		err = ErrNameTaken
+		err = errors.New("name taken")
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "name already taken")
 
@@ -720,7 +741,7 @@ func (s *Server) handleRequest(ctx context.Context, stream net.Conn, session *ya
 	if isTCP {
 		span.SetAttributes(attribute.Bool("has_tcp_flag", true))
 
-		port, listener, errr := s.allocateListener()
+		port, listener, errr := s.portAllocator.AllocateListener()
 		if errr != nil {
 			span.RecordError(errr)
 			span.SetStatus(codes.Error, "failed to allocate port")
@@ -728,11 +749,14 @@ func (s *Server) handleRequest(ctx context.Context, stream net.Conn, session *ya
 			return errr
 		}
 
-		tunnel.tcpPort = port
+		tunnel.port = port
 		tunnel.tcpListener = listener
 
 		span.SetAttributes(attribute.Int("tcp_port", port))
 
+		// With plain TCP we don't necessarily need to mark domain as used
+		// since we allocate a dedicated port for it, any subdomain will
+		// resolve to the same IP anyway.
 		go s.handleTCPTunnel(ctx, tunnel)
 	} else {
 		s.tunnels.SetIfAbsent(domain, tunnel)
@@ -742,10 +766,13 @@ func (s *Server) handleRequest(ctx context.Context, stream net.Conn, session *ya
 	s.observer.RecordTunnelCreated(protoStr)
 
 	resp := proto.NewResponse(proto.StatusOK, uint64(tunnel.ttl), domain)
-	if isTCP && tunnel.tcpPort > 0 {
-		resp.Port = uint16(tunnel.tcpPort)
+	if isTCP && tunnel.port > 0 {
+		resp.Port = uint16(tunnel.port)
 	} else {
-		// set to standard TLS port
+		// set to standard TLS port,
+		// assuming s.serveAddr is behind a reverse proxy.
+		// this does not affect any logical feature,
+		// and is only displayed on the client side.
 		resp.Port = uint16(443)
 	}
 
@@ -754,9 +781,10 @@ func (s *Server) handleRequest(ctx context.Context, stream net.Conn, session *ya
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "failed to send response")
 		err = fmt.Errorf("failed to send response: %w", err)
-		s.tunnels.Remove(domain)
-		if tunnel.tcpListener != nil {
+		if isTCP && tunnel.tcpListener != nil {
 			tunnel.tcpListener.Close()
+		} else {
+			s.tunnels.Remove(domain)
 		}
 		s.observer.RecordTunnelClosed(protoStr, "error", 0)
 		return err
@@ -796,30 +824,19 @@ func (s *Server) handleRequest(ctx context.Context, stream net.Conn, session *ya
 	return nil
 }
 
-// allocateListener allocates a TCP listener with a random port for a plain TCP tunnel.
-func (s *Server) allocateListener() (int, net.Listener, error) {
-	listener, err := net.Listen("tcp", ":0")
-	if err != nil {
-		return 0, nil, fmt.Errorf("failed to allocate port: %w", err)
-	}
-
-	addr := listener.Addr().(*net.TCPAddr)
-	return addr.Port, listener, nil
-}
-
 // handleTCPTunnel listens for connections from the allocated listener.
 func (s *Server) handleTCPTunnel(ctx context.Context, tunnel *Tunnel) {
 	ctx, span := s.tracer.Start(ctx, "server.handleTCPTunnel",
 		trace.WithAttributes(
 			attribute.String("domain", tunnel.domain),
-			attribute.Int("tcp_port", tunnel.tcpPort),
+			attribute.Int("tcp_port", tunnel.port),
 		),
 	)
 	defer span.End()
 
 	log.Info().
 		Str("domain", tunnel.domain).
-		Int("port", tunnel.tcpPort).
+		Int("port", tunnel.port).
 		Msg("TCP tunnel listening")
 
 	for {
