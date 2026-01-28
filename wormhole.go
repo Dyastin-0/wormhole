@@ -232,6 +232,10 @@ func startCommand() *cli.Command {
 				Usage: "set the otel collector address, used when using otel observer",
 				Value: ":4327",
 			},
+			&cli.BoolFlag{
+				Name:  "allow-tcp",
+				Usage: "allow clients to create plain TCP tunnels",
+			},
 		},
 		Action: start,
 	}
