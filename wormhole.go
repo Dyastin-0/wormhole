@@ -50,6 +50,7 @@ type Config struct {
 	WithTracer       bool   `yaml:"withTracer"`
 	TempoAddress     string `yaml:"tempoAddress"`
 	CollectorAddress string `yaml:"collectorAddress"`
+	AllowTCP         bool   `yaml:"allowTCP"`
 }
 
 func loadConfig(path string) (*Config, error) {
@@ -336,11 +337,20 @@ func start(ctx context.Context, cmd *cli.Command) error {
 		return err
 	}
 
+	allowTCP, err := getValue(cfg.AllowTCP, os.Getenv("ALLOW_TCP"), cmd.Bool("allow-tcp"), cmd.Count("allow-tcp"), "allow-tcp")
+	if err != nil {
+		return err
+	}
+
 	serverOpts := []wserver.OptFunc{
 		wserver.WithAddr(addr),
 		wserver.WithServeAddr(serveAddr),
 		wserver.WithDomain(domain),
 		wserver.WithAPIKeyIssuer(apiKeyIssuer),
+	}
+
+	if allowTCP {
+		serverOpts = append(serverOpts, wserver.WithAllowTCP)
 	}
 
 	if withObserver {

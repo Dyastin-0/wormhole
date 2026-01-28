@@ -43,6 +43,6 @@ func WithTracer(tracer trace.Tracer) OptFunc {
 	}
 }
 
-func WithAllowTCPTunnels(s *Server) {
+func WithAllowTCP(s *Server) {
 	s.allowTCPTunnels = true
 }

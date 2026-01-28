@@ -10,3 +10,4 @@ withPromExporter: true
 observerAddress: ":3002"
 tempoAddress: ":3003"
 collectorAddress: ":3004"
+allowTCP: true

@@ -72,8 +72,8 @@ type Server struct {
 	observer observer.Observer
 	// tracer is the OpenTelemetry tracer for distributed tracing.
 	tracer trace.Tracer
-	// allowTCPTunnels specifies if this server should accept plain TCP tunnel requests.
-	allowTCPTunnels bool
+	// allowTCP specifies if this server should accept plain TCP tunnel requests.
+	allowTCP bool
 	// portAllocator handles port allocation for plain TCP tunnels.
 	portAllocator *PortAllocator
 }
@@ -89,7 +89,7 @@ func New(opts ...OptFunc) (*Server, error) {
 		opt(s)
 	}
 
-	if s.allowTCPTunnels {
+	if s.allowTCP {
 		// Use defaults for now
 		s.portAllocator = NewPortAllocator(MinPort, MaxPort, MaxRandRetry)
 	}
