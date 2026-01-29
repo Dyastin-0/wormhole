@@ -54,6 +54,8 @@ type Client struct {
 	authToken string
 	// allowHTTP specifies if this tunnel allows HTTP requests, ignored if tunnel protocol is HTTP.
 	allowHTTP bool
+	// allowTLSPassthrough specifies if this tunnel want to terminate TLS at target address.
+	allowTLSPassthrough bool
 	// metricsch i used to send http logs and metrics to bubbletea application.
 	metricsch chan<- any
 	metricsmu sync.Mutex
@@ -300,6 +302,10 @@ func (c *Client) sendRequest(ctx context.Context, stream net.Conn) (*proto.Heade
 		header.SetFlag(proto.FlagHTTPLog)
 	}
 
+	if c.allowTLSPassthrough {
+		header.SetFlag(proto.FlagTLSPassthrough)
+	}
+
 	serializedHeader, err := proto.SerializeHeader(header)
 	if err != nil {
 		return nil, fmt.Errorf("failed to serialize header: %w", err)
@@ -400,8 +406,8 @@ func (c *Client) handleMessages(ctx context.Context, session *yamux.Session) err
 			c.metricsmu.Lock()
 			if c.metricsch == nil {
 				program, metricsch := StartMetricsDisplay(c.domain, c.metrics, c.httpLog)
-				defer close(metricsch)
 				go func() {
+					defer close(metricsch)
 					if _, err := program.Run(); err != nil {
 						log.Error().Err(err).Msg("metrics display error")
 					}
@@ -415,8 +421,8 @@ func (c *Client) handleMessages(ctx context.Context, session *yamux.Session) err
 			c.metricsmu.Lock()
 			if c.metricsch == nil {
 				program, metricsch := StartMetricsDisplay(c.domain, c.metrics, c.httpLog)
-				defer close(metricsch)
 				go func() {
+					defer close(metricsch)
 					if _, err := program.Run(); err != nil {
 						log.Error().Err(err).Msg("metrics display error")
 					}

@@ -90,3 +90,7 @@ func WithHTTPLog(httpLog bool) OptFunc {
 		c.httpLog = httpLog
 	}
 }
+
+func WithAllowTLSPassthrough(c *Client) {
+	c.allowTLSPassthrough = true
+}

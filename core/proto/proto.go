@@ -46,8 +46,10 @@ const (
 	FlagMetrics = 0x01
 	// FlagAllowHTTP indicates that the client explicitly allows HTTP requests regardless of protocol.
 	FlagAllowHTTP = 0x02
-	// FlagHTTPLog indicates the the client wants to receive HTTP request logs.
+	// FlagHTTPLog indicates that the client wants to receive HTTP request logs.
 	FlagHTTPLog = 0x04
+	// FlagTLSPassthrough indicates that the client wants to terminate TLS on its end.
+	FlagTLSPassthrough = 0x08
 )
 
 // Constants definition for protocol limits and sizes.
@@ -62,7 +64,7 @@ const (
 	RequestSize = 30
 	// ResponseSize is the fixed size of a response's non-string fields in bytes (15 bytes).
 	ResponseSize uint8 = 15
-	// MetricsSize is the fixed size of a metrics' fields in bytes (36).
+	// MetricsSize is the fixed size of a metrics' fields in bytes (40).
 	MetricsSize uint8 = 40
 	// HTTPLogSize is the fixed size of an HTTPLog's non-string fields in bytes (18 bytes).
 	HTTPLogSize uint8 = 18

@@ -551,6 +551,10 @@ func tcpCommand() *cli.Command {
 				Name:  "without-tls",
 				Usage: "encrypt TCP tunnel with TLS",
 			},
+			&cli.BoolFlag{
+				Name:  "tls-passthrough",
+				Usage: "allows TLS passthrough (target address must terminate TLS)",
+			},
 		),
 		Action: tcp,
 	}
@@ -566,6 +570,7 @@ func tcp(ctx context.Context, cmd *cli.Command) error {
 	httpLog := cmd.Bool("http-log")
 	allowHTTP := cmd.Bool("allow-http")
 	withoutTLS := cmd.Bool("without-tls")
+	allowTLSPassthrough := cmd.Bool("tls-passthrough")
 
 	authType := cmd.String("auth-type")
 	authUser := cmd.String("auth-user")
@@ -581,6 +586,10 @@ func tcp(ctx context.Context, cmd *cli.Command) error {
 		wclient.WithAPIKey(apiKey),
 		wclient.WithTTL(ttl),
 		wclient.WithAllowHTTP(allowHTTP),
+	}
+
+	if allowTLSPassthrough {
+		opts = append(opts, wclient.WithAllowTLSPassthrough)
 	}
 
 	if withoutTLS {

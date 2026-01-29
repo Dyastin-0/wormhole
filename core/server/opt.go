@@ -1,6 +1,8 @@
 package server
 
 import (
+	"crypto/tls"
+
 	"github.com/Dyastin-0/wormhole/observer"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -45,4 +47,10 @@ func WithTracer(tracer trace.Tracer) OptFunc {
 
 func WithAllowTCP(s *Server) {
 	s.allowTCP = true
+}
+
+func WithTLSConfig(config *tls.Config) OptFunc {
+	return func(s *Server) {
+		s.tlsConfig = config
+	}
 }

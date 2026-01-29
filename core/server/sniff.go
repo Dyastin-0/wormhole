@@ -1,45 +1,30 @@
 package server
 
 import (
-	"bufio"
+	"io"
 	"net"
 	"strings"
 	"time"
 )
 
 const (
-	ProtoHTTP  = "http"
-	ProtoTCP   = "tcp"
-	ProtoHTTPS = "https"
-	ProtoTLS   = "tls"
+	ProtoHTTP = "http"
+	ProtoTCP  = "tcp"
+	ProtoTLS  = "tls"
 )
 
-type ConnWithReader struct {
-	net.Conn
-	r *bufio.Reader
-}
-
-func (c *ConnWithReader) Read(p []byte) (int, error) {
-	return c.r.Read(p)
-}
-
-// Write writes to the underlying connection (bypassing the reader)
-func (c *ConnWithReader) Write(p []byte) (int, error) {
-	return c.Conn.Write(p)
-}
-
-// GetReader returns the underlying buffered reader
-func (c *ConnWithReader) GetReader() *bufio.Reader {
-	return c.r
-}
-
-type Sniff struct {
+type Sniffer struct {
 	peekN int
 }
 
+func Conn(conn net.Conn) (string, net.Conn) {
+	sniffer := &Sniffer{peekN: 64}
+	return sniffer.Conn(conn)
+}
+
 // Conn determines the underlying protocol of a network connection.
-func (s *Sniff) Conn(conn net.Conn) (string, *bufio.Reader) {
-	br := bufio.NewReader(conn)
+func (s *Sniffer) Conn(conn net.Conn) (string, net.Conn) {
+	teeConn, teeReader := NewTeeConn(conn)
 
 	_ = conn.SetReadDeadline(time.Now().Add(1 * time.Second))
 	defer conn.SetReadDeadline(time.Time{})
@@ -49,50 +34,47 @@ func (s *Sniff) Conn(conn net.Conn) (string, *bufio.Reader) {
 		initialPeekSize = 64
 	}
 
-	peekedBytes, err := br.Peek(initialPeekSize)
+	peekedBytes := make([]byte, initialPeekSize)
+	n, err := io.ReadFull(teeReader, peekedBytes)
 
-	if err == nil && len(peekedBytes) >= initialPeekSize {
+	if err == nil && n >= initialPeekSize {
 		if s.TLS(peekedBytes) {
-			return ProtoTLS, br
+			return ProtoTLS, teeConn
 		}
 		if s.HTTP(peekedBytes) {
-			return ProtoHTTP, br
+			return ProtoHTTP, teeConn
 		}
 
-		if br.Buffered() > initialPeekSize {
-			maxPeek := min(br.Buffered(), 512)
-			peekedBytes, _ = br.Peek(maxPeek)
-			if s.HTTP(peekedBytes) {
-				return ProtoHTTP, br
+		// Try reading more if needed
+		morePeek := make([]byte, 512-initialPeekSize)
+		n2, _ := teeReader.Read(morePeek)
+		if n2 > 0 {
+			combined := append(peekedBytes, morePeek[:n2]...)
+			if s.HTTP(combined) {
+				return ProtoHTTP, teeConn
 			}
 		}
-	} else if len(peekedBytes) > 0 {
+	} else if n > 0 {
+		peekedBytes = peekedBytes[:n]
 		if s.TLS(peekedBytes) {
-			return ProtoTLS, br
+			return ProtoTLS, teeConn
 		}
 		if s.HTTP(peekedBytes) {
-			return ProtoHTTP, br
+			return ProtoHTTP, teeConn
 		}
 	}
 
-	return ProtoTCP, br
+	return ProtoTCP, teeConn
 }
 
 // TLS determines if peekedBytes is a tls record.
-func (s *Sniff) TLS(peekedBytes []byte) bool {
+func (s *Sniffer) TLS(peekedBytes []byte) bool {
 	if len(peekedBytes) < 5 {
 		return false
 	}
-
-	// 0x16 = record type 'handshake'
 	if peekedBytes[0] != 0x16 {
 		return false
 	}
-	// Valid record layer versions:
-	// 0x03 0x00 = SSL 3.0
-	// 0x03 0x01 = TLS 1.0+
-	// 0x03 0x02 = TLS 1.1
-	// 0x03 0x03 = TLS 1.2
 	if peekedBytes[1] != 0x03 {
 		return false
 	}
@@ -107,20 +89,16 @@ func (s *Sniff) TLS(peekedBytes []byte) bool {
 }
 
 // HTTP determines if peekedBytes contains an http request.
-func (s *Sniff) HTTP(peekedBytes []byte) bool {
-	// GET / HTTP/1.1 -14 bytes without \r\n
+func (s *Sniffer) HTTP(peekedBytes []byte) bool {
 	if len(peekedBytes) < 14 {
 		return false
 	}
-
 	dataStr := string(peekedBytes)
 	dataUpper := strings.ToUpper(dataStr)
-
 	httpMethods := []string{
 		"GET ", "POST ", "PUT ", "DELETE ", "HEAD ",
 		"OPTIONS ", "PATCH ", "TRACE ", "CONNECT ",
 	}
-
 	for _, method := range httpMethods {
 		if strings.HasPrefix(dataUpper, method) {
 			if strings.Contains(dataUpper, "HTTP/1.") || strings.Contains(dataUpper, "HTTP/2") {
@@ -129,10 +107,5 @@ func (s *Sniff) HTTP(peekedBytes []byte) bool {
 			return false
 		}
 	}
-
-	if strings.HasPrefix(dataStr, "PRI * HTTP/2.0") {
-		return true
-	}
-
-	return false
+	return strings.HasPrefix(dataStr, "PRI * HTTP/2.0")
 }

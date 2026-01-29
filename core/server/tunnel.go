@@ -27,6 +27,8 @@ type Tunnel struct {
 	auth auth.Authenticator
 	// allowHTTP specifies if this tunnel allows HTTP requests, ignored if tunnel protocol is HTTP.
 	allowHTTP bool
+	// allowTLSPassthrough
+	allowTLSPassthrough bool
 	// httpLogch is used to send HTTP logs to the client.
 	httpLogch chan *proto.HTTPLog
 	// domain specifies the tunnel's subdomain.

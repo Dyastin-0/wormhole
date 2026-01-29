@@ -20,7 +20,6 @@ import (
 	"github.com/Dyastin-0/wormhole/core/proto"
 	"github.com/Dyastin-0/wormhole/metrics"
 	"github.com/Dyastin-0/wormhole/observer"
-	"github.com/caddyserver/certmagic"
 	"github.com/hashicorp/yamux"
 	cmap "github.com/orcaman/concurrent-map/v2"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -76,6 +75,8 @@ type Server struct {
 	allowTCP bool
 	// portAllocator handles port allocation for plain TCP tunnels.
 	portAllocator *PortAllocator
+	// tlsConfig is used to terminate tunnel connections.
+	tlsConfig *tls.Config
 }
 
 // New creates a new Server with the specified configuration options.
@@ -148,13 +149,10 @@ func (s *Server) RunTunneler(ctx context.Context) error {
 	)
 	defer span.End()
 
-	magic := certmagic.NewDefault()
-	magic.ManageAsync(ctx, []string{fmt.Sprintf("*.%s", s.domain)})
-
-	// NOTE: this listens for TLS Connections
+	// NOTE: this listens for TLS connections
 	// either expose the s.serveAddr, or put it behind a reverse proxy.
 	// all traffic for *.<domain> should be routed here.
-	ln, err := tls.Listen("tcp", s.serveAddr, magic.TLSConfig())
+	ln, err := net.Listen("tcp", s.serveAddr)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "failed to listen")
@@ -197,38 +195,6 @@ func (s *Server) RunWithListener(ctx context.Context, ln net.Listener) error {
 	return s.handleConnections(ctx, ln)
 }
 
-// RunTunnelerWithListener is RunTunneler but accepts a listener, useful for testing.
-func (s *Server) RunTunnelerWithListener(ctx context.Context, ln net.Listener) error {
-	ctx, span := s.tracer.Start(ctx, "server.RunTunnelerWithListener")
-	defer span.End()
-
-	go func() {
-		<-ctx.Done()
-		ln.Close()
-	}()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-			conn, err := ln.Accept()
-			if err != nil {
-				if ctx.Err() != nil {
-					return ctx.Err()
-				}
-				if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
-					return err
-				}
-				log.Error().Err(err).Msg("failed to accept connection")
-				continue
-			}
-
-			go s.tunnel(ctx, conn)
-		}
-	}
-}
-
 // RunObserver starts the metrics/health HTTP server.
 func (s *Server) RunObserver(ctx context.Context, addr string) error {
 	ctx, span := s.tracer.Start(ctx, "server.RunObserver",
@@ -266,40 +232,60 @@ func (s *Server) RunObserver(ctx context.Context, addr string) error {
 
 // tunnel forwards an incoming connection to the appropriate client session based on the SNI.
 func (s *Server) tunnel(ctx context.Context, conn net.Conn) error {
+	defer conn.Close()
+
 	ctx, span := s.tracer.Start(ctx, "server.tunnel",
 		trace.WithSpanKind(trace.SpanKindServer),
 	)
 	defer span.End()
 
 	start := time.Now()
-	sni, tlsConn := getSNI(conn)
+
+	conn, err := TLS(conn)
+	if err != nil {
+		span.SetStatus(codes.Error, "failed to read client hello message")
+		return err
+	}
+
+	sni := conn.(*TLSConn).Host()
 	if sni == "" {
-		err := fmt.Errorf("missing sni")
+		err = fmt.Errorf("missing sni")
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "missing sni")
-		conn.Close()
 		return err
 	}
 	span.SetAttributes(attribute.String("sni", sni))
 
-	conn = tlsConn
-	defer conn.Close()
-
-	sniffer := &Sniff{peekN: 64}
-	detectedProtocol, br := sniffer.Conn(tlsConn)
-	span.SetAttributes(attribute.String("detected_protocol", string(detectedProtocol)))
-
 	tunnel, ok := s.tunnels.Get(sni)
 	if !ok {
-		err := fmt.Errorf("no tunnel for %s", sni)
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "tunnel not found")
+
+		// if tunnel is not found, we immediately terminate it
+		// and see if we can send an HTTP response.
+		conn = tls.Server(conn, s.tlsConfig)
+
+		var detectedProtocol string
+		detectedProtocol, conn = Conn(conn)
 
 		if detectedProtocol == ProtoHTTP {
 			s.writeNoTunnel(conn, sni)
 		}
-		return err
+
+		return nil
 	}
+
+	allowTLSPassthrough := tunnel.allowTLSPassthrough
+	span.SetAttributes(attribute.Bool("allow_tls_passthrough", allowTLSPassthrough))
+
+	if !allowTLSPassthrough {
+		// If TLS passthrough is disabled, we terminate TLS here
+		// using our own TLS config.
+		conn = tls.Server(conn, s.tlsConfig)
+	}
+
+	var detectedProtocol string
+	detectedProtocol, conn = Conn(conn)
 
 	protoStr := proto.ProtoString(tunnel.proto)
 	span.SetAttributes(
@@ -316,23 +302,24 @@ func (s *Server) tunnel(ctx context.Context, conn net.Conn) error {
 
 	allowHTTP := tunnel.allowHTTP || tunnel.proto == proto.ProtoHTTP
 	isHTTP := detectedProtocol == ProtoHTTP
-
 	span.SetAttributes(attribute.Bool("is_http", isHTTP))
 
-	if isHTTP && !allowHTTP {
-		err := fmt.Errorf("http not allowed on tcp tunnel")
+	if !allowTLSPassthrough && isHTTP && !allowHTTP {
+		err = fmt.Errorf("http not allowed on tcp tunnel")
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "http forbidden on tcp tunnel")
 		s.writeForbidden(conn, sni)
 		return err
 	}
 
-	if isHTTP && tunnel.auth != nil {
-		req, err := http.ReadRequest(br)
+	if !allowTLSPassthrough && isHTTP && tunnel.auth != nil {
+		var req *http.Request
+		br := bufio.NewReader(conn)
+		req, err = http.ReadRequest(br)
 		if err != nil {
 			span.RecordError(err)
 			span.SetStatus(codes.Error, "failed to read http request")
-			s.sendUnauthorized(tlsConn, tunnel.auth)
+			s.sendUnauthorized(conn, tunnel.auth)
 			if tunnel.httpLogch != nil {
 				tunnel.logHTTPRequest(start, req.Method, req.URL.Path, http.StatusUnauthorized)
 			}
@@ -349,7 +336,7 @@ func (s *Server) tunnel(ctx context.Context, conn net.Conn) error {
 			span.RecordError(err)
 			span.SetStatus(codes.Error, "authentication failed")
 			span.SetAttributes(attribute.Int("http.status_code", http.StatusUnauthorized))
-			s.sendUnauthorized(tlsConn, tunnel.auth)
+			s.sendUnauthorized(conn, tunnel.auth)
 			if tunnel.httpLogch != nil {
 				tunnel.logHTTPRequest(start, req.Method, req.URL.Path, http.StatusUnauthorized)
 			}
@@ -365,13 +352,8 @@ func (s *Server) tunnel(ctx context.Context, conn net.Conn) error {
 			return fmt.Errorf("failed to serialize request: %w", err)
 		}
 
-		wrapped := &ConnWithReader{
-			Conn: conn,
-			r:    bufio.NewReader(io.MultiReader(&fullRequest, br)),
-		}
-
 		if tunnel.httpLogch != nil {
-			err = tunnel.ProxyWithInspect(ctx, wrapped)
+			err = tunnel.ProxyWithInspect(ctx, conn)
 			if err != nil {
 				span.RecordError(err)
 				span.SetStatus(codes.Error, "proxy with inspect failed")
@@ -381,6 +363,10 @@ func (s *Server) tunnel(ctx context.Context, conn net.Conn) error {
 			return err
 		}
 
+		wrapped := &BuffConn{
+			conn,
+			br,
+		}
 		err = tunnel.Proxy(ctx, wrapped)
 		if err != nil {
 			span.RecordError(err)
@@ -391,12 +377,8 @@ func (s *Server) tunnel(ctx context.Context, conn net.Conn) error {
 		return err
 	}
 
-	if isHTTP && tunnel.httpLogch != nil {
-		wrapped := &ConnWithReader{
-			Conn: conn,
-			r:    br,
-		}
-		err := tunnel.ProxyWithInspect(ctx, wrapped)
+	if !allowTLSPassthrough && isHTTP && tunnel.httpLogch != nil {
+		err = tunnel.ProxyWithInspect(ctx, conn)
 		if err != nil {
 			span.RecordError(err)
 			span.SetStatus(codes.Error, "proxy with inspect failed")
@@ -406,17 +388,14 @@ func (s *Server) tunnel(ctx context.Context, conn net.Conn) error {
 		return err
 	}
 
-	wrapped := &ConnWithReader{
-		Conn: conn,
-		r:    br,
-	}
-	err := tunnel.Proxy(ctx, wrapped)
+	err = tunnel.Proxy(ctx, conn)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "proxy failed")
 	} else {
 		span.SetStatus(codes.Ok, "completed")
 	}
+
 	return err
 }
 
@@ -516,18 +495,19 @@ func (s *Server) handleConnections(ctx context.Context, ln net.Listener) error {
 
 // handleMessages processes messages from a client connection using a yamux session.
 func (s *Server) handleMessages(ctx context.Context, conn net.Conn) error {
+	defer conn.Close()
+
 	ctx, span := s.tracer.Start(ctx, "server.handleMessages",
 		trace.WithSpanKind(trace.SpanKindServer),
 	)
 	defer span.End()
 
-	sniffer := &Sniff{peekN: 64}
-	detectedProtocol, br := sniffer.Conn(conn)
+	var detectedProtocol string
+	detectedProtocol, conn = Conn(conn)
 	span.SetAttributes(attribute.String("detected_protocol", string(detectedProtocol)))
 
 	if detectedProtocol == ProtoHTTP {
 		s.writeHomePage(conn)
-		conn.Close()
 		span.SetStatus(codes.Ok, "served homepage")
 		return nil
 	}
@@ -535,12 +515,7 @@ func (s *Server) handleMessages(ctx context.Context, conn net.Conn) error {
 	yamuxConfig := yamux.DefaultConfig()
 	yamuxConfig.EnableKeepAlive = false
 
-	wrappedConn := &ConnWithReader{
-		conn,
-		br,
-	}
-
-	session, err := yamux.Server(wrappedConn, yamuxConfig)
+	session, err := yamux.Server(conn, yamuxConfig)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "failed to create yamux server")
@@ -694,18 +669,18 @@ func (s *Server) handleRequest(ctx context.Context, stream net.Conn, session *ya
 	}
 
 	tunnel := &Tunnel{
-		session:   session,
-		proto:     req.Proto,
-		ttl:       ttl,
-		auth:      authenticator,
-		domain:    domain,
-		createdAt: time.Now(),
+		session:             session,
+		proto:               req.Proto,
+		ttl:                 ttl,
+		auth:                authenticator,
+		domain:              domain,
+		createdAt:           time.Now(),
+		allowHTTP:           header.HasFlag(proto.FlagAllowHTTP),
+		allowTLSPassthrough: header.HasFlag(proto.FlagTLSPassthrough),
 	}
 
-	if header.HasFlag(proto.FlagAllowHTTP) {
-		tunnel.allowHTTP = true
-		span.SetAttributes(attribute.Bool("allow_http", true))
-	}
+	span.SetAttributes(attribute.Bool("allow_http", tunnel.allowHTTP))
+	span.SetAttributes(attribute.Bool("tls_passthrough", tunnel.allowTLSPassthrough))
 
 	if header.HasFlag(proto.FlagHTTPLog) {
 		tunnel.httpLogch = make(chan *proto.HTTPLog, 100)
@@ -1084,21 +1059,4 @@ func (s *Server) handlePingStream(ctx context.Context, tunnel *Tunnel) error {
 			span.SetAttributes(attribute.Int64("rtt_microseconds", rtt.Microseconds()))
 		}
 	}
-}
-
-// getSNI extracts the Server Name Indication (SNI) from a TLS connection.
-func getSNI(conn net.Conn) (string, *tls.Conn) {
-	tlsConn, ok := conn.(*tls.Conn)
-	if !ok {
-		return "", nil
-	}
-
-	if err := tlsConn.Handshake(); err != nil {
-		state := tlsConn.ConnectionState()
-		return state.ServerName, tlsConn
-	}
-
-	state := tlsConn.ConnectionState()
-
-	return state.ServerName, tlsConn
 }
