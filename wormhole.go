@@ -347,12 +347,18 @@ func start(ctx context.Context, cmd *cli.Command) error {
 		return err
 	}
 
+	magic := certmagic.NewDefault()
+	err = magic.ManageAsync(ctx, []string{domain, fmt.Sprintf("*.%s", domain)})
+	if err != nil {
+		return err
+	}
+
 	serverOpts := []wserver.OptFunc{
 		wserver.WithAddr(addr),
 		wserver.WithServeAddr(serveAddr),
 		wserver.WithDomain(domain),
 		wserver.WithAPIKeyIssuer(apiKeyIssuer),
-		wserver.WithTLSConfig(certmagic.Default.TLSConfig()),
+		wserver.WithTLSConfig(magic.TLSConfig()),
 	}
 
 	if allowTCP {
