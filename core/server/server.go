@@ -5,7 +5,6 @@ package server
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"crypto/tls"
 	"errors"
@@ -187,14 +186,6 @@ func (s *Server) RunTunneler(ctx context.Context) error {
 	}
 }
 
-// RunWithListener is Run but accepts a listener, useful for testing.
-func (s *Server) RunWithListener(ctx context.Context, ln net.Listener) error {
-	ctx, span := s.tracer.Start(ctx, "server.RunWithListener")
-	defer span.End()
-
-	return s.handleConnections(ctx, ln)
-}
-
 // RunObserver starts the metrics/health HTTP server.
 func (s *Server) RunObserver(ctx context.Context, addr string) error {
 	ctx, span := s.tracer.Start(ctx, "server.RunObserver",
@@ -315,6 +306,7 @@ func (s *Server) tunnel(ctx context.Context, conn net.Conn) error {
 	if !allowTLSPassthrough && isHTTP && tunnel.auth != nil {
 		var req *http.Request
 		br := bufio.NewReader(conn)
+
 		req, err = http.ReadRequest(br)
 		if err != nil {
 			span.RecordError(err)
@@ -325,6 +317,7 @@ func (s *Server) tunnel(ctx context.Context, conn net.Conn) error {
 			}
 			return fmt.Errorf("failed to read http request: %w", err)
 		}
+		defer req.Body.Close()
 
 		span.SetAttributes(
 			attribute.String("http.method", req.Method),
@@ -345,13 +338,6 @@ func (s *Server) tunnel(ctx context.Context, conn net.Conn) error {
 
 		span.SetAttributes(attribute.Bool("authenticated", true))
 
-		var fullRequest bytes.Buffer
-		if err = req.Write(&fullRequest); err != nil {
-			span.RecordError(err)
-			span.SetStatus(codes.Error, "failed to serialize request")
-			return fmt.Errorf("failed to serialize request: %w", err)
-		}
-
 		if tunnel.httpLogch != nil {
 			err = tunnel.ProxyWithInspect(ctx, conn)
 			if err != nil {
@@ -363,11 +349,9 @@ func (s *Server) tunnel(ctx context.Context, conn net.Conn) error {
 			return err
 		}
 
-		wrapped := &BuffConn{
-			conn,
-			br,
-		}
-		err = tunnel.Proxy(ctx, wrapped)
+		conn = &BuffConn{conn, br}
+
+		err = tunnel.Proxy(ctx, conn)
 		if err != nil {
 			span.RecordError(err)
 			span.SetStatus(codes.Error, "proxy failed")

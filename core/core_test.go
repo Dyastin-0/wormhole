@@ -9,7 +9,6 @@ import (
 	"crypto/x509/pkix"
 	"fmt"
 	"math/big"
-	"net"
 	"net/http"
 	"testing"
 	"time"
@@ -165,28 +164,24 @@ func TestRequestResponse(t *testing.T) {
 
 func TestRequestResponseNameTaken(t *testing.T) {
 	srv, err := server.New(
-		server.WithAddr("localhost:0"),
+		server.WithAddr("localhost:35000"),
 		server.WithServeAddr("localhost:0"),
 		server.WithDomain("app.com"),
 	)
 	require.NoError(t, err)
-
-	controlListener, err := net.Listen("tcp", "localhost:0")
-	require.NoError(t, err)
-	defer controlListener.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	sErrch := make(chan error, 2)
 	go func() {
-		sErrch <- srv.RunWithListener(ctx, controlListener)
+		sErrch <- srv.Run(ctx)
 	}()
 
 	time.Sleep(100 * time.Millisecond)
 
 	c1, err := client.New(
-		client.WithAddr(controlListener.Addr().String()),
+		client.WithAddr(":35000"),
 		client.WithName("testapp"),
 		client.WithProto(proto.ProtoHTTP),
 		client.WithTargetAddr("localhost:9090"),
@@ -201,7 +196,7 @@ func TestRequestResponseNameTaken(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 
 	c2, err := client.New(
-		client.WithAddr(controlListener.Addr().String()),
+		client.WithAddr(":35000"),
 		client.WithName("testapp"),
 		client.WithProto(proto.ProtoHTTP),
 		client.WithTargetAddr("localhost:9090"),
