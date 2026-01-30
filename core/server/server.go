@@ -275,6 +275,11 @@ func (s *Server) tunnel(ctx context.Context, conn net.Conn) error {
 		return nil
 	}
 
+	if tunnel.metrics != nil {
+		tunnel.metrics.IncrementConnections()
+		defer tunnel.metrics.DecrementActiveConnections()
+	}
+
 	allowTLSPassthrough := tunnel.allowTLSPassthrough
 	span.SetAttributes(attribute.Bool("allow_tls_passthrough", allowTLSPassthrough))
 

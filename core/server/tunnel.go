@@ -45,11 +45,6 @@ type Tunnel struct {
 func (t *Tunnel) Proxy(ctx context.Context, stream net.Conn) error {
 	defer stream.Close()
 
-	if t.metrics != nil {
-		t.metrics.IncrementConnections()
-		defer t.metrics.DecrementActiveConnections()
-	}
-
 	remoteStream, err := t.session.Open()
 	if err != nil {
 		return fmt.Errorf("failed to open yamux session: %w", err)
@@ -78,11 +73,6 @@ func (t *Tunnel) Proxy(ctx context.Context, stream net.Conn) error {
 // then inspects and logs the response.
 func (t *Tunnel) ProxyWithInspect(ctx context.Context, stream net.Conn) error {
 	defer stream.Close()
-
-	if t.metrics != nil {
-		t.metrics.IncrementConnections()
-		defer t.metrics.DecrementActiveConnections()
-	}
 
 	remoteStream, err := t.session.Open()
 	if err != nil {
