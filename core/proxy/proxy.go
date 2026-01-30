@@ -129,11 +129,6 @@ func StreamHTTPWithInspect(ctx context.Context, src, dst io.ReadWriter, onReques
 			resp.Body.Close()
 
 			onRequest(start, method, path, status)
-
-			if !shouldKeepAlive(req, resp) {
-				errch <- nil
-				return
-			}
 		}
 	}()
 
@@ -147,16 +142,6 @@ func StreamHTTPWithInspect(ctx context.Context, src, dst io.ReadWriter, onReques
 		closeConnection(dst)
 		return err
 	}
-}
-
-func shouldKeepAlive(req *http.Request, resp *http.Response) bool {
-	if req.Close || resp.Close {
-		return false
-	}
-	if resp.Header.Get("Connection") == "close" {
-		return false
-	}
-	return true
 }
 
 // closeConnection safely closes a connection if it implements io.Closer.
