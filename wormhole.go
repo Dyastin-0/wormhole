@@ -19,6 +19,7 @@ import (
 	"github.com/Dyastin-0/wormhole/observer"
 	"github.com/caddyserver/certmagic"
 	"github.com/common-nighthawk/go-figure"
+	"github.com/mholt/acmez/v3"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/urfave/cli/v3"
 	"go.opentelemetry.io/otel/sdk/metric"
@@ -353,12 +354,15 @@ func start(ctx context.Context, cmd *cli.Command) error {
 		return err
 	}
 
+	tlsConfig := magic.TLSConfig()
+	tlsConfig.NextProtos = []string{"http/1.1", acmez.ACMETLS1Protocol}
+
 	serverOpts := []wserver.OptFunc{
 		wserver.WithAddr(addr),
 		wserver.WithServeAddr(serveAddr),
 		wserver.WithDomain(domain),
 		wserver.WithAPIKeyIssuer(apiKeyIssuer),
-		wserver.WithTLSConfig(magic.TLSConfig()),
+		wserver.WithTLSConfig(tlsConfig),
 	}
 
 	if allowTCP {
