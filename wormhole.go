@@ -17,6 +17,7 @@ import (
 	"github.com/Dyastin-0/wormhole/core/proto"
 	wserver "github.com/Dyastin-0/wormhole/core/server"
 	"github.com/Dyastin-0/wormhole/observer"
+	"github.com/caddyserver/certmagic"
 	"github.com/common-nighthawk/go-figure"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/urfave/cli/v3"
@@ -351,6 +352,7 @@ func start(ctx context.Context, cmd *cli.Command) error {
 		wserver.WithServeAddr(serveAddr),
 		wserver.WithDomain(domain),
 		wserver.WithAPIKeyIssuer(apiKeyIssuer),
+		wserver.WithTLSConfig(certmagic.Default.TLSConfig()),
 	}
 
 	if allowTCP {
