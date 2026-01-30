@@ -318,71 +318,10 @@ func (s *Server) tunnel(ctx context.Context, conn net.Conn) error {
 	}
 
 	if !allowTLSPassthrough && isHTTP && tunnel.auth != nil {
-		var req *http.Request
-		br := bufio.NewReader(conn)
-
-		req, err = http.ReadRequest(br)
+		err = s.httpAuthProxy(ctx, conn, tunnel, start)
 		if err != nil {
-			span.RecordError(err)
-			span.SetStatus(codes.Error, "failed to read http request")
-			s.sendUnauthorized(conn, tunnel.auth)
-			if tunnel.httpLogch != nil {
-				tunnel.logHTTPRequest(start, req.Method, req.URL.Path, http.StatusUnauthorized)
-			}
-			return fmt.Errorf("failed to read http request: %w", err)
-		}
-
-		span.SetAttributes(
-			attribute.String("http.method", req.Method),
-			attribute.String("http.path", req.URL.Path),
-		)
-
-		if !tunnel.auth.Authenticate(req) {
-			err = fmt.Errorf("unauthorized")
-			span.RecordError(err)
-			span.SetStatus(codes.Error, "authentication failed")
-			span.SetAttributes(attribute.Int("http.status_code", http.StatusUnauthorized))
-			s.sendUnauthorized(conn, tunnel.auth)
-			if tunnel.httpLogch != nil {
-				tunnel.logHTTPRequest(start, req.Method, req.URL.Path, http.StatusUnauthorized)
-			}
 			return err
 		}
-
-		span.SetAttributes(attribute.Bool("authenticated", true))
-
-		var fullRequest bytes.Buffer
-		if err = req.Write(&fullRequest); err != nil {
-			span.RecordError(err)
-			span.SetStatus(codes.Error, "failed to serialize request")
-			return fmt.Errorf("failed to serialize request: %w", err)
-		}
-
-		conn = &BuffConn{
-			Conn: conn,
-			r:    br,
-			p:    &fullRequest,
-		}
-
-		if tunnel.httpLogch != nil {
-			err = tunnel.ProxyWithInspect(ctx, conn)
-			if err != nil {
-				span.RecordError(err)
-				span.SetStatus(codes.Error, "proxy with inspect failed")
-			} else {
-				span.SetStatus(codes.Ok, "completed")
-			}
-			return err
-		}
-
-		err = tunnel.Proxy(ctx, conn)
-		if err != nil {
-			span.RecordError(err)
-			span.SetStatus(codes.Error, "proxy failed")
-		} else {
-			span.SetStatus(codes.Ok, "completed")
-		}
-		return err
 	}
 
 	if !allowTLSPassthrough && isHTTP && tunnel.httpLogch != nil {
@@ -404,6 +343,80 @@ func (s *Server) tunnel(ctx context.Context, conn net.Conn) error {
 		span.SetStatus(codes.Ok, "completed")
 	}
 
+	return err
+}
+
+func (s *Server) httpAuthProxy(ctx context.Context, conn net.Conn, tunnel *Tunnel, start time.Time) error {
+	defer conn.Close()
+
+	ctx, span := s.tracer.Start(ctx, "server.httAuth",
+		trace.WithSpanKind(trace.SpanKindServer),
+	)
+	defer span.End()
+
+	br := bufio.NewReader(conn)
+
+	req, err := http.ReadRequest(br)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "failed to read http request")
+		s.sendUnauthorized(conn, tunnel.auth)
+		if tunnel.httpLogch != nil {
+			tunnel.logHTTPRequest(start, req.Method, req.URL.Path, http.StatusUnauthorized)
+		}
+		return fmt.Errorf("failed to read http request: %w", err)
+	}
+
+	span.SetAttributes(
+		attribute.String("http.method", req.Method),
+		attribute.String("http.path", req.URL.Path),
+	)
+
+	if !tunnel.auth.Authenticate(req) {
+		err = fmt.Errorf("unauthorized")
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "authentication failed")
+		span.SetAttributes(attribute.Int("http.status_code", http.StatusUnauthorized))
+		s.sendUnauthorized(conn, tunnel.auth)
+		if tunnel.httpLogch != nil {
+			tunnel.logHTTPRequest(start, req.Method, req.URL.Path, http.StatusUnauthorized)
+		}
+		return err
+	}
+
+	span.SetAttributes(attribute.Bool("authenticated", true))
+
+	var fullRequest bytes.Buffer
+	if err = req.Write(&fullRequest); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "failed to serialize request")
+		return fmt.Errorf("failed to serialize request: %w", err)
+	}
+
+	conn = &BuffConn{
+		Conn: conn,
+		r:    br,
+		p:    &fullRequest,
+	}
+
+	if tunnel.httpLogch != nil {
+		err = tunnel.ProxyWithInspect(ctx, conn)
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "proxy with inspect failed")
+		} else {
+			span.SetStatus(codes.Ok, "completed")
+		}
+		return err
+	}
+
+	err = tunnel.Proxy(ctx, conn)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "proxy failed")
+	} else {
+		span.SetStatus(codes.Ok, "completed")
+	}
 	return err
 }
 
@@ -837,13 +850,44 @@ func (s *Server) handleTCPTunnel(ctx context.Context, tunnel *Tunnel) {
 				log.Error().Err(err).Msg("failed to accept TCP tunnel connection")
 				continue
 			}
-
-			go func() {
-				if err := tunnel.Proxy(ctx, conn); err != nil {
-					log.Error().Err(err).Msg("TCP tunnel proxy error")
-				}
-			}()
+			go s.tunnelTCP(ctx, conn, tunnel)
 		}
+	}
+}
+
+func (s *Server) tunnelTCP(ctx context.Context, conn net.Conn, tunnel *Tunnel) {
+	defer conn.Close()
+	ctx, span := s.tracer.Start(ctx, "server.tunnelTCP",
+
+		trace.WithAttributes(attribute.String("domain", tunnel.domain)),
+	)
+	defer span.End()
+
+	if tunnel.metrics != nil {
+		tunnel.metrics.IncrementConnections()
+		defer tunnel.metrics.DecrementActiveConnections()
+	}
+
+	start := time.Now()
+
+	var proto string
+	proto, conn = Conn(conn)
+	if tunnel.allowHTTP && tunnel.auth != nil && proto == ProtoHTTP {
+		s.httpAuthProxy(ctx, conn, tunnel, start)
+		return
+	}
+
+	if tunnel.allowHTTP && proto == ProtoHTTP {
+		if err := tunnel.ProxyWithInspect(ctx, conn); err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "proxy with inspect failed")
+		}
+	}
+
+	if err := tunnel.Proxy(ctx, conn); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "proxy failed")
+		return
 	}
 }
 
@@ -1063,7 +1107,6 @@ func (s *Server) handlePingStream(ctx context.Context, tunnel *Tunnel) error {
 			tunnel.metrics.SetRTT(uint32(rtt.Microseconds()))
 			s.observer.UpdateRTT(tunnel.domain, uint32(rtt.Microseconds()))
 
-			// Record RTT in span attributes periodically
 			span.SetAttributes(attribute.Int64("rtt_microseconds", rtt.Microseconds()))
 		}
 	}
