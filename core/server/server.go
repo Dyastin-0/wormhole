@@ -300,9 +300,7 @@ func (s *Server) tunnel(ctx context.Context, conn net.Conn) error {
 	)
 
 	s.observer.RecordConnectionStart(tunnel.domain, protoStr)
-	defer func() {
-		s.observer.RecordConnectionEnd(sni, protoStr, time.Since(start))
-	}()
+	defer s.observer.RecordConnectionEnd(sni, protoStr, time.Since(start))
 
 	allowHTTP := tunnel.allowHTTP || tunnel.proto == proto.ProtoHTTP
 	isHTTP := detectedProtocol == ProtoHTTP
@@ -808,7 +806,11 @@ func (s *Server) handleRequest(ctx context.Context, stream net.Conn, session *ya
 	if isTCP {
 		tunnel.tcpListener.Close()
 	} else {
-		s.tunnels.Remove(domain)
+		if header.HasFlag(proto.FlagTLSPassthrough) {
+			s.tunnels.Remove(req.URL)
+		} else {
+			s.tunnels.Remove(domain)
+		}
 	}
 
 	duration := time.Since(tunnel.createdAt)
