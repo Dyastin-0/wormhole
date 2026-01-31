@@ -166,6 +166,7 @@ func DeserializeRequest(data []byte) (*Request, error) {
 	if n, err := reader.Read(urlBytes); err != nil || n != int(req.URLLength) {
 		return nil, fmt.Errorf("failed to read url: %w", err)
 	}
+	req.URL = string(urlBytes)
 
 	if err := binary.Read(reader, binary.BigEndian, &req.APIKeyLength); err != nil {
 		return nil, fmt.Errorf("failed to read api key length: %w", err)
@@ -194,7 +195,7 @@ func DeserializeRequest(data []byte) (*Request, error) {
 		return nil, fmt.Errorf("failed to read username length: %w", err)
 	}
 
-	expectedSize = int(RequestSize) + int(req.NameLength) + int(req.APIKeyLength) + int(req.UsernameLength)
+	expectedSize = int(RequestSize) + int(req.NameLength) + int(req.URLLength) + int(req.APIKeyLength) + int(req.UsernameLength)
 	if len(data) < expectedSize {
 		return nil, ErrInsufficientData
 	}
@@ -214,7 +215,7 @@ func DeserializeRequest(data []byte) (*Request, error) {
 		return nil, fmt.Errorf("failed to read password length: %w", err)
 	}
 
-	expectedSize = int(RequestSize) + int(req.NameLength) + int(req.APIKeyLength) + int(req.UsernameLength) + int(req.PasswordLength)
+	expectedSize = int(RequestSize) + int(req.NameLength) + int(req.URLLength) + int(req.APIKeyLength) + int(req.UsernameLength) + int(req.PasswordLength)
 	if len(data) < expectedSize {
 		return nil, ErrInsufficientData
 	}
@@ -234,7 +235,7 @@ func DeserializeRequest(data []byte) (*Request, error) {
 		return nil, fmt.Errorf("failed to read token length: %w", err)
 	}
 
-	expectedSize = int(RequestSize) + int(req.NameLength) + int(req.APIKeyLength) + int(req.UsernameLength) + int(req.PasswordLength) + int(req.TokenLength)
+	expectedSize = int(RequestSize) + int(req.NameLength) + int(req.URLLength) + int(req.APIKeyLength) + int(req.UsernameLength) + int(req.PasswordLength) + int(req.TokenLength)
 	if len(data) < expectedSize {
 		return nil, ErrInsufficientData
 	}
