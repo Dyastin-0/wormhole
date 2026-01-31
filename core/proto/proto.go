@@ -60,8 +60,8 @@ const (
 	MaxStringLength uint32 = 4096
 	// HeaderSize is the fixed size of a protocol header in bytes (12 bytes).
 	HeaderSize uint8 = 12
-	// RequestSize is the fixed size of a request's non-string fields in bytes (30 bytes).
-	RequestSize = 30
+	// RequestSize is the fixed size of a request's non-string fields in bytes (34 bytes).
+	RequestSize = 34
 	// ResponseSize is the fixed size of a response's non-string fields in bytes (15 bytes).
 	ResponseSize uint8 = 15
 	// MetricsSize is the fixed size of a metrics' fields in bytes (40).

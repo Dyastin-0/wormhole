@@ -56,6 +56,8 @@ type Client struct {
 	allowHTTP bool
 	// allowTLSPassthrough specifies if this tunnel want to terminate TLS at target address.
 	allowTLSPassthrough bool
+	// url specifies the client CNAME that points to the given tunnel endpoint.
+	url string
 	// metricsch i used to send http logs and metrics to bubbletea application.
 	metricsch chan<- any
 	metricsmu sync.Mutex
@@ -280,7 +282,7 @@ func (c *Client) sendRequest(ctx context.Context, stream net.Conn) (*proto.Heade
 		stream.SetDeadline(time.Now().Add(5 * time.Second))
 	}
 
-	request := proto.NewRequest(c.proto, c.name, c.ttl, c.apiKey)
+	request := proto.NewRequest(c.proto, c.name, c.url, c.ttl, c.apiKey)
 	request.AuthType = c.authType
 	request.AuthUsername = c.authUsername
 	request.AuthPassword = c.authPassword

@@ -217,7 +217,7 @@ func TestHandleRequestSuccess(t *testing.T) {
 	serverSession, clientSession, cleanup := createYamuxSessionPair(t)
 	defer cleanup()
 
-	request := proto.NewRequest(proto.ProtoHTTP, "testapp", 0, "")
+	request := proto.NewRequest(proto.ProtoHTTP, "testapp", "", 0, "")
 	serializedRequest, err := proto.SerializeRequest(request)
 	require.NoError(t, err)
 
@@ -260,7 +260,7 @@ func TestHandleRequestNameTaken(t *testing.T) {
 	serverSession, clientSession, cleanup := createYamuxSessionPair(t)
 	defer cleanup()
 
-	request := proto.NewRequest(proto.ProtoHTTP, "testapp", 0, "")
+	request := proto.NewRequest(proto.ProtoHTTP, "testapp", "", 0, "")
 	serializedRequest, err := proto.SerializeRequest(request)
 	require.NoError(t, err)
 

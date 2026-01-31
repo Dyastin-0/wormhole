@@ -4,7 +4,6 @@
 package server
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"crypto/tls"
@@ -354,18 +353,18 @@ func (s *Server) httpAuthProxy(ctx context.Context, conn net.Conn, tunnel *Tunne
 	)
 	defer span.End()
 
-	br := bufio.NewReader(conn)
-
-	req, err := http.ReadRequest(br)
+	httpConn, err := HTTP(conn)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "failed to read http request")
 		s.sendUnauthorized(conn, tunnel.auth)
 		if tunnel.httpLogch != nil {
-			tunnel.logHTTPRequest(start, req.Method, req.URL.Path, http.StatusUnauthorized)
+			tunnel.logHTTPRequest(start, "GET", "/", http.StatusInternalServerError)
 		}
 		return fmt.Errorf("failed to read http request: %w", err)
 	}
+
+	req := httpConn.Request
 
 	span.SetAttributes(
 		attribute.String("http.method", req.Method),
@@ -393,14 +392,8 @@ func (s *Server) httpAuthProxy(ctx context.Context, conn net.Conn, tunnel *Tunne
 		return fmt.Errorf("failed to serialize request: %w", err)
 	}
 
-	conn = &BuffConn{
-		Conn: conn,
-		r:    br,
-		p:    &fullRequest,
-	}
-
 	if tunnel.httpLogch != nil {
-		err = tunnel.ProxyWithInspect(ctx, conn)
+		err = tunnel.ProxyWithInspect(ctx, httpConn)
 		if err != nil {
 			span.RecordError(err)
 			span.SetStatus(codes.Error, "proxy with inspect failed")
@@ -410,7 +403,7 @@ func (s *Server) httpAuthProxy(ctx context.Context, conn net.Conn, tunnel *Tunne
 		return err
 	}
 
-	err = tunnel.Proxy(ctx, conn)
+	err = tunnel.Proxy(ctx, httpConn)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "proxy failed")
@@ -614,6 +607,7 @@ func (s *Server) handleRequest(ctx context.Context, stream net.Conn, session *ya
 	span.SetAttributes(
 		attribute.String("domain", domain),
 		attribute.String("requested_name", req.Name),
+		attribute.String("url", req.URL),
 		attribute.String("protocol", proto.ProtoString(req.Proto)),
 	)
 
@@ -755,7 +749,11 @@ func (s *Server) handleRequest(ctx context.Context, stream net.Conn, session *ya
 		// resolve to the same IP anyway.
 		go s.handleTCPTunnel(ctx, tunnel)
 	} else {
-		s.tunnels.SetIfAbsent(domain, tunnel)
+		if header.HasFlag(proto.FlagTLSPassthrough) {
+			s.tunnels.SetIfAbsent(req.URL, tunnel)
+		} else {
+			s.tunnels.SetIfAbsent(domain, tunnel)
+		}
 	}
 
 	protoStr := proto.ProtoString(req.Proto)

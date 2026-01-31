@@ -24,6 +24,12 @@ func WithName(name string) OptFunc {
 	}
 }
 
+func WithURL(url string) OptFunc {
+	return func(c *Client) {
+		c.url = url
+	}
+}
+
 func WithProto(proto uint8) OptFunc {
 	return func(c *Client) {
 		c.proto = proto

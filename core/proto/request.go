@@ -15,6 +15,10 @@ type Request struct {
 	NameLength uint32
 	// Name is the desired subdomain name for the tunnel (e.g., "example" for "example.domain.com").
 	Name string
+	// URLLength is the length of the URL filed in bytes (must not exceed MaxStringLength).
+	URLLength uint32
+	// URL is the client's CNAME pointed to the tunnel endpoint.
+	URL string
 	// APIKeyLength is the length of the APIKey field in bytes (must not exceed MaxStringLength).
 	APIKeyLength uint32
 	// APIKey is the server-issued JWT token.
@@ -36,12 +40,14 @@ type Request struct {
 }
 
 // NewRequest creates a new Request with the specified protocol and subdomain name.
-func NewRequest(proto uint8, name string, ttl uint64, apiKey string) *Request {
+func NewRequest(proto uint8, name string, url string, ttl uint64, apiKey string) *Request {
 	return &Request{
 		Proto:        proto,
 		TTL:          ttl,
 		NameLength:   uint32(len(name)),
 		Name:         name,
+		URLLength:    uint32(len(url)),
+		URL:          url,
 		APIKeyLength: uint32(len(apiKey)),
 		APIKey:       apiKey,
 	}
@@ -54,6 +60,7 @@ func SerializeRequest(req *Request) ([]byte, error) {
 	req.UsernameLength = uint32(len(req.AuthUsername))
 	req.PasswordLength = uint32(len(req.AuthPassword))
 	req.TokenLength = uint32(len(req.AuthToken))
+	req.URLLength = uint32(len(req.URL))
 
 	if err := validateRequest(req); err != nil {
 		return nil, fmt.Errorf("request validation failed: %w", err)
@@ -81,6 +88,12 @@ func SerializeRequest(req *Request) ([]byte, error) {
 	}
 	if _, err := buf.WriteString(req.Name); err != nil {
 		return nil, fmt.Errorf("failed to write name: %w", err)
+	}
+	if err := binary.Write(buf, binary.BigEndian, req.URLLength); err != nil {
+		return nil, fmt.Errorf("falied to write url length: %w", err)
+	}
+	if _, err := buf.WriteString(req.URL); err != nil {
+		return nil, fmt.Errorf("failed to write url: %w", err)
 	}
 	if err := binary.Write(buf, binary.BigEndian, req.APIKeyLength); err != nil {
 		return nil, fmt.Errorf("failed to write api key length: %w", err)
@@ -145,11 +158,20 @@ func DeserializeRequest(data []byte) (*Request, error) {
 	}
 	req.Name = string(nameBytes)
 
+	if err := binary.Read(reader, binary.BigEndian, &req.URLLength); err != nil {
+		return nil, fmt.Errorf("failed to read url length: %w", err)
+	}
+
+	urlBytes := make([]byte, req.URLLength)
+	if n, err := reader.Read(urlBytes); err != nil || n != int(req.URLLength) {
+		return nil, fmt.Errorf("failed to read url: %w", err)
+	}
+
 	if err := binary.Read(reader, binary.BigEndian, &req.APIKeyLength); err != nil {
 		return nil, fmt.Errorf("failed to read api key length: %w", err)
 	}
 
-	expectedSize = int(RequestSize) + int(req.NameLength) + int(req.APIKeyLength)
+	expectedSize = int(RequestSize) + int(req.NameLength) + int(req.URLLength) + int(req.APIKeyLength)
 	if len(data) < expectedSize {
 		return nil, ErrInsufficientData
 	}
