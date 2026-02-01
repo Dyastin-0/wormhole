@@ -1,4 +1,4 @@
-// Package metrics implement a metrics for an io.ReadWriter.
+// Package metrics implement a metrics for an io.ReadWriteCloser.
 package metrics
 
 import (
@@ -7,21 +7,21 @@ import (
 	"time"
 )
 
-// MetricsReadWriter implements io.ReadWriter.
+// MetricsReadWriteCLoser implements io.ReadWriteCloser.
 type MetricsReadWriteCloser struct {
 	rwc     io.ReadWriteCloser
 	metrics *Metrics
 }
 
-// NewMetricsReadWriter returns a new MetricsReadWriter.
-func NewMetricsReadWriter(rwc io.ReadWriteCloser, m *Metrics) *MetricsReadWriteCloser {
+// NewMetricsReadWriteCloser returns a new MetricsReadWriteCloser.
+func NewMetricsReadWriteCloser(rwc io.ReadWriteCloser, m *Metrics) *MetricsReadWriteCloser {
 	return &MetricsReadWriteCloser{
 		rwc:     rwc,
 		metrics: m,
 	}
 }
 
-// Read reads p using the underlying io.ReadWriter and adds n in the ingress metrics.
+// Read reads p using the underlying io.ReadWriteCLoser and adds n in the ingress metrics.
 func (mrwc *MetricsReadWriteCloser) Read(p []byte) (n int, err error) {
 	n, err = mrwc.rwc.Read(p)
 	if n > 0 {
@@ -30,7 +30,7 @@ func (mrwc *MetricsReadWriteCloser) Read(p []byte) (n int, err error) {
 	return n, err
 }
 
-// Write writes p using the underlying io.ReadWriter and adds n in the egress metrics.
+// Write writes p using the underlying io.ReadWriteCLoser and adds n in the egress metrics.
 func (mrwc *MetricsReadWriteCloser) Write(p []byte) (n int, err error) {
 	n, err = mrwc.rwc.Write(p)
 	if n > 0 {
@@ -144,10 +144,7 @@ func (m *Metrics) GetUptime() time.Duration {
 	return time.Since(m.StartTime)
 }
 
-// NewProxyReadWriter return a new MetricsReadWriter using the underlying metrics.
-func (m *Metrics) NewProxyReadWriter(rwc io.ReadWriteCloser) *MetricsReadWriteCloser {
-	return &MetricsReadWriteCloser{
-		rwc:     rwc,
-		metrics: m,
-	}
+// NewProxyReadWriteCloser return a new MetricsReadWriteCLoser using the underlying metrics.
+func (m *Metrics) NewProxyReadWriteCloser(rwc io.ReadWriteCloser) *MetricsReadWriteCloser {
+	return NewMetricsReadWriteCloser(rwc, m)
 }

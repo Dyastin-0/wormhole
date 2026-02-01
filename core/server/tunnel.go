@@ -63,7 +63,7 @@ func (t *Tunnel) Proxy(ctx context.Context, stream net.Conn) error {
 	}
 
 	if t.metrics != nil {
-		proxyStream := t.metrics.NewProxyReadWriter(stream)
+		proxyStream := t.metrics.NewProxyReadWriteCloser(stream)
 		return proxy.StreamWithContext(ctx, proxyStream, remoteStream)
 	}
 	return proxy.StreamWithContext(ctx, stream, remoteStream)
@@ -92,7 +92,7 @@ func (t *Tunnel) ProxyWithInspect(ctx context.Context, stream net.Conn) error {
 	}
 
 	if t.metrics != nil {
-		proxyStream := t.metrics.NewProxyReadWriter(stream)
+		proxyStream := t.metrics.NewProxyReadWriteCloser(stream)
 		return proxy.StreamHTTPWithInspect(ctx, proxyStream, remoteStream, func(start time.Time, method, path string, status int) {
 			t.logHTTPRequest(start, method, path, status)
 		})
