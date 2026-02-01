@@ -8,35 +8,40 @@ import (
 )
 
 // MetricsReadWriter implements io.ReadWriter.
-type MetricsReadWriter struct {
-	rw      io.ReadWriter
+type MetricsReadWriteCloser struct {
+	rwc     io.ReadWriteCloser
 	metrics *Metrics
 }
 
 // NewMetricsReadWriter returns a new MetricsReadWriter.
-func NewMetricsReadWriter(rw io.ReadWriter, m *Metrics) *MetricsReadWriter {
-	return &MetricsReadWriter{
-		rw:      rw,
+func NewMetricsReadWriter(rwc io.ReadWriteCloser, m *Metrics) *MetricsReadWriteCloser {
+	return &MetricsReadWriteCloser{
+		rwc:     rwc,
 		metrics: m,
 	}
 }
 
 // Read reads p using the underlying io.ReadWriter and adds n in the ingress metrics.
-func (mrw *MetricsReadWriter) Read(p []byte) (n int, err error) {
-	n, err = mrw.rw.Read(p)
+func (mrwc *MetricsReadWriteCloser) Read(p []byte) (n int, err error) {
+	n, err = mrwc.rwc.Read(p)
 	if n > 0 {
-		mrw.metrics.AddIngressBytes(uint64(n))
+		mrwc.metrics.AddIngressBytes(uint64(n))
 	}
 	return n, err
 }
 
 // Write writes p using the underlying io.ReadWriter and adds n in the egress metrics.
-func (mrw *MetricsReadWriter) Write(p []byte) (n int, err error) {
-	n, err = mrw.rw.Write(p)
+func (mrwc *MetricsReadWriteCloser) Write(p []byte) (n int, err error) {
+	n, err = mrwc.rwc.Write(p)
 	if n > 0 {
-		mrw.metrics.AddEgressBytes(uint64(n))
+		mrwc.metrics.AddEgressBytes(uint64(n))
 	}
 	return n, err
+}
+
+// Close closes the underlying io.ReadWriteCloser.
+func (mrwc *MetricsReadWriteCloser) Close() error {
+	return mrwc.rwc.Close()
 }
 
 // Metrics represents data ingress/egress metrics for a network connection.
@@ -140,9 +145,9 @@ func (m *Metrics) GetUptime() time.Duration {
 }
 
 // NewProxyReadWriter return a new MetricsReadWriter using the underlying metrics.
-func (m *Metrics) NewProxyReadWriter(rw io.ReadWriter) *MetricsReadWriter {
-	return &MetricsReadWriter{
-		rw:      rw,
+func (m *Metrics) NewProxyReadWriter(rwc io.ReadWriteCloser) *MetricsReadWriteCloser {
+	return &MetricsReadWriteCloser{
+		rwc:     rwc,
 		metrics: m,
 	}
 }
