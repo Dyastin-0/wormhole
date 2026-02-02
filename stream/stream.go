@@ -68,6 +68,12 @@ func StreamWithContext(ctx context.Context, src, dst net.Conn) error {
 	}
 }
 
+// Request embeds http.Request along with a request start timestamp.
+type Request struct {
+	*http.Request
+	start time.Time
+}
+
 // StreamHTTPWithInspect is StreamWithContext with HTTP request-response inspection.
 func StreamHTTPWithInspect(
 	ctx context.Context,
@@ -77,16 +83,16 @@ func StreamHTTPWithInspect(
 	defer src.Close()
 	defer dst.Close()
 
-	type reqEntry struct {
-		req   *http.Request
-		start time.Time
-	}
-
-	reqCh := make(chan reqEntry)
-	respCh := make(chan *http.Response)
+	// channels for coordinating request/response cycles,
+	// this way we can do a bidirectional copy similar to
+	// Stream and StreamWithContext by sniffing the requests and responses
+	// and replaying it on the conns.
+	reqCh := make(chan *Request, 100)
+	respCh := make(chan *http.Response, 100)
 	closeCh := make(chan struct{})
 	errCh := make(chan error, 2)
 
+	// This matches request with its coresponding response.
 	go func() {
 		for {
 			select {
@@ -95,7 +101,7 @@ func StreamHTTPWithInspect(
 				return
 			case entry := <-reqCh:
 				resp := <-respCh
-				onRequest(entry.start, entry.req.Method, entry.req.URL.Path, resp.StatusCode)
+				onRequest(entry.start, entry.Method, entry.URL.Path, resp.StatusCode)
 			}
 		}
 	}()
@@ -114,7 +120,7 @@ func StreamHTTPWithInspect(
 			req.Body.Close()
 			br.Discard(br.Buffered())
 
-			reqCh <- reqEntry{req: req, start: reqStart}
+			reqCh <- &Request{Request: req, start: reqStart}
 
 			if _, err := io.Copy(dst, srcTee); err != nil {
 				errCh <- err
