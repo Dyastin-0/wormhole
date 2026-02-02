@@ -2,46 +2,41 @@
 package metrics
 
 import (
-	"io"
+	"net"
 	"sync/atomic"
 	"time"
 )
 
-// MetricsReadWriteCLoser implements io.ReadWriteCloser.
-type MetricsReadWriteCloser struct {
-	rwc     io.ReadWriteCloser
+// MetricsConn implements io.ReadWriteCloser.
+type MetricsConn struct {
+	net.Conn
 	metrics *Metrics
 }
 
-// NewMetricsReadWriteCloser returns a new MetricsReadWriteCloser.
-func NewMetricsReadWriteCloser(rwc io.ReadWriteCloser, m *Metrics) *MetricsReadWriteCloser {
-	return &MetricsReadWriteCloser{
-		rwc:     rwc,
+// NewMetricsConn returns a new MetricsConn.
+func NewMetricsConn(conn net.Conn, m *Metrics) *MetricsConn {
+	return &MetricsConn{
+		Conn:    conn,
 		metrics: m,
 	}
 }
 
-// Read reads p using the underlying io.ReadWriteCLoser and adds n in the ingress metrics.
-func (mrwc *MetricsReadWriteCloser) Read(p []byte) (n int, err error) {
-	n, err = mrwc.rwc.Read(p)
+// Read reads p using the underlying net.Conn and adds n in the ingress metrics.
+func (mc *MetricsConn) Read(p []byte) (n int, err error) {
+	n, err = mc.Conn.Read(p)
 	if n > 0 {
-		mrwc.metrics.AddIngressBytes(uint64(n))
+		mc.metrics.AddIngressBytes(uint64(n))
 	}
 	return n, err
 }
 
-// Write writes p using the underlying io.ReadWriteCLoser and adds n in the egress metrics.
-func (mrwc *MetricsReadWriteCloser) Write(p []byte) (n int, err error) {
-	n, err = mrwc.rwc.Write(p)
+// Write writes p using the underlying net.Conn and adds n in the egress metrics.
+func (mc *MetricsConn) Write(p []byte) (n int, err error) {
+	n, err = mc.Conn.Write(p)
 	if n > 0 {
-		mrwc.metrics.AddEgressBytes(uint64(n))
+		mc.metrics.AddEgressBytes(uint64(n))
 	}
 	return n, err
-}
-
-// Close closes the underlying io.ReadWriteCloser.
-func (mrwc *MetricsReadWriteCloser) Close() error {
-	return mrwc.rwc.Close()
 }
 
 // Metrics represents data ingress/egress metrics for a network connection.
@@ -144,7 +139,7 @@ func (m *Metrics) GetUptime() time.Duration {
 	return time.Since(m.StartTime)
 }
 
-// NewProxyReadWriteCloser return a new MetricsReadWriteCLoser using the underlying metrics.
-func (m *Metrics) NewProxyReadWriteCloser(rwc io.ReadWriteCloser) *MetricsReadWriteCloser {
-	return NewMetricsReadWriteCloser(rwc, m)
+// NewProxyConn return a new MetricsConn using the underlying metrics.
+func (m *Metrics) NewProxyConn(rwc net.Conn) *MetricsConn {
+	return NewMetricsConn(rwc, m)
 }

@@ -14,7 +14,7 @@ func TestMetricsReadWriteCloser(t *testing.T) {
 	defer b.Close()
 
 	m := New()
-	mrw := NewMetricsReadWriteCloser(a, m)
+	mrw := NewMetricsConn(a, m)
 
 	data := []byte("hello world")
 

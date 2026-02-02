@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/Dyastin-0/wormhole/core/proto"
-	"github.com/Dyastin-0/wormhole/core/proxy"
+	"github.com/Dyastin-0/wormhole/stream"
 	"github.com/hashicorp/yamux"
 	"github.com/rs/zerolog/log"
 )
@@ -348,7 +348,7 @@ func (c *Client) sendRequest(ctx context.Context, stream net.Conn) (*proto.Heade
 }
 
 // ForwardStream forwards a multiplexed stream from the server to the target address.
-func (c *Client) ForwardStream(ctx context.Context, stream net.Conn) error {
+func (c *Client) ForwardStream(ctx context.Context, ystream net.Conn) error {
 	var localConn net.Conn
 	var err error
 
@@ -357,7 +357,7 @@ func (c *Client) ForwardStream(ctx context.Context, stream net.Conn) error {
 		return fmt.Errorf("failed to dial tcp target address: %w", err)
 	}
 
-	return proxy.StreamWithContext(ctx, localConn, stream)
+	return stream.StreamWithContext(ctx, localConn, ystream)
 }
 
 // handleMessages processes incoming multiplexed streams (control streams) from the server.

@@ -19,6 +19,7 @@ import (
 	"github.com/Dyastin-0/wormhole/core/proto"
 	"github.com/Dyastin-0/wormhole/metrics"
 	"github.com/Dyastin-0/wormhole/observer"
+	"github.com/Dyastin-0/wormhole/stream"
 	"github.com/hashicorp/yamux"
 	cmap "github.com/orcaman/concurrent-map/v2"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -235,13 +236,13 @@ func (s *Server) tunnel(ctx context.Context, conn net.Conn) error {
 
 	start := time.Now()
 
-	conn, err := TLS(conn)
+	conn, err := stream.TLS(conn)
 	if err != nil {
 		span.SetStatus(codes.Error, "failed to read client hello message")
 		return err
 	}
 
-	sni := conn.(*TLSConn).Host()
+	sni := conn.(*stream.TLSConn).Host()
 	if sni == "" {
 		err = fmt.Errorf("missing sni")
 		span.RecordError(err)
@@ -260,9 +261,9 @@ func (s *Server) tunnel(ctx context.Context, conn net.Conn) error {
 		conn = tls.Server(conn, s.tlsConfig)
 
 		var detectedProtocol string
-		detectedProtocol, conn = Conn(conn)
+		detectedProtocol, conn = stream.Conn(conn)
 
-		if detectedProtocol == ProtoHTTP {
+		if detectedProtocol == stream.ProtoHTTP {
 			s.writeNoTunnel(conn, sni)
 		}
 
@@ -284,7 +285,7 @@ func (s *Server) tunnel(ctx context.Context, conn net.Conn) error {
 	}
 
 	var detectedProtocol string
-	detectedProtocol, conn = Conn(conn)
+	detectedProtocol, conn = stream.Conn(conn)
 
 	protoStr := proto.ProtoString(tunnel.proto)
 	span.SetAttributes(
@@ -300,7 +301,7 @@ func (s *Server) tunnel(ctx context.Context, conn net.Conn) error {
 	}()
 
 	allowHTTP := tunnel.allowHTTP || tunnel.proto == proto.ProtoHTTP
-	isHTTP := detectedProtocol == ProtoHTTP
+	isHTTP := detectedProtocol == stream.ProtoHTTP
 	span.SetAttributes(attribute.Bool("is_http", isHTTP))
 
 	if !allowTLSPassthrough && isHTTP && !allowHTTP {
@@ -346,7 +347,7 @@ func (s *Server) httpAuthProxy(ctx context.Context, conn net.Conn, tunnel *Tunne
 	)
 	defer span.End()
 
-	httpConn, err := HTTP(conn)
+	httpConn, err := stream.HTTP(conn)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "failed to read http request")
@@ -510,10 +511,10 @@ func (s *Server) handleMessages(ctx context.Context, conn net.Conn) error {
 	defer span.End()
 
 	var detectedProtocol string
-	detectedProtocol, conn = Conn(conn)
+	detectedProtocol, conn = stream.Conn(conn)
 	span.SetAttributes(attribute.String("detected_protocol", string(detectedProtocol)))
 
-	if detectedProtocol == ProtoHTTP {
+	if detectedProtocol == stream.ProtoHTTP {
 		s.writeHomePage(conn)
 		span.SetStatus(codes.Ok, "served homepage")
 		return nil
@@ -867,13 +868,13 @@ func (s *Server) tunnelTCP(ctx context.Context, conn net.Conn, tunnel *Tunnel) {
 	start := time.Now()
 
 	var proto string
-	proto, conn = Conn(conn)
-	if tunnel.allowHTTP && tunnel.auth != nil && proto == ProtoHTTP {
+	proto, conn = stream.Conn(conn)
+	if tunnel.allowHTTP && tunnel.auth != nil && proto == stream.ProtoHTTP {
 		s.httpAuthProxy(ctx, conn, tunnel, start)
 		return
 	}
 
-	if tunnel.allowHTTP && proto == ProtoHTTP {
+	if tunnel.allowHTTP && proto == stream.ProtoHTTP {
 		err := tunnel.ProxyWithInspect(ctx, conn)
 		if err != nil {
 			span.RecordError(err)

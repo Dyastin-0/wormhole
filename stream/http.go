@@ -1,4 +1,4 @@
-package server
+package stream
 
 import (
 	"bufio"
@@ -16,10 +16,10 @@ func HTTP(conn net.Conn) (httpConn *HTTPConn, err error) {
 
 	httpConn = &HTTPConn{TeeConn: c}
 	if httpConn.Request, err = http.ReadRequest(bufio.NewReader(rd)); err != nil {
-		return
+		return httpConn, err
 	}
 
 	httpConn.Request.Body.Close()
 
-	return
+	return httpConn, err
 }

@@ -6,7 +6,7 @@
 // Licensed under the Apache License, Version 2.0
 // http://www.apache.org/licenses/LICENSE-2.0
 
-package server
+package stream
 
 import (
 	"bytes"
@@ -51,5 +51,5 @@ func (c *TeeConn) Read(p []byte) (n int, err error) {
 		n += n2
 	}
 	c.Unlock()
-	return
+	return n, err
 }

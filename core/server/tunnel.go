@@ -8,8 +8,8 @@ import (
 
 	"github.com/Dyastin-0/wormhole/core/auth"
 	"github.com/Dyastin-0/wormhole/core/proto"
-	"github.com/Dyastin-0/wormhole/core/proxy"
 	"github.com/Dyastin-0/wormhole/metrics"
+	"github.com/Dyastin-0/wormhole/stream"
 	"github.com/hashicorp/yamux"
 )
 
@@ -44,8 +44,8 @@ type Tunnel struct {
 }
 
 // Proxy opens a stream from the session then forwards the stream to it.
-func (t *Tunnel) Proxy(ctx context.Context, stream net.Conn) error {
-	defer stream.Close()
+func (t *Tunnel) Proxy(ctx context.Context, ystream net.Conn) error {
+	defer ystream.Close()
 
 	remoteStream, err := t.session.Open()
 	if err != nil {
@@ -65,16 +65,16 @@ func (t *Tunnel) Proxy(ctx context.Context, stream net.Conn) error {
 	}
 
 	if t.metrics != nil {
-		proxyStream := t.metrics.NewProxyReadWriteCloser(stream)
-		return proxy.StreamWithContext(ctx, proxyStream, remoteStream)
+		proxyStream := t.metrics.NewProxyConn(ystream)
+		return stream.StreamWithContext(ctx, proxyStream, remoteStream)
 	}
-	return proxy.StreamWithContext(ctx, stream, remoteStream)
+	return stream.StreamWithContext(ctx, ystream, remoteStream)
 }
 
 // ProxyWithInspect opens a stream from the session, forwards the stream to it,
 // then inspects and logs the response.
-func (t *Tunnel) ProxyWithInspect(ctx context.Context, stream net.Conn) error {
-	defer stream.Close()
+func (t *Tunnel) ProxyWithInspect(ctx context.Context, ystream net.Conn) error {
+	defer ystream.Close()
 
 	remoteStream, err := t.session.Open()
 	if err != nil {
@@ -94,12 +94,12 @@ func (t *Tunnel) ProxyWithInspect(ctx context.Context, stream net.Conn) error {
 	}
 
 	if t.metrics != nil {
-		proxyStream := t.metrics.NewProxyReadWriteCloser(stream)
-		return proxy.StreamHTTPWithInspect(ctx, proxyStream, remoteStream, func(start time.Time, method, path string, status int) {
+		proxyStream := t.metrics.NewProxyConn(ystream)
+		return stream.StreamHTTPWithInspect(ctx, proxyStream, remoteStream, func(start time.Time, method, path string, status int) {
 			t.logHTTPRequest(start, method, path, status)
 		})
 	}
-	return proxy.StreamHTTPWithInspect(ctx, stream, remoteStream, func(start time.Time, method, path string, status int) {
+	return stream.StreamHTTPWithInspect(ctx, ystream, remoteStream, func(start time.Time, method, path string, status int) {
 		t.logHTTPRequest(start, method, path, status)
 	})
 }

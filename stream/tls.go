@@ -11,7 +11,7 @@
 // Licensed under the Apache License, Version 2.0
 // http://www.apache.org/licenses/LICENSE-2.0
 
-package server
+package stream
 
 import (
 	"bytes"
@@ -95,10 +95,10 @@ func TLS(conn net.Conn) (tlsConn *TLSConn, err error) {
 
 	tlsConn = &TLSConn{TeeConn: c}
 	if tlsConn.ClientHelloMsg, err = readClientHello(rd); err != nil {
-		return
+		return tlsConn, err
 	}
 
-	return
+	return tlsConn, err
 }
 
 func (c *TLSConn) Host() string {
@@ -169,7 +169,7 @@ func (b *block) readFromUntil(r io.Reader, n int) error {
 func (b *block) Read(p []byte) (n int, err error) {
 	n = copy(p, b.data[b.off:])
 	b.off += n
-	return
+	return n, err
 }
 
 // newBlock allocates a new block
