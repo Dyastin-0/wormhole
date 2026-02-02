@@ -148,9 +148,12 @@ func (s *Server) RunTunneler(ctx context.Context) error {
 	)
 	defer span.End()
 
-	// NOTE: this listens for TLS connections
-	// either expose the s.serveAddr, or put it behind a reverse proxy.
+	// NOTE: this listens for TLS connections.
 	// all traffic for *.<domain> should be routed here.
+	// Additionally, CNAMES that is registered by clients via the `--url` and '--tls-passthrough` flags
+	// should be handled. if this listener is behind a reverse proxy (you'll need a tcp/tls proxy)
+	// you need to somehow route that CNAME here. a clever hack is to
+	// route domains that is not registered on your reverse proxy to a default.
 	ln, err := net.Listen("tcp", s.serveAddr)
 	if err != nil {
 		span.RecordError(err)
@@ -184,14 +187,6 @@ func (s *Server) RunTunneler(ctx context.Context) error {
 			go s.tunnel(ctx, conn)
 		}
 	}
-}
-
-// RunWithListener is Run but accepts a listener, useful for testing.
-func (s *Server) RunWithListener(ctx context.Context, ln net.Listener) error {
-	ctx, span := s.tracer.Start(ctx, "server.RunWithListener")
-	defer span.End()
-
-	return s.handleConnections(ctx, ln)
 }
 
 // RunObserver starts the metrics/health HTTP server.
@@ -300,7 +295,9 @@ func (s *Server) tunnel(ctx context.Context, conn net.Conn) error {
 	)
 
 	s.observer.RecordConnectionStart(tunnel.domain, protoStr)
-	defer s.observer.RecordConnectionEnd(sni, protoStr, time.Since(start))
+	defer func() {
+		s.observer.RecordConnectionEnd(sni, protoStr, time.Since(start))
+	}()
 
 	allowHTTP := tunnel.allowHTTP || tunnel.proto == proto.ProtoHTTP
 	isHTTP := detectedProtocol == ProtoHTTP
@@ -316,9 +313,7 @@ func (s *Server) tunnel(ctx context.Context, conn net.Conn) error {
 
 	if !allowTLSPassthrough && isHTTP && tunnel.auth != nil {
 		err = s.httpAuthProxy(ctx, conn, tunnel, start)
-		if err != nil {
-			return err
-		}
+		return err
 	}
 
 	if !allowTLSPassthrough && isHTTP && tunnel.httpLogch != nil {
@@ -346,7 +341,7 @@ func (s *Server) tunnel(ctx context.Context, conn net.Conn) error {
 func (s *Server) httpAuthProxy(ctx context.Context, conn net.Conn, tunnel *Tunnel, start time.Time) error {
 	defer conn.Close()
 
-	ctx, span := s.tracer.Start(ctx, "server.httAuth",
+	ctx, span := s.tracer.Start(ctx, "server.httpAuthProxy",
 		trace.WithSpanKind(trace.SpanKindServer),
 	)
 	defer span.End()
@@ -683,6 +678,7 @@ func (s *Server) handleRequest(ctx context.Context, stream net.Conn, session *ya
 
 	tunnel := &Tunnel{
 		session:             session,
+		controlStream:       stream,
 		proto:               req.Proto,
 		ttl:                 ttl,
 		auth:                authenticator,
@@ -798,7 +794,7 @@ func (s *Server) handleRequest(ctx context.Context, stream net.Conn, session *ya
 
 	span.SetAttributes(attribute.String("close_reason", closeReason))
 
-	err = s.sendEnd(session)
+	err = s.sendEnd(tunnel)
 	if err != nil {
 		log.Error().Err(err).Msg("failed to send end")
 	}
@@ -878,25 +874,27 @@ func (s *Server) tunnelTCP(ctx context.Context, conn net.Conn, tunnel *Tunnel) {
 	}
 
 	if tunnel.allowHTTP && proto == ProtoHTTP {
-		if err := tunnel.ProxyWithInspect(ctx, conn); err != nil {
+		err := tunnel.ProxyWithInspect(ctx, conn)
+		if err != nil {
 			span.RecordError(err)
 			span.SetStatus(codes.Error, "proxy with inspect failed")
+		} else {
+			span.SetStatus(codes.Ok, "completed")
 		}
+		return
 	}
 
-	if err := tunnel.Proxy(ctx, conn); err != nil {
+	err := tunnel.Proxy(ctx, conn)
+	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "proxy failed")
-		return
+	} else {
+		span.SetStatus(codes.Ok, "completed")
 	}
 }
 
-func (s *Server) sendEnd(session *yamux.Session) error {
-	stream, err := session.Open()
-	if err != nil {
-		return fmt.Errorf("failed to open yamux stream: %w", err)
-	}
-	defer stream.Close()
+func (s *Server) sendEnd(tunnel *Tunnel) error {
+	stream := tunnel.controlStream
 
 	header := proto.NewHeader(proto.TypeEnd, 0)
 	serializedHeader, err := proto.SerializeHeader(header)

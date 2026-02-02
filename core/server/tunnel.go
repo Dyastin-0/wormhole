@@ -39,6 +39,8 @@ type Tunnel struct {
 	port int
 	// tcpListener is the tunnel's listener.
 	tcpListener net.Listener
+	// controlStream is a yamux.Stream used to handle tunnel request and controls.
+	controlStream net.Conn
 }
 
 // Proxy opens a stream from the session then forwards the stream to it.

@@ -58,9 +58,13 @@ type Client struct {
 	allowTLSPassthrough bool
 	// url specifies the client CNAME that points to the given tunnel endpoint.
 	url string
-	// metricsch i used to send http logs and metrics to bubbletea application.
+	// metricsch is used to send http logs and metrics to bubbletea application.
 	metricsch chan<- any
 	metricsmu sync.Mutex
+	// session is the the yamux client session.
+	session *yamux.Session
+	// controlStream is a yamux.Stream used to handle tunnel request and controls.
+	controlStream net.Conn
 }
 
 // New creates a new Client with the specified configuration options.
@@ -111,13 +115,16 @@ func (c *Client) Run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to create yamux client: %w", err)
 	}
-	defer session.Close()
+
+	c.session = session
 
 	stream, err := session.Open()
 	if err != nil {
 		return fmt.Errorf("failed to open yamux session: %w", err)
 	}
 	defer stream.Close()
+
+	c.controlStream = stream
 
 	responseHeader, err := c.sendRequest(ctx, stream)
 	if err != nil {
@@ -201,13 +208,15 @@ func (c *Client) RunWithTCP(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to create yamux client: %w", err)
 	}
-	defer session.Close()
+
+	c.session = session
 
 	stream, err := session.Open()
 	if err != nil {
 		return fmt.Errorf("failed to open yamux session: %w", err)
 	}
-	defer stream.Close()
+
+	c.controlStream = stream
 
 	responseHeader, err := c.sendRequest(ctx, stream)
 	if err != nil {
@@ -281,6 +290,7 @@ func (c *Client) sendRequest(ctx context.Context, stream net.Conn) (*proto.Heade
 	} else {
 		stream.SetDeadline(time.Now().Add(5 * time.Second))
 	}
+	defer stream.SetDeadline(time.Time{})
 
 	request := proto.NewRequest(c.proto, c.name, c.url, c.ttl, c.apiKey)
 	request.AuthType = c.authType
@@ -356,8 +366,9 @@ func (c *Client) handleMessages(ctx context.Context, session *yamux.Session) err
 
 	go func() {
 		<-cancelCtx.Done()
-		session.Close()
+		c.Close()
 	}()
+	go c.handleControlMessages(cancelCtx)
 
 	for {
 		stream, err := session.Accept()
@@ -369,80 +380,110 @@ func (c *Client) handleMessages(ctx context.Context, session *yamux.Session) err
 			return err
 		}
 
-		buf := make([]byte, proto.HeaderSize)
-		_, err = io.ReadFull(stream, buf)
-		if err != nil {
-			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
-				log.Debug().Err(err).Msg("stream connection closed")
+		go func() {
+			buf := make([]byte, proto.HeaderSize)
+			_, err = io.ReadFull(stream, buf)
+			if err != nil {
+				if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+					log.Debug().Err(err).Msg("stream connection closed")
+					stream.Close()
+					return
+				}
+				log.Warn().Err(err).Msg("failed to read stream header")
 				stream.Close()
-				continue
+				return
+			}
+
+			header, err := proto.DeserializeHeader(buf)
+			if err != nil {
+				log.Error().Err(err).Msg("failed to deserialize header")
+				stream.Close()
+				return
+			}
+
+			switch header.Type {
+			case proto.TypePing:
+				go handlePingStream(cancelCtx, stream)
+			case proto.TypeAccess:
+				go func(ctx context.Context, stream net.Conn) {
+					defer stream.Close()
+					err = c.ForwardStream(cancelCtx, stream)
+					if isDialError(err) && ctx.Err() == nil {
+						fmt.Printf("wormhole [err] %s\n", err.Error())
+						// for some reason, cursor is at the end of previous line
+						// clear the line and move cursor to start
+						fmt.Print("\033[2K\r")
+						cancel()
+					}
+				}(cancelCtx, stream)
+			case proto.TypeMetrics:
+				c.metricsmu.Lock()
+				if c.metricsch == nil {
+					program, metricsch := StartMetricsDisplay(c.domain, c.metrics, c.httpLog)
+					go func() {
+						defer close(metricsch)
+						if _, err := program.Run(); err != nil {
+							log.Error().Err(err).Msg("metrics display error")
+						}
+						cancel()
+					}()
+					c.metricsch = metricsch
+				}
+				c.metricsmu.Unlock()
+				go c.handleMetrics(cancelCtx, header, stream)
+			case proto.TypeHTTPLog:
+				c.metricsmu.Lock()
+				if c.metricsch == nil {
+					program, metricsch := StartMetricsDisplay(c.domain, c.metrics, c.httpLog)
+					go func() {
+						defer close(metricsch)
+						if _, err := program.Run(); err != nil {
+							log.Error().Err(err).Msg("metrics display error")
+						}
+						cancel()
+					}()
+					c.metricsch = metricsch
+				}
+				c.metricsmu.Unlock()
+				go c.handleHTTPLog(cancelCtx, header, stream)
+			default:
+				stream.Close()
+			}
+		}()
+	}
+}
+
+func (c *Client) handleControlMessages(ctx context.Context) {
+	for {
+		buf := make([]byte, proto.HeaderSize)
+		_, err := io.ReadFull(c.controlStream, buf)
+		if err != nil {
+			if ctx.Err() != nil {
+				return
 			}
 			log.Warn().Err(err).Msg("failed to read stream header")
-			stream.Close()
-			continue
+			return
 		}
 
 		header, err := proto.DeserializeHeader(buf)
 		if err != nil {
 			log.Error().Err(err).Msg("failed to deserialize header")
-			stream.Close()
-			continue
+			return
 		}
 
 		switch header.Type {
-		case proto.TypePing:
-			go handlePingStream(cancelCtx, stream)
-		case proto.TypeAccess:
-			go func(ctx context.Context, stream net.Conn) {
-				defer stream.Close()
-				err = c.ForwardStream(cancelCtx, stream)
-				if isDialError(err) && ctx.Err() == nil {
-					fmt.Printf("wormhole [err] %s\n", err.Error())
-					// for some reason, cursor is at the end of previous line
-					// clear the line and move cursor to start
-					fmt.Print("\033[2K\r")
-					cancel()
-				}
-			}(cancelCtx, stream)
-		case proto.TypeMetrics:
-			c.metricsmu.Lock()
-			if c.metricsch == nil {
-				program, metricsch := StartMetricsDisplay(c.domain, c.metrics, c.httpLog)
-				go func() {
-					defer close(metricsch)
-					if _, err := program.Run(); err != nil {
-						log.Error().Err(err).Msg("metrics display error")
-					}
-					cancel()
-				}()
-				c.metricsch = metricsch
-			}
-			c.metricsmu.Unlock()
-			go c.handleMetrics(cancelCtx, header, stream)
-		case proto.TypeHTTPLog:
-			c.metricsmu.Lock()
-			if c.metricsch == nil {
-				program, metricsch := StartMetricsDisplay(c.domain, c.metrics, c.httpLog)
-				go func() {
-					defer close(metricsch)
-					if _, err := program.Run(); err != nil {
-						log.Error().Err(err).Msg("metrics display error")
-					}
-					cancel()
-				}()
-				c.metricsch = metricsch
-			}
-			c.metricsmu.Unlock()
-			go c.handleHTTPLog(cancelCtx, header, stream)
 		case proto.TypeEnd:
-			stream.Close()
-			cancel()
-			prettyPrint("inf", "tunnel timed out")
-			return nil
+			c.Close()
 		default:
-			stream.Close()
 		}
 	}
+}
+
+func (c *Client) Close() error {
+	if c.session == nil {
+		return nil
+	}
+	return c.session.Close()
 }
 
 func isDialError(err error) bool {
