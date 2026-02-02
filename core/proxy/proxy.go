@@ -85,8 +85,6 @@ func StreamHTTPWithInspect(
 		default:
 		}
 
-		start := time.Now()
-
 		req, err := http.ReadRequest(srcBr)
 		if err != nil {
 			src.Close()
@@ -97,6 +95,7 @@ func StreamHTTPWithInspect(
 			return err
 		}
 
+		start := time.Now()
 		method, path := req.Method, req.URL.Path
 
 		if err = req.Write(dst); err != nil {
