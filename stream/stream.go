@@ -84,11 +84,13 @@ func StreamHTTPWithInspect(
 
 	reqCh := make(chan reqEntry)
 	respCh := make(chan *http.Response)
+	closeCh := make(chan struct{})
 	errCh := make(chan error, 2)
 
 	go func() {
 		for {
 			select {
+			case <-closeCh:
 			case <-ctx.Done():
 				return
 			case entry := <-reqCh:
@@ -148,6 +150,7 @@ func StreamHTTPWithInspect(
 	case <-ctx.Done():
 		return ctx.Err()
 	case err := <-errCh:
+		close(closeCh)
 		if err == io.EOF {
 			return nil
 		}
