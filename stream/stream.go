@@ -68,7 +68,7 @@ func StreamWithContext(ctx context.Context, src, dst net.Conn) error {
 	}
 }
 
-// Request embeds http.Request along with a request start timestamp.
+// Request wraps http.Request with a start time.
 type Request struct {
 	*http.Request
 	start time.Time
@@ -84,19 +84,21 @@ func StreamHTTPWithInspect(
 	defer dst.Close()
 
 	// channels for coordinating request/response cycles,
-	// this way we can do a bidirectional copy similar to
-	// Stream and StreamWithContext by sniffing the requests and responses
-	// and replaying it on the conns.
-	reqCh := make(chan *Request, 100)
-	respCh := make(chan *http.Response, 100)
+	// this way we can do a "bidirectional copy" similar to
+	// Stream and StreamWithContext.
+	reqCh := make(chan *Request, 16)
+	respCh := make(chan *http.Response, 16)
 	closeCh := make(chan struct{})
 	errCh := make(chan error, 2)
 
-	// This matches request with its coresponding response.
+	// This matches request with its coresponding response,
+	// becuase HTTP/1.1 is inherently sequential, meaning a client
+	// must wait for a request's response before sending another request.
 	go func() {
 		for {
 			select {
 			case <-closeCh:
+				return
 			case <-ctx.Done():
 				return
 			case entry := <-reqCh:
@@ -107,31 +109,32 @@ func StreamHTTPWithInspect(
 	}()
 
 	go func() {
-		srcTee, srcReader := NewTeeConn(src)
-		br := bufio.NewReader(srcReader)
+		br := bufio.NewReader(src)
 
 		for {
-			reqStart := time.Now()
 			req, err := http.ReadRequest(br)
 			if err != nil {
 				errCh <- err
 				return
 			}
-			req.Body.Close()
-			br.Discard(br.Buffered())
 
-			reqCh <- &Request{Request: req, start: reqStart}
+			reqStart := time.Now()
 
-			if _, err := io.Copy(dst, srcTee); err != nil {
+			err = req.Write(dst)
+			if err != nil {
 				errCh <- err
 				return
+			}
+
+			select {
+			case reqCh <- &Request{Request: req, start: reqStart}:
+			default:
 			}
 		}
 	}()
 
 	go func() {
-		dstTee, dstReader := NewTeeConn(dst)
-		br := bufio.NewReader(dstReader)
+		br := bufio.NewReader(dst)
 
 		for {
 			resp, err := http.ReadResponse(br, nil)
@@ -140,14 +143,15 @@ func StreamHTTPWithInspect(
 				return
 			}
 
-			resp.Body.Close()
-			br.Discard(br.Buffered())
-
-			respCh <- resp
-
-			if _, err := io.Copy(src, dstTee); err != nil {
+			err = resp.Write(src)
+			if err != nil {
 				errCh <- err
 				return
+			}
+
+			select {
+			case respCh <- resp:
+			default:
 			}
 		}
 	}()
