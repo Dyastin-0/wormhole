@@ -171,6 +171,7 @@ func (c *Client) Run(ctx context.Context) error {
 		return fmt.Errorf("unexpected response status: %v", response.Status)
 	}
 
+	c.domain = response.Domain
 	endpoint := response.Domain
 
 	switch c.proto {
@@ -264,6 +265,7 @@ func (c *Client) RunWithTCP(ctx context.Context) error {
 		return fmt.Errorf("unexpected response status: %v", response.Status)
 	}
 
+	c.domain = response.Domain
 	endpoint := response.Domain
 
 	switch c.proto {
