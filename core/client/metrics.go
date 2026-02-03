@@ -24,6 +24,7 @@ type HTTPLogMsg struct {
 	Path      string
 	Status    uint16
 	Duration  uint32
+	Size      int64
 }
 
 type metricsModel struct {
@@ -90,6 +91,11 @@ var (
 	logPathStyle = lipgloss.NewStyle().
 			Foreground(primary).
 			Width(40).
+			Align(lipgloss.Left)
+
+	logSizeStyle = lipgloss.NewStyle().
+			Foreground(primary).
+			Width(7).
 			Align(lipgloss.Left)
 
 	logDurationStyle = lipgloss.NewStyle().
@@ -219,6 +225,14 @@ func (m metricsModel) formatHTTPLog(log HTTPLogMsg) string {
 
 	methodStr := logMethodStyle.Render(log.Method)
 
+	var sizeStr string
+	if log.Size > 0 {
+		sizeStr = formatBytes(uint64(log.Size))
+	} else {
+		sizeStr = formatBytes(0)
+	}
+	sizeStr = logSizeStyle.Render(sizeStr)
+
 	path := log.Path
 	if len(path) > 40 {
 		path = path[:37] + "..."
@@ -240,6 +254,7 @@ func (m metricsModel) formatHTTPLog(log HTTPLogMsg) string {
 		methodStr, "  ",
 		statusStr, "  ",
 		pathStr, "  ",
+		sizeStr, "  ",
 		durationStr,
 	)
 }

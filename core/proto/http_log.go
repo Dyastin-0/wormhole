@@ -20,6 +20,8 @@ type HTTPLog struct {
 	Path string
 	// Status represents the HTTP response status code.
 	Status uint16
+	// Size represents the HTTP reponse content length.
+	Size int64
 	// Duration represents the request duration in microseconds.
 	Duration uint32
 }
@@ -50,6 +52,9 @@ func SerializeHTTPLog(log *HTTPLog) ([]byte, error) {
 	}
 	if err := binary.Write(buf, binary.BigEndian, log.Status); err != nil {
 		return nil, fmt.Errorf("failed to write status: %w", err)
+	}
+	if err := binary.Write(buf, binary.BigEndian, log.Size); err != nil {
+		return nil, fmt.Errorf("failed to write size: %w", err)
 	}
 	if err := binary.Write(buf, binary.BigEndian, log.Duration); err != nil {
 		return nil, fmt.Errorf("failed to write duration: %w", err)
@@ -105,6 +110,9 @@ func DeserializeHTTPLog(data []byte) (*HTTPLog, error) {
 	if err := binary.Read(reader, binary.BigEndian, &log.Status); err != nil {
 		return nil, fmt.Errorf("failed to read status: %w", err)
 	}
+	if err := binary.Read(reader, binary.BigEndian, &log.Size); err != nil {
+		return nil, fmt.Errorf("failed to read size: %w", err)
+	}
 	if err := binary.Read(reader, binary.BigEndian, &log.Duration); err != nil {
 		return nil, fmt.Errorf("failed to read duration: %w", err)
 	}
@@ -146,7 +154,7 @@ func validateHTTPLog(log *HTTPLog) error {
 }
 
 // NewHTTPLog creates a new HTTPLog with the specified fields.
-func NewHTTPLog(timestamp int64, method, path string, status uint16, duration uint32) *HTTPLog {
+func NewHTTPLog(timestamp int64, method, path string, status uint16, duration uint32, size int64) *HTTPLog {
 	return &HTTPLog{
 		Timestamp:    timestamp,
 		MethodLength: uint16(len(method)),
@@ -154,6 +162,7 @@ func NewHTTPLog(timestamp int64, method, path string, status uint16, duration ui
 		PathLength:   uint16(len(path)),
 		Path:         path,
 		Status:       status,
+		Size:         size,
 		Duration:     duration,
 	}
 }

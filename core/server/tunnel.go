@@ -95,17 +95,13 @@ func (t *Tunnel) ProxyWithInspect(ctx context.Context, ystream net.Conn) error {
 
 	if t.metrics != nil {
 		proxyStream := t.metrics.NewProxyConn(ystream)
-		return stream.StreamHTTPWithInspect(ctx, proxyStream, remoteStream, func(start time.Time, method, path string, status int) {
-			t.logHTTPRequest(start, method, path, status)
-		})
+		return stream.StreamHTTPWithInspect(ctx, proxyStream, remoteStream, t.logHTTPRequest)
 	}
-	return stream.StreamHTTPWithInspect(ctx, ystream, remoteStream, func(start time.Time, method, path string, status int) {
-		t.logHTTPRequest(start, method, path, status)
-	})
+	return stream.StreamHTTPWithInspect(ctx, ystream, remoteStream, t.logHTTPRequest)
 }
 
 // logHTTPRequest logs an HTTP request to the tunnel's HTTP log channel.
-func (t *Tunnel) logHTTPRequest(start time.Time, method, path string, status int) {
+func (t *Tunnel) logHTTPRequest(start time.Time, method, path string, status int, size int64) {
 	duration := uint32(time.Since(start).Microseconds())
 
 	log := proto.NewHTTPLog(
@@ -114,6 +110,7 @@ func (t *Tunnel) logHTTPRequest(start time.Time, method, path string, status int
 		path,
 		uint16(status),
 		duration,
+		size,
 	)
 
 	select {

@@ -78,7 +78,7 @@ type Request struct {
 func StreamHTTPWithInspect(
 	ctx context.Context,
 	src, dst net.Conn,
-	onRequest func(start time.Time, method, path string, status int),
+	onRequest func(start time.Time, method, path string, status int, length int64),
 ) error {
 	defer src.Close()
 	defer dst.Close()
@@ -103,7 +103,7 @@ func StreamHTTPWithInspect(
 				return
 			case entry := <-reqCh:
 				resp := <-respCh
-				onRequest(entry.start, entry.Method, entry.URL.Path, resp.StatusCode)
+				onRequest(entry.start, entry.Method, entry.URL.Path, resp.StatusCode, resp.ContentLength)
 			}
 		}
 	}()

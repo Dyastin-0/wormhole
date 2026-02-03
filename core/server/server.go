@@ -353,7 +353,7 @@ func (s *Server) httpAuthProxy(ctx context.Context, conn net.Conn, tunnel *Tunne
 		span.SetStatus(codes.Error, "failed to read http request")
 		s.sendUnauthorized(conn, tunnel.auth)
 		if tunnel.httpLogch != nil {
-			tunnel.logHTTPRequest(start, "GET", "/", http.StatusInternalServerError)
+			tunnel.logHTTPRequest(start, "GET", "/", http.StatusInternalServerError, 0)
 		}
 		return fmt.Errorf("failed to read http request: %w", err)
 	}
@@ -372,7 +372,7 @@ func (s *Server) httpAuthProxy(ctx context.Context, conn net.Conn, tunnel *Tunne
 		span.SetAttributes(attribute.Int("http.status_code", http.StatusUnauthorized))
 		s.sendUnauthorized(conn, tunnel.auth)
 		if tunnel.httpLogch != nil {
-			tunnel.logHTTPRequest(start, req.Method, req.URL.Path, http.StatusUnauthorized)
+			tunnel.logHTTPRequest(start, req.Method, req.URL.Path, http.StatusUnauthorized, 0)
 		}
 		return err
 	}
@@ -423,7 +423,7 @@ func (s *Server) streamHTTPLogs(ctx context.Context, tunnel *Tunnel) error {
 	defer stream.Close()
 
 	// Initially send a "stream ready", so the client accept loop does not block.
-	tunnel.logHTTPRequest(time.Now(), "READY", "/", 0)
+	tunnel.logHTTPRequest(time.Now(), "READY", "/", 0, 0)
 
 	span.SetStatus(codes.Ok, "streaming http logs")
 
