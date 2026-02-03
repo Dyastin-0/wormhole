@@ -448,9 +448,14 @@ func (s *Server) sendHTTPLog(stream net.Conn, httpLog *HTTPLog) error {
 		return fmt.Errorf("failed to serialize header: %w", err)
 	}
 
-	_, err = stream.Write(fmt.Append(serializedHeader, serialized))
+	_, err = stream.Write(serializedHeader)
 	if err != nil {
 		return fmt.Errorf("failed to write header: %w", err)
+	}
+
+	_, err = stream.Write(serialized)
+	if err != nil {
+		return fmt.Errorf("failed to write http log: %w", err)
 	}
 
 	return nil

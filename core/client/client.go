@@ -528,12 +528,13 @@ func (c *Client) handleHTTPLog(ctx context.Context, header *proto.Header, stream
 		return fmt.Errorf("failed to read http log: %w", err)
 	}
 
-	// This is the "READY" log, should be ignored.
-	_, err = proto.DeserializeHTTPLog(buf)
+	httpLog, err := proto.DeserializeHTTPLog(buf)
 	if err != nil {
 		log.Error().Err(err).Msg("failed to deserialize http log")
 		return fmt.Errorf("failed to deserialize http log: %w", err)
 	}
+
+	c.httpLogch <- httpLog
 
 	for {
 		select {

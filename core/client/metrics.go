@@ -277,6 +277,13 @@ func (m metricsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		return m, func() tea.Msg {
 			var protoLog *proto.HTTPLog
+			log := &HTTPLogMsg{}
+
+			select {
+			case request := <-m.requestch:
+				log.request = request
+			case <-time.After(30 * time.Second):
+			}
 
 			select {
 			case protoLog = <-m.httpLogch:
@@ -284,13 +291,11 @@ func (m metricsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return nil
 			}
 
-			return httpLogReadyMsg{
-				log: &HTTPLogMsg{
-					HTTPLog:   protoLog,
-					response:  msg,
-					bodyBytes: bodyBytes,
-				},
-			}
+			log.HTTPLog = protoLog
+			log.response = msg
+			log.bodyBytes = bodyBytes
+
+			return httpLogReadyMsg{log: log}
 		}
 
 	case httpLogReadyMsg:
