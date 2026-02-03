@@ -314,7 +314,7 @@ func (s *Server) tunnel(ctx context.Context, conn net.Conn) error {
 	}
 
 	if !allowTLSPassthrough && isHTTP && tunnel.auth != nil {
-		err = s.httpAuthProxy(ctx, conn, tunnel, start)
+		err = s.httpAuthProxy(ctx, conn, tunnel)
 		return err
 	}
 
@@ -340,7 +340,7 @@ func (s *Server) tunnel(ctx context.Context, conn net.Conn) error {
 	return err
 }
 
-func (s *Server) httpAuthProxy(ctx context.Context, conn net.Conn, tunnel *Tunnel, start time.Time) error {
+func (s *Server) httpAuthProxy(ctx context.Context, conn net.Conn, tunnel *Tunnel) error {
 	defer conn.Close()
 
 	ctx, span := s.tracer.Start(ctx, "server.httpAuthProxy",
@@ -353,9 +353,6 @@ func (s *Server) httpAuthProxy(ctx context.Context, conn net.Conn, tunnel *Tunne
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "failed to read http request")
 		s.sendUnauthorized(conn, tunnel.auth)
-		if tunnel.httpLogch != nil {
-			tunnel.logHTTPRequest(start, "GET", "/", http.StatusInternalServerError, 0)
-		}
 		return fmt.Errorf("failed to read http request: %w", err)
 	}
 
@@ -372,9 +369,6 @@ func (s *Server) httpAuthProxy(ctx context.Context, conn net.Conn, tunnel *Tunne
 		span.SetStatus(codes.Error, "authentication failed")
 		span.SetAttributes(attribute.Int("http.status_code", http.StatusUnauthorized))
 		s.sendUnauthorized(conn, tunnel.auth)
-		if tunnel.httpLogch != nil {
-			tunnel.logHTTPRequest(start, req.Method, req.URL.Path, http.StatusUnauthorized, 0)
-		}
 		return err
 	}
 
@@ -423,9 +417,6 @@ func (s *Server) streamHTTPLogs(ctx context.Context, tunnel *Tunnel) error {
 	}
 	defer stream.Close()
 
-	// Initially send a "stream ready", so the client accept loop does not block.
-	tunnel.logHTTPRequest(time.Now(), "READY", "/", 0, 0)
-
 	span.SetStatus(codes.Ok, "streaming http logs")
 
 	for {
@@ -445,8 +436,8 @@ func (s *Server) streamHTTPLogs(ctx context.Context, tunnel *Tunnel) error {
 }
 
 // sendHTTPLog sends an HTTP log entry to the client.
-func (s *Server) sendHTTPLog(stream net.Conn, httpLog *proto.HTTPLog) error {
-	serialized, err := proto.SerializeHTTPLog(httpLog)
+func (s *Server) sendHTTPLog(stream net.Conn, httpLog *HTTPLog) error {
+	serialized, err := proto.SerializeHTTPLog(httpLog.HTTPLog)
 	if err != nil {
 		return fmt.Errorf("failed to serialize http log: %w", err)
 	}
@@ -457,14 +448,9 @@ func (s *Server) sendHTTPLog(stream net.Conn, httpLog *proto.HTTPLog) error {
 		return fmt.Errorf("failed to serialize header: %w", err)
 	}
 
-	_, err = stream.Write(serializedHeader)
+	_, err = stream.Write(fmt.Append(serializedHeader, serialized))
 	if err != nil {
 		return fmt.Errorf("failed to write header: %w", err)
-	}
-
-	_, err = stream.Write(serialized)
-	if err != nil {
-		return fmt.Errorf("failed to write http log: %w", err)
 	}
 
 	return nil
@@ -712,7 +698,7 @@ func (s *Server) handleRequest(ctx context.Context, stream net.Conn, session *ya
 	span.SetAttributes(attribute.Bool("tls_passthrough", tunnel.allowTLSPassthrough))
 
 	if header.HasFlag(proto.FlagHTTPLog) {
-		tunnel.httpLogch = make(chan *proto.HTTPLog, 100)
+		tunnel.httpLogch = make(chan *HTTPLog, 100)
 		span.SetAttributes(attribute.Bool("http_log_enabled", true))
 
 		go func(ctx context.Context, tunnel *Tunnel) {
@@ -886,12 +872,10 @@ func (s *Server) tunnelTCP(ctx context.Context, conn net.Conn, tunnel *Tunnel) {
 		defer tunnel.metrics.DecrementActiveConnections()
 	}
 
-	start := time.Now()
-
 	var proto string
 	proto, conn = stream.Conn(conn)
 	if tunnel.allowHTTP && tunnel.auth != nil && proto == stream.ProtoHTTP {
-		s.httpAuthProxy(ctx, conn, tunnel, start)
+		s.httpAuthProxy(ctx, conn, tunnel)
 		return
 	}
 

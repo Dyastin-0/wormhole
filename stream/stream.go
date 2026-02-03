@@ -3,6 +3,7 @@ package stream
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"io"
 	"net"
@@ -77,7 +78,7 @@ type Request struct {
 // Response wraps http.Request with a size.
 type Response struct {
 	*http.Response
-	size int64
+	Size int64
 }
 
 // CountWriter count bytes as it writes.
@@ -96,7 +97,7 @@ func (cw *CountWriter) Write(p []byte) (int, error) {
 func StreamHTTPWithInspect(
 	ctx context.Context,
 	src, dst net.Conn,
-	onRequest func(start time.Time, method, path string, status int, length int64),
+	onRequest func(start time.Time, method, path string, status int),
 ) error {
 	defer src.Close()
 	defer dst.Close()
@@ -105,7 +106,7 @@ func StreamHTTPWithInspect(
 	// this way we can do a "bidirectional copy" similar to
 	// Stream and StreamWithContext.
 	reqCh := make(chan *Request, 16)
-	respCh := make(chan *Response, 16)
+	respCh := make(chan *http.Response, 16)
 	closeCh := make(chan struct{})
 	errCh := make(chan error, 2)
 
@@ -119,9 +120,9 @@ func StreamHTTPWithInspect(
 				return
 			case <-ctx.Done():
 				return
-			case entry := <-reqCh:
+			case req := <-reqCh:
 				resp := <-respCh
-				onRequest(entry.start, entry.Method, entry.URL.Path, resp.StatusCode, resp.size)
+				onRequest(req.start, req.Method, req.URL.Path, resp.StatusCode)
 			}
 		}
 	}()
@@ -153,7 +154,6 @@ func StreamHTTPWithInspect(
 
 	go func() {
 		br := bufio.NewReader(dst)
-		cw := &CountWriter{w: src}
 
 		for {
 			resp, err := http.ReadResponse(br, nil)
@@ -162,16 +162,14 @@ func StreamHTTPWithInspect(
 				return
 			}
 
-			cw.count = 0
-
-			err = resp.Write(cw)
+			err = resp.Write(src)
 			if err != nil {
 				errCh <- err
 				return
 			}
 
 			select {
-			case respCh <- &Response{Response: resp, size: cw.count}:
+			case respCh <- resp:
 			default:
 			}
 		}
@@ -187,4 +185,111 @@ func StreamHTTPWithInspect(
 		}
 		return err
 	}
+}
+
+func StreamHTTPWithRequestResponseInspect(
+	ctx context.Context,
+	src, dst net.Conn,
+	responsech chan any,
+	requestch chan *http.Request,
+) error {
+	defer src.Close()
+	defer dst.Close()
+
+	errCh := make(chan error, 2)
+
+	go func() {
+		br := bufio.NewReader(src)
+
+		for {
+			req, err := http.ReadRequest(br)
+			if err != nil {
+				errCh <- err
+				return
+			}
+
+			clone := req.Clone(ctx)
+
+			err = req.Write(dst)
+			if err != nil {
+				errCh <- err
+				return
+			}
+
+			select {
+			case requestch <- clone:
+			default:
+			}
+		}
+	}()
+
+	go func() {
+		br := bufio.NewReader(dst)
+		cw := &CountWriter{w: src}
+
+		for {
+			resp, err := http.ReadResponse(br, nil)
+			if err != nil {
+				errCh <- err
+				return
+			}
+
+			cw.count = 0
+
+			clone, _ := cloneResponse(resp)
+
+			err = resp.Write(cw)
+			if err != nil {
+				errCh <- err
+				return
+			}
+
+			select {
+			case responsech <- &Response{Response: clone, Size: cw.count}:
+			default:
+			}
+		}
+	}()
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case err := <-errCh:
+		if err == io.EOF {
+			return nil
+		}
+		return err
+	}
+}
+
+func cloneResponse(resp *http.Response) (*http.Response, error) {
+	if resp == nil {
+		return nil, nil
+	}
+
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	resp.Body.Close()
+
+	resp.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+
+	clone := &http.Response{
+		Status:           resp.Status,
+		StatusCode:       resp.StatusCode,
+		Proto:            resp.Proto,
+		ProtoMajor:       resp.ProtoMajor,
+		ProtoMinor:       resp.ProtoMinor,
+		Header:           resp.Header.Clone(),
+		Body:             io.NopCloser(bytes.NewReader(bodyBytes)),
+		ContentLength:    resp.ContentLength,
+		TransferEncoding: resp.TransferEncoding,
+		Close:            resp.Close,
+		Uncompressed:     resp.Uncompressed,
+		Trailer:          resp.Trailer.Clone(),
+		TLS:              resp.TLS,
+	}
+
+	return clone, nil
 }

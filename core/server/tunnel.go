@@ -30,7 +30,7 @@ type Tunnel struct {
 	// allowTLSPassthrough
 	allowTLSPassthrough bool
 	// httpLogch is used to send HTTP logs to the client.
-	httpLogch chan *proto.HTTPLog
+	httpLogch chan *HTTPLog
 	// domain specifies the tunnel's subdomain.
 	domain string
 	// createdAt specifies the tunnel's creation time.
@@ -41,6 +41,13 @@ type Tunnel struct {
 	tcpListener net.Listener
 	// controlStream is a yamux.Stream used to handle tunnel request and controls.
 	controlStream net.Conn
+}
+
+type HTTPLog struct {
+	*proto.HTTPLog
+	Method string
+	Path   string
+	Status int
 }
 
 // Proxy opens a stream from the session then forwards the stream to it.
@@ -95,26 +102,32 @@ func (t *Tunnel) ProxyWithInspect(ctx context.Context, ystream net.Conn) error {
 
 	if t.metrics != nil {
 		proxyStream := t.metrics.NewProxyConn(ystream)
-		return stream.StreamHTTPWithInspect(ctx, proxyStream, remoteStream, t.logHTTPRequest)
+		return stream.StreamHTTPWithInspect(ctx, proxyStream, remoteStream, func(start time.Time, method, path string, status int) {
+			t.logHTTPRequest(start, method, path, status)
+		})
 	}
-	return stream.StreamHTTPWithInspect(ctx, ystream, remoteStream, t.logHTTPRequest)
+	return stream.StreamHTTPWithInspect(ctx, ystream, remoteStream, func(start time.Time, method, path string, status int) {
+		t.logHTTPRequest(start, method, path, status)
+	})
 }
 
 // logHTTPRequest logs an HTTP request to the tunnel's HTTP log channel.
-func (t *Tunnel) logHTTPRequest(start time.Time, method, path string, status int, size int64) {
+func (t *Tunnel) logHTTPRequest(start time.Time, method, path string, status int) {
 	duration := uint32(time.Since(start).Microseconds())
 
 	log := proto.NewHTTPLog(
 		time.Now().Unix(),
-		method,
-		path,
-		uint16(status),
 		duration,
-		size,
 	)
 
 	select {
-	case t.httpLogch <- log:
+	case t.httpLogch <- &HTTPLog{
+		HTTPLog: log,
+		Method:  method,
+		Path:    path,
+		Status:  status,
+	}:
+
 	default:
 	}
 }
