@@ -12,6 +12,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"sync"
 	"time"
 
@@ -605,6 +606,22 @@ func (s *Server) handleRequest(ctx context.Context, stream net.Conn, session *ya
 		attribute.String("protocol", proto.ProtoString(req.Proto)),
 	)
 
+	if header.HasFlag(proto.FlagTLSPassthrough) {
+		var u *url.URL
+		u, err = url.Parse(req.URL)
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "invalid url")
+
+			resp := &proto.Response{Status: proto.StatusInvalidURL, Domain: domain}
+			sendErr := s.sendResp(stream, resp)
+			if sendErr != nil {
+				return errors.Join(err, sendErr)
+			}
+		}
+		req.URL = u.Host
+	}
+
 	isTCP := req.Proto == proto.ProtoTCP
 
 	if !isTCP && s.tunnels.Has(domain) {
@@ -615,7 +632,7 @@ func (s *Server) handleRequest(ctx context.Context, stream net.Conn, session *ya
 		resp := &proto.Response{Status: proto.StatusNameTaken, Domain: domain}
 		sendErr := s.sendResp(stream, resp)
 		if sendErr != nil {
-			return sendErr
+			return errors.Join(err, sendErr)
 		}
 
 		return err
@@ -744,6 +761,8 @@ func (s *Server) handleRequest(ctx context.Context, stream net.Conn, session *ya
 		// resolve to the same IP anyway.
 		go s.handleTCPTunnel(ctx, tunnel)
 	} else {
+		// For tunnels with TLS passthrough, we only need to
+		// use the given URL, as they will be handling TLS termination.
 		if header.HasFlag(proto.FlagTLSPassthrough) {
 			s.tunnels.SetIfAbsent(req.URL, tunnel)
 		} else {

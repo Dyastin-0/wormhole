@@ -249,6 +249,8 @@ func (c *Client) RunWithTCP(ctx context.Context) error {
 	}
 
 	switch response.Status {
+	case proto.StatusInvalidURL:
+		prettyPrint("err", fmt.Sprintf("invalid url: %s", c.url))
 	case proto.StatusNameTaken:
 		prettyPrint("err", fmt.Sprintf("subdomain '%s' is already in use", c.name))
 		return ErrNameTaken

@@ -84,6 +84,8 @@ const (
 const (
 	// StatusOK indicates a successful tunnel creation.
 	StatusOK uint8 = 0x01
+	// StatusInvalidURL indicates that the URL paramater is invalid.
+	StatusInvalidURL uint8 = 0x02
 	// StatusNameTaken indicates the requested subdomain is already in use.
 	StatusNameTaken uint8 = 0x03
 	// StatusUnsupportedProto indicates the requested protocol is not supported.
@@ -358,7 +360,7 @@ func validateHeader(header *Header) error {
 // validateResponse validates a Response's fields.
 func validateResponse(resp *Response) error {
 	switch resp.Status {
-	case StatusOK, StatusNameTaken, StatusUnsupportedProto:
+	case StatusOK, StatusInvalidURL, StatusNameTaken, StatusUnsupportedProto:
 		// OK
 	default:
 		return ErrInvalidStatus
