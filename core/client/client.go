@@ -157,6 +157,9 @@ func (c *Client) Run(ctx context.Context) error {
 	}
 
 	switch response.Status {
+	case proto.StatusInvalidURL:
+		prettyPrint("err", fmt.Sprintf("invalid url: %s", c.url))
+		return nil
 	case proto.StatusNameTaken:
 		prettyPrint("err", fmt.Sprintf("subdomain '%s' is already in use", c.name))
 		return nil
@@ -165,7 +168,6 @@ func (c *Client) Run(ctx context.Context) error {
 		return nil
 	case proto.StatusOK:
 	default:
-		prettyPrint("err", fmt.Sprintf("unexpected response status: %v", response.Status))
 		return fmt.Errorf("unexpected response status: %v", response.Status)
 	}
 
@@ -259,7 +261,6 @@ func (c *Client) RunWithTCP(ctx context.Context) error {
 		return ErrUnsupportedProto
 	case proto.StatusOK:
 	default:
-		prettyPrint("err", fmt.Sprintf("unexpected response status: %v", response.Status))
 		return fmt.Errorf("unexpected response status: %v", response.Status)
 	}
 

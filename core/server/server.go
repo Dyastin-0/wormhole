@@ -608,7 +608,7 @@ func (s *Server) handleRequest(ctx context.Context, stream net.Conn, session *ya
 
 	if header.HasFlag(proto.FlagTLSPassthrough) {
 		var u *url.URL
-		u, err = url.Parse(req.URL)
+		u, err = url.ParseRequestURI(req.URL)
 		if err != nil {
 			span.RecordError(err)
 			span.SetStatus(codes.Error, "invalid url")
@@ -618,7 +618,9 @@ func (s *Server) handleRequest(ctx context.Context, stream net.Conn, session *ya
 			if sendErr != nil {
 				return errors.Join(err, sendErr)
 			}
+			return err
 		}
+
 		req.URL = u.Host
 	}
 
