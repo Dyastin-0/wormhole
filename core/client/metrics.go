@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/Dyastin-0/wormhole/core/proto"
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -18,15 +19,6 @@ type MetricsMsg struct {
 	RTT               uint32
 }
 
-type HTTPLogMsg struct {
-	Timestamp int64
-	Method    string
-	Path      string
-	Status    uint16
-	Duration  uint32
-	Size      int64
-}
-
 type metricsModel struct {
 	name           string
 	spinner        spinner.Model
@@ -36,7 +28,7 @@ type metricsModel struct {
 	ingressRate    float64
 	egressRate     float64
 	startTime      time.Time
-	httpLogs       []HTTPLogMsg
+	httpLogs       []*proto.HTTPLog
 	hasMetrics     bool
 	hasHTTPLogging bool
 }
@@ -95,7 +87,7 @@ var (
 
 	logSizeStyle = lipgloss.NewStyle().
 			Foreground(primary).
-			Width(7).
+			Width(10).
 			Align(lipgloss.Left)
 
 	logDurationStyle = lipgloss.NewStyle().
@@ -118,7 +110,7 @@ func newMetricsModel(name string, hasMetrics, hasHTTPLogging bool) metricsModel 
 		prevMetrics:    MetricsMsg{},
 		lastUpdate:     time.Now(),
 		startTime:      time.Now(),
-		httpLogs:       []HTTPLogMsg{},
+		httpLogs:       []*proto.HTTPLog{},
 		hasMetrics:     hasMetrics,
 		hasHTTPLogging: hasHTTPLogging,
 	}
@@ -151,7 +143,7 @@ func (m metricsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.metrics = msg
 		m.lastUpdate = now
 
-	case HTTPLogMsg:
+	case *proto.HTTPLog:
 		m.httpLogs = append(m.httpLogs, msg)
 		if len(m.httpLogs) > 10 {
 			m.httpLogs = m.httpLogs[len(m.httpLogs)-10:]
@@ -219,7 +211,7 @@ func (m metricsModel) formatLine(label, value, rate string) string {
 	return lipgloss.JoinHorizontal(lipgloss.Left, l, v)
 }
 
-func (m metricsModel) formatHTTPLog(log HTTPLogMsg) string {
+func (m metricsModel) formatHTTPLog(log *proto.HTTPLog) string {
 	timestamp := time.Unix(log.Timestamp, 0).Format("15:04:05")
 	timeStr := logTimeStyle.Render(timestamp)
 

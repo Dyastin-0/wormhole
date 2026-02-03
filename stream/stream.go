@@ -1,4 +1,4 @@
-// Package stream implements a bidirectional stream.
+// Package stream implements a bidirectional stream and parsing utilities.
 package stream
 
 import (
@@ -74,6 +74,24 @@ type Request struct {
 	start time.Time
 }
 
+// Response wraps http.Request with a size.
+type Response struct {
+	*http.Response
+	size int64
+}
+
+// CountWriter count bytes as it writes.
+type CountWriter struct {
+	w     io.Writer
+	count int64
+}
+
+func (cw *CountWriter) Write(p []byte) (int, error) {
+	n, err := cw.w.Write(p)
+	cw.count += int64(n)
+	return n, err
+}
+
 // StreamHTTPWithInspect is StreamWithContext with HTTP request-response inspection.
 func StreamHTTPWithInspect(
 	ctx context.Context,
@@ -87,7 +105,7 @@ func StreamHTTPWithInspect(
 	// this way we can do a "bidirectional copy" similar to
 	// Stream and StreamWithContext.
 	reqCh := make(chan *Request, 16)
-	respCh := make(chan *http.Response, 16)
+	respCh := make(chan *Response, 16)
 	closeCh := make(chan struct{})
 	errCh := make(chan error, 2)
 
@@ -103,7 +121,7 @@ func StreamHTTPWithInspect(
 				return
 			case entry := <-reqCh:
 				resp := <-respCh
-				onRequest(entry.start, entry.Method, entry.URL.Path, resp.StatusCode, resp.ContentLength)
+				onRequest(entry.start, entry.Method, entry.URL.Path, resp.StatusCode, resp.size)
 			}
 		}
 	}()
@@ -135,6 +153,7 @@ func StreamHTTPWithInspect(
 
 	go func() {
 		br := bufio.NewReader(dst)
+		cw := &CountWriter{w: src}
 
 		for {
 			resp, err := http.ReadResponse(br, nil)
@@ -143,14 +162,16 @@ func StreamHTTPWithInspect(
 				return
 			}
 
-			err = resp.Write(src)
+			cw.count = 0
+
+			err = resp.Write(cw)
 			if err != nil {
 				errCh <- err
 				return
 			}
 
 			select {
-			case respCh <- resp:
+			case respCh <- &Response{Response: resp, size: cw.count}:
 			default:
 			}
 		}

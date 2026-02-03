@@ -562,13 +562,7 @@ func (c *Client) handleHTTPLog(ctx context.Context, header *proto.Header, stream
 				return fmt.Errorf("failed to deserialize http log: %w", err)
 			}
 
-			c.metricsch <- HTTPLogMsg{
-				Method:    httpLog.Method,
-				Path:      httpLog.Path,
-				Duration:  httpLog.Duration,
-				Timestamp: httpLog.Timestamp,
-				Status:    httpLog.Status,
-			}
+			c.metricsch <- httpLog
 		}
 	}
 }
