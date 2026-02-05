@@ -514,6 +514,7 @@ func (s *Server) handleMessages(ctx context.Context, conn net.Conn) error {
 
 	yamuxConfig := yamux.DefaultConfig()
 	yamuxConfig.EnableKeepAlive = false
+	yamuxConfig.MaxStreamWindowSize = 16 * 1024 * 1024
 
 	session, err := yamux.Server(conn, yamuxConfig)
 	if err != nil {

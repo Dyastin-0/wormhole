@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Dyastin-0/wormhole/core/metricstui"
 	"github.com/Dyastin-0/wormhole/core/proto"
 	"github.com/Dyastin-0/wormhole/stream"
 	"github.com/hashicorp/yamux"
@@ -114,7 +115,11 @@ func (c *Client) Run(ctx context.Context) error {
 	}
 	defer conn.Close()
 
-	session, err := yamux.Client(conn, nil)
+	yamuxConfig := yamux.DefaultConfig()
+	yamuxConfig.EnableKeepAlive = false
+	yamuxConfig.MaxStreamWindowSize = 16 * 1024 * 1024
+
+	session, err := yamux.Client(conn, yamuxConfig)
 	if err != nil {
 		return fmt.Errorf("failed to create yamux client: %w", err)
 	}
@@ -209,6 +214,7 @@ func (c *Client) RunWithTCP(ctx context.Context) error {
 
 	yamuxConfig := yamux.DefaultConfig()
 	yamuxConfig.EnableKeepAlive = false
+	yamuxConfig.MaxStreamWindowSize = 16 * 1024 * 1024
 
 	session, err := yamux.Client(conn, yamuxConfig)
 	if err != nil {
@@ -365,7 +371,11 @@ func (c *Client) ForwardStream(ctx context.Context, ystream net.Conn) error {
 		return fmt.Errorf("failed to dial tcp target address: %w", err)
 	}
 
-	return stream.StreamHTTPWithRequestResponseInspect(ctx, ystream, localConn, c.metricsch, c.requestch)
+	if c.httpLog {
+		return stream.StreamHTTPWithRequestResponseInspect(ctx, ystream, localConn, c.metricsch, c.requestch)
+	}
+
+	return stream.StreamWithContext(ctx, ystream, localConn)
 }
 
 // handleMessages processes incoming multiplexed streams (control streams) from the server.
@@ -427,7 +437,7 @@ func (c *Client) handleMessages(ctx context.Context, session *yamux.Session) err
 			case proto.TypeMetrics:
 				c.metricsmu.Lock()
 				if c.metricsch == nil {
-					program, metricsch, httpLogch, requestch := StartMetricsDisplay(c.domain, c.metrics, c.httpLog)
+					program, metricsch, httpLogch, requestch := metricstui.StartTUI(c.domain, c.metrics, c.httpLog)
 					go func() {
 						defer close(metricsch)
 						if _, err := program.Run(); err != nil {
@@ -444,7 +454,7 @@ func (c *Client) handleMessages(ctx context.Context, session *yamux.Session) err
 			case proto.TypeHTTPLog:
 				c.metricsmu.Lock()
 				if c.metricsch == nil {
-					program, metricsch, httpLogch, requestch := StartMetricsDisplay(c.domain, c.metrics, c.httpLog)
+					program, metricsch, httpLogch, requestch := metricstui.StartTUI(c.domain, c.metrics, c.httpLog)
 					go func() {
 						defer close(metricsch)
 						if _, err := program.Run(); err != nil {
@@ -648,7 +658,7 @@ func (c *Client) handleMetrics(ctx context.Context, header *proto.Header, stream
 		return fmt.Errorf("failed to deserialize metrics: %w", err)
 	}
 
-	c.metricsch <- MetricsMsg{
+	c.metricsch <- metricstui.MetricsMsg{
 		Ingress:           deserializedMetrics.Ingress,
 		Egress:            deserializedMetrics.Egress,
 		Uptime:            deserializedMetrics.Uptime,
@@ -687,7 +697,7 @@ func (c *Client) handleMetrics(ctx context.Context, header *proto.Header, stream
 				return fmt.Errorf("failed to deserialize metrics: %w", err)
 			}
 
-			c.metricsch <- MetricsMsg{
+			c.metricsch <- metricstui.MetricsMsg{
 				Ingress:           deserializedMetrics.Ingress,
 				Egress:            deserializedMetrics.Egress,
 				Uptime:            deserializedMetrics.Uptime,

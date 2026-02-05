@@ -11,6 +11,8 @@ import (
 	"time"
 )
 
+const maxInspectSize = 1024 * 1024
+
 // Stream handles bidirectional streaming between src and dst.
 func Stream(src, dst net.Conn) error {
 	errc := make(chan error, 2)
@@ -187,6 +189,22 @@ func StreamHTTPWithInspect(
 	}
 }
 
+type LimitedTeeReader struct {
+	R io.Reader
+	W io.Writer
+	N int64
+}
+
+func (l *LimitedTeeReader) Read(p []byte) (n int, err error) {
+	n, err = l.R.Read(p)
+	if n > 0 && l.N > 0 {
+		toCopy := min(int64(n), l.N)
+		l.W.Write(p[:toCopy])
+		l.N -= toCopy
+	}
+	return n, err
+}
+
 func StreamHTTPWithRequestResponseInspect(
 	ctx context.Context,
 	src, dst net.Conn,
@@ -200,7 +218,6 @@ func StreamHTTPWithRequestResponseInspect(
 
 	go func() {
 		br := bufio.NewReader(src)
-
 		for {
 			req, err := http.ReadRequest(br)
 			if err != nil {
@@ -208,7 +225,12 @@ func StreamHTTPWithRequestResponseInspect(
 				return
 			}
 
-			clone := req.Clone(ctx)
+			var reqBodyBuf bytes.Buffer
+			req.Body = io.NopCloser(&LimitedTeeReader{
+				R: req.Body,
+				W: &reqBodyBuf,
+				N: maxInspectSize,
+			})
 
 			err = req.Write(dst)
 			if err != nil {
@@ -216,8 +238,11 @@ func StreamHTTPWithRequestResponseInspect(
 				return
 			}
 
+			tuiReq := req.Clone(ctx)
+			tuiReq.Body = io.NopCloser(bytes.NewReader(reqBodyBuf.Bytes()))
+
 			select {
-			case requestch <- clone:
+			case requestch <- tuiReq:
 			default:
 			}
 		}
@@ -235,8 +260,13 @@ func StreamHTTPWithRequestResponseInspect(
 			}
 
 			cw.count = 0
+			var respBodyBuf bytes.Buffer
 
-			clone, _ := cloneResponse(resp)
+			resp.Body = io.NopCloser(&LimitedTeeReader{
+				R: resp.Body,
+				W: &respBodyBuf,
+				N: maxInspectSize,
+			})
 
 			err = resp.Write(cw)
 			if err != nil {
@@ -244,8 +274,12 @@ func StreamHTTPWithRequestResponseInspect(
 				return
 			}
 
+			tuiResp := *resp
+			tuiResp.Body = io.NopCloser(bytes.NewReader(respBodyBuf.Bytes()))
+			tuiResp.Header = resp.Header.Clone()
+
 			select {
-			case responsech <- &Response{Response: clone, Size: cw.count}:
+			case responsech <- &Response{Response: &tuiResp, Size: cw.count}:
 			default:
 			}
 		}
@@ -260,36 +294,4 @@ func StreamHTTPWithRequestResponseInspect(
 		}
 		return err
 	}
-}
-
-func cloneResponse(resp *http.Response) (*http.Response, error) {
-	if resp == nil {
-		return nil, nil
-	}
-
-	bodyBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-	resp.Body.Close()
-
-	resp.Body = io.NopCloser(bytes.NewReader(bodyBytes))
-
-	clone := &http.Response{
-		Status:           resp.Status,
-		StatusCode:       resp.StatusCode,
-		Proto:            resp.Proto,
-		ProtoMajor:       resp.ProtoMajor,
-		ProtoMinor:       resp.ProtoMinor,
-		Header:           resp.Header.Clone(),
-		Body:             io.NopCloser(bytes.NewReader(bodyBytes)),
-		ContentLength:    resp.ContentLength,
-		TransferEncoding: resp.TransferEncoding,
-		Close:            resp.Close,
-		Uncompressed:     resp.Uncompressed,
-		Trailer:          resp.Trailer.Clone(),
-		TLS:              resp.TLS,
-	}
-
-	return clone, nil
 }
