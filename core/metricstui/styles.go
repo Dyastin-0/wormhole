@@ -16,8 +16,9 @@ const (
 	headerKeyWidth   = 30
 	headerValueWidth = 50
 
-	maxBodySize  = 1024 * 1024
-	maxLogs      = 1024
+	hexColumnSize = 8
+	viewportWidth = 50
+
 	headerHeight = 12
 	footerHeight = 3
 )
@@ -32,11 +33,11 @@ var (
 var (
 	searchHighlightStyle = lipgloss.NewStyle().
 				Background(lipgloss.Color("226")).
-				Foreground(lipgloss.Color("0"))
+				Foreground(lipgloss.Color("#1a1a1a"))
 
 	currentMatchStyle = lipgloss.NewStyle().
 				Background(lipgloss.Color("208")).
-				Foreground(lipgloss.Color("0")).
+				Foreground(lipgloss.Color("#000000")).
 				Bold(true)
 
 	titleStyle = lipgloss.NewStyle().

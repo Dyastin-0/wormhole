@@ -49,15 +49,19 @@ func (m metricsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *metricsModel) handleWindowSize(msg tea.WindowSizeMsg) tea.Cmd {
 	verticalMarginHeight := headerHeight + footerHeight
-	width := min(50, msg.Width)
+	width := min(viewportWidth, msg.Width)
 
 	if !m.ready {
 		m.viewport = viewport.New(width, msg.Height-verticalMarginHeight)
 		m.viewport.YPosition = headerHeight
+		m.hexViewport = viewport.New(width, msg.Height-verticalMarginHeight)
+		m.hexViewport.YPosition = headerHeight
 		m.ready = true
 	} else {
 		m.viewport.Width = width
 		m.viewport.Height = msg.Height - verticalMarginHeight
+		m.hexViewport.Width = width
+		m.hexViewport.Height = msg.Height - verticalMarginHeight
 	}
 
 	return nil
@@ -81,10 +85,10 @@ func (m *metricsModel) handleKeyPress(msg tea.KeyMsg) tea.Cmd {
 
 	if m.viewMode == ViewModeDetail {
 		switch msg.String() {
-		case "l", "right", "tab", "h", "left", "shift+tab":
+		case "l", "tab", "h", "shift+tab":
 			m.activeTab = (m.activeTab + 1) % 2
 			m.viewMode = ViewModeDetail
-			m.findMatches(true)
+			m.setSelectedLog()
 			return nil
 		}
 	}
@@ -103,14 +107,10 @@ func (m *metricsModel) handleListViewKeys(msg tea.KeyMsg) tea.Cmd {
 	switch msg.String() {
 	case "enter":
 		if m.logStore.Len() > 0 {
+			m.setSelectedLog()
+			m.currentMatch = 0
 			m.viewMode = ViewModeDetail
 			m.activeTab = TabResponseBody
-			m.refreshViewportContent()
-			if m.searchQuery != "" {
-				m.findMatches(true)
-				m.highlightMatches(m.originalContent)
-			}
-			m.viewport.GotoTop()
 		}
 
 	case "up", "k":
@@ -183,7 +183,9 @@ func (m *metricsModel) handleDetailViewKeys(msg tea.KeyMsg) tea.Cmd {
 	case "g":
 		if time.Since(m.lastGPress) < 500*time.Millisecond {
 			m.viewport.GotoTop()
+			m.hexViewport.GotoTop()
 			m.lastGPress = time.Time{}
+			m.refreshViewportContent()
 			return nil
 		}
 		m.lastGPress = time.Now()
@@ -191,13 +193,23 @@ func (m *metricsModel) handleDetailViewKeys(msg tea.KeyMsg) tea.Cmd {
 
 	case "G":
 		m.viewport.GotoBottom()
+		m.hexViewport.GotoBottom()
+		m.refreshViewportContent()
 		m.lastGPress = time.Time{}
 		return nil
 
+	case "left":
+		m.viewport.ScrollLeft(3)
+		return nil
+	case "right":
+		m.viewport.ScrollRight(3)
+		return nil
 	default:
 		m.lastGPress = time.Time{}
 		var cmd tea.Cmd
-		m.viewport, cmd = m.viewport.Update(msg)
+		m.hexViewport, cmd = m.hexViewport.Update(msg)
+		m.viewport.SetYOffset(m.hexViewport.YOffset)
+		m.refreshViewportContent()
 		return cmd
 	}
 }

@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-const maxInspectSize = 1024 * 1024
+const maxInspectSize = 20 * 1024 * 1024
 
 // Stream handles bidirectional streaming between src and dst.
 func Stream(src, dst net.Conn) error {

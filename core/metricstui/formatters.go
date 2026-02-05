@@ -201,3 +201,28 @@ func readRequestBody(req *http.Request) ([]byte, error) {
 
 	return body, nil
 }
+
+func formatHexRows(data []byte, column int) string {
+	if len(data) == 0 {
+		return ""
+	}
+
+	hexChars := "0123456789abcdef"
+
+	res := make([]byte, len(data)*3)
+
+	writeIdx := 0
+	for i, v := range data {
+		res[writeIdx] = hexChars[v>>4]
+		res[writeIdx+1] = hexChars[v&0x0f]
+
+		if (i+1)%column == 0 {
+			res[writeIdx+2] = '\n'
+		} else {
+			res[writeIdx+2] = ' '
+		}
+		writeIdx += 3
+	}
+
+	return string(res[:writeIdx])
+}

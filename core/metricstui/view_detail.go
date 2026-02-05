@@ -108,15 +108,34 @@ func (m metricsModel) renderDetailFooter() string {
 }
 
 func (m metricsModel) renderBodyColumn() string {
-	return lipgloss.JoinVertical(lipgloss.Left,
-		lipgloss.JoinHorizontal(
-			lipgloss.Left,
-			"Body ",
-			fmt.Sprintf("%3.f%%", m.viewport.ScrollPercent()*100),
-		),
-		"",
+	viewports := lipgloss.JoinHorizontal(lipgloss.Left,
 		m.viewport.View(),
+		"  ",
+		m.hexViewport.View(),
 	)
+
+	var size int
+	switch m.activeTab {
+	case TabResponseBody:
+		size = len(m.logStore.GetSelected().responseBody)
+	case TabRequestBody:
+		size = len(m.logStore.GetSelected().requestBody)
+	}
+
+	body := lipgloss.JoinVertical(lipgloss.Left,
+		fmt.Sprintf("Body %s", formatBytes(uint64(size))),
+		"",
+		viewports,
+		footerStyle.Render(
+			fmt.Sprintf(
+				"Scroll Y %3.f%% • Scroll X %3.f%%",
+				m.hexViewport.ScrollPercent()*100,
+				m.viewport.HorizontalScrollPercent()*100,
+			),
+		),
+	)
+
+	return body
 }
 
 func (m metricsModel) formatDetailLineAligned(label, styledValue string, labelWidth int) string {

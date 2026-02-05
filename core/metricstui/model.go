@@ -2,7 +2,6 @@ package metricstui
 
 import (
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/Dyastin-0/wormhole/core/proto"
@@ -12,10 +11,16 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+const (
+	maxBodySize = 5 * 1024 * 1024
+	maxLogs     = 1024
+)
+
 type metricsModel struct {
 	name           string
 	spinner        spinner.Model
 	viewport       viewport.Model
+	hexViewport    viewport.Model
 	metricsData    MetricsData
 	startTime      time.Time
 	logStore       *HTTPLogStore
@@ -35,8 +40,10 @@ type metricsModel struct {
 	searchMatches []*matchLocation
 	currentMatch  int
 
-	originalContent  string
-	lowerCaseContent string
+	stringContent string
+	totalHexRows  int
+	visualMap     []int
+	lineOffsets   []int
 }
 
 type matchLocation struct {
@@ -76,7 +83,7 @@ func (m metricsModel) Init() tea.Cmd {
 	return m.spinner.Tick
 }
 
-func (m *metricsModel) refreshViewportContent() {
+func (m *metricsModel) setSelectedLog() {
 	log := m.logStore.GetSelected()
 	if log == nil {
 		return
@@ -89,22 +96,30 @@ func (m *metricsModel) refreshViewportContent() {
 		content = string(log.responseBody)
 	}
 
-	wrappingStyle := lipgloss.NewStyle().Width(m.viewport.Width - 2)
-	m.originalContent = wrappingStyle.Render(content)
-	m.lowerCaseContent = strings.ToLower(m.originalContent)
+	m.stringContent = content
+	m.lineOffsets = getLineOffsets(m.stringContent)
+	m.totalHexRows = (len(m.stringContent) + hexColumnSize - 1) / hexColumnSize
+
+	m.viewport.SetYOffset(0)
+	m.hexViewport.SetYOffset(0)
+	m.viewport.SetXOffset(0)
 
 	if m.searchQuery != "" {
 		m.findMatches(false)
 	} else {
 		m.searchMatches = nil
+		m.currentMatch = 0
 	}
 
-	displayContent := m.originalContent
-	if len(m.searchMatches) > 0 {
-		displayContent = m.highlightMatches(m.originalContent)
-	}
+	m.refreshViewportContent()
+}
 
-	m.viewport.SetContent(displayContent)
+func (m *metricsModel) refreshViewportContent() {
+	textDisplay := m.highlightMatches(m.stringContent)
+	m.viewport.SetContent(textDisplay)
+
+	hexDisplay := m.highlightHexMatches()
+	m.hexViewport.SetContent(hexDisplay)
 }
 
 func StartTUI(
