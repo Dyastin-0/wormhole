@@ -173,10 +173,12 @@ func (m *metricsModel) handleDetailViewKeys(msg tea.KeyMsg) tea.Cmd {
 
 	case key.Matches(msg, m.keys.Left):
 		m.viewport.ScrollLeft(3)
+		m.refreshViewportContent()
 		return nil
 
 	case key.Matches(msg, m.keys.Right):
 		m.viewport.ScrollRight(3)
+		m.refreshViewportContent()
 		return nil
 
 	default:
@@ -195,6 +197,7 @@ func (m *metricsModel) handleSearchInput(msg tea.KeyMsg) tea.Cmd {
 			m.searchQuery = ""
 			m.currentMatch = 0
 			m.searchMatches = nil
+			m.refreshViewportContent()
 		} else {
 			m.searchMode = false
 		}
