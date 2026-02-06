@@ -95,54 +95,41 @@ func (cw *CountWriter) Write(p []byte) (int, error) {
 	return n, err
 }
 
-// StreamHTTPWithInspect is StreamWithContext with HTTP request-response inspection.
+// StreamHTTPWithInspect is StreamWithContext that inspects HTTP traffic and
+// sends them to the internal channels and calls the callback function.
 func StreamHTTPWithInspect(
 	ctx context.Context,
 	src, dst net.Conn,
 	onRequest func(start time.Time, method, path string, status int),
 ) error {
+	brSrc := bufio.NewReader(src)
+	brDst := bufio.NewReader(dst)
+
+	bcSrc := &BuffConn{Conn: src, r: brSrc}
+	bcDst := &BuffConn{Conn: dst, r: brDst}
+
 	defer src.Close()
 	defer dst.Close()
 
-	// channels for coordinating request/response cycles,
-	// this way we can do a "bidirectional copy" similar to
-	// Stream and StreamWithContext.
-	reqCh := make(chan *Request, 16)
-	respCh := make(chan *http.Response, 16)
-	closeCh := make(chan struct{})
+	reqCh := make(chan *Request, 1)
+	respCh := make(chan *http.Response, 1)
 	errCh := make(chan error, 2)
 
-	// This matches request with its coresponding response,
-	// becuase HTTP/1.1 is inherently sequential, meaning a client
-	// must wait for a request's response before sending another request.
-	go func() {
-		for {
-			select {
-			case <-closeCh:
-				return
-			case <-ctx.Done():
-				return
-			case req := <-reqCh:
-				resp := <-respCh
-				onRequest(req.start, req.Method, req.URL.Path, resp.StatusCode)
-			}
-		}
-	}()
+	stopHTTP := make(chan struct{})
 
 	go func() {
-		br := bufio.NewReader(src)
-
+		defer close(reqCh)
 		for {
-			req, err := http.ReadRequest(br)
+			req, err := http.ReadRequest(brSrc)
 			if err != nil {
 				errCh <- err
 				return
 			}
 
+			isUpgrade := req.Header.Get("Upgrade") == "websocket"
 			reqStart := time.Now()
 
-			err = req.Write(dst)
-			if err != nil {
+			if err := req.Write(dst); err != nil {
 				errCh <- err
 				return
 			}
@@ -151,21 +138,23 @@ func StreamHTTPWithInspect(
 			case reqCh <- &Request{Request: req, start: reqStart}:
 			default:
 			}
+
+			if isUpgrade {
+				return
+			}
 		}
 	}()
 
 	go func() {
-		br := bufio.NewReader(dst)
-
+		defer close(respCh)
 		for {
-			resp, err := http.ReadResponse(br, nil)
+			resp, err := http.ReadResponse(brDst, nil)
 			if err != nil {
 				errCh <- err
 				return
 			}
 
-			err = resp.Write(src)
-			if err != nil {
+			if err := resp.Write(src); err != nil {
 				errCh <- err
 				return
 			}
@@ -174,19 +163,45 @@ func StreamHTTPWithInspect(
 			case respCh <- resp:
 			default:
 			}
+
+			if resp.StatusCode == http.StatusSwitchingProtocols {
+				close(stopHTTP)
+				return
+			}
 		}
 	}()
 
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case err := <-errCh:
-		close(closeCh)
-		if err == io.EOF {
-			return nil
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case err := <-errCh:
+			if err == io.EOF {
+				return nil
+			}
+			return err
+		case req, ok := <-reqCh:
+			if !ok {
+				goto RawStream
+			}
+
+			resp, ok := <-respCh
+			if !ok {
+				goto RawStream
+			}
+
+			onRequest(req.start, req.Method, req.URL.Path, resp.StatusCode)
+
+			if resp.StatusCode == http.StatusSwitchingProtocols {
+				goto RawStream
+			}
+		case <-stopHTTP:
+			goto RawStream
 		}
-		return err
 	}
+
+RawStream:
+	return StreamWithContext(ctx, bcSrc, bcDst)
 }
 
 type LimitedTeeReader struct {
@@ -205,25 +220,35 @@ func (l *LimitedTeeReader) Read(p []byte) (n int, err error) {
 	return n, err
 }
 
-func StreamHTTPWithRequestResponseInspect(
+// StreamHTTPWithRequestResponseContext is StreamWithHTTPContext that inspects HTTP traffic
+// and sends them to an external channels without blocking.
+func StreamHTTPWithRequestResponseContext(
 	ctx context.Context,
 	src, dst net.Conn,
 	responsech chan any,
 	requestch chan *http.Request,
 ) error {
+	brSrc := bufio.NewReader(src)
+	brDst := bufio.NewReader(dst)
+
+	bcSrc := &BuffConn{Conn: src, r: brSrc}
+	bcDst := &BuffConn{Conn: dst, r: brDst}
+
 	defer src.Close()
 	defer dst.Close()
 
 	errCh := make(chan error, 2)
+	upgradeCh := make(chan struct{})
 
 	go func() {
-		br := bufio.NewReader(src)
 		for {
-			req, err := http.ReadRequest(br)
+			req, err := http.ReadRequest(brSrc)
 			if err != nil {
 				errCh <- err
 				return
 			}
+
+			isUpgrade := req.Header.Get("Upgrade") == "websocket"
 
 			var reqBodyBuf bytes.Buffer
 			req.Body = io.NopCloser(&LimitedTeeReader{
@@ -232,28 +257,28 @@ func StreamHTTPWithRequestResponseInspect(
 				N: maxInspectSize,
 			})
 
-			err = req.Write(dst)
-			if err != nil {
+			if err := req.Write(dst); err != nil {
 				errCh <- err
 				return
 			}
 
 			tuiReq := req.Clone(ctx)
 			tuiReq.Body = io.NopCloser(bytes.NewReader(reqBodyBuf.Bytes()))
-
 			select {
 			case requestch <- tuiReq:
 			default:
+			}
+
+			if isUpgrade {
+				return
 			}
 		}
 	}()
 
 	go func() {
-		br := bufio.NewReader(dst)
 		cw := &CountWriter{w: src}
-
 		for {
-			resp, err := http.ReadResponse(br, nil)
+			resp, err := http.ReadResponse(brDst, nil)
 			if err != nil {
 				errCh <- err
 				return
@@ -261,15 +286,13 @@ func StreamHTTPWithRequestResponseInspect(
 
 			cw.count = 0
 			var respBodyBuf bytes.Buffer
-
 			resp.Body = io.NopCloser(&LimitedTeeReader{
 				R: resp.Body,
 				W: &respBodyBuf,
 				N: maxInspectSize,
 			})
 
-			err = resp.Write(cw)
-			if err != nil {
+			if err := resp.Write(cw); err != nil {
 				errCh <- err
 				return
 			}
@@ -277,10 +300,14 @@ func StreamHTTPWithRequestResponseInspect(
 			tuiResp := *resp
 			tuiResp.Body = io.NopCloser(bytes.NewReader(respBodyBuf.Bytes()))
 			tuiResp.Header = resp.Header.Clone()
-
 			select {
 			case responsech <- &Response{Response: &tuiResp, Size: cw.count}:
 			default:
+			}
+
+			if resp.StatusCode == http.StatusSwitchingProtocols {
+				close(upgradeCh)
+				return
 			}
 		}
 	}()
@@ -288,6 +315,8 @@ func StreamHTTPWithRequestResponseInspect(
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
+	case <-upgradeCh:
+		return StreamWithContext(ctx, bcSrc, bcDst)
 	case err := <-errCh:
 		if err == io.EOF {
 			return nil

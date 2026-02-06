@@ -36,7 +36,7 @@ func (m metricsModel) viewDetail() string {
 
 	bodyColumn := m.renderBodyColumn()
 
-	return lipgloss.JoinHorizontal(lipgloss.Left, headerColumn, bodyColumn)
+	return lipgloss.JoinHorizontal(lipgloss.Left, headerColumn, "  ", bodyColumn)
 }
 
 func (m metricsModel) renderDetailMetadata(log *HTTPLogMsg, title string) string {
@@ -126,6 +126,7 @@ func (m metricsModel) renderBodyColumn() string {
 		fmt.Sprintf("Body %s", formatBytes(uint64(size))),
 		"",
 		viewports,
+		"",
 		footerStyle.Render(
 			fmt.Sprintf(
 				"Scroll Y %3.f%% • Scroll X %3.f%%",
