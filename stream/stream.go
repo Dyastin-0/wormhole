@@ -95,9 +95,9 @@ func (cw *CountWriter) Write(p []byte) (int, error) {
 	return n, err
 }
 
-// StreamHTTPWithInspect is StreamWithContext that inspects HTTP traffic and
+// StreamHTTPWithContext is StreamWithContext that inspects HTTP traffic and
 // sends them to the internal channels and calls the callback function.
-func StreamHTTPWithInspect(
+func StreamHTTPWithContext(
 	ctx context.Context,
 	src, dst net.Conn,
 	onRequest func(start time.Time, method, path string, status int),

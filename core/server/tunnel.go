@@ -102,11 +102,11 @@ func (t *Tunnel) ProxyWithInspect(ctx context.Context, ystream net.Conn) error {
 
 	if t.metrics != nil {
 		proxyStream := t.metrics.NewProxyConn(ystream)
-		return stream.StreamHTTPWithInspect(ctx, proxyStream, remoteStream, func(start time.Time, method, path string, status int) {
+		return stream.StreamHTTPWithContext(ctx, proxyStream, remoteStream, func(start time.Time, method, path string, status int) {
 			t.logHTTPRequest(start, method, path, status)
 		})
 	}
-	return stream.StreamHTTPWithInspect(ctx, ystream, remoteStream, func(start time.Time, method, path string, status int) {
+	return stream.StreamHTTPWithContext(ctx, ystream, remoteStream, func(start time.Time, method, path string, status int) {
 		t.logHTTPRequest(start, method, path, status)
 	})
 }

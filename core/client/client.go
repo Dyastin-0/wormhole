@@ -372,7 +372,7 @@ func (c *Client) ForwardStream(ctx context.Context, ystream net.Conn) error {
 	}
 
 	if c.httpLog {
-		return stream.StreamHTTPWithRequestResponseInspect(ctx, ystream, localConn, c.metricsch, c.requestch)
+		return stream.StreamHTTPWithRequestResponseContext(ctx, ystream, localConn, c.metricsch, c.requestch)
 	}
 
 	return stream.StreamWithContext(ctx, ystream, localConn)
