@@ -86,25 +86,33 @@ func (m metricsModel) renderDetailMetadata(log *HTTPLogMsg, title string) string
 }
 
 func (m metricsModel) renderDetailFooter() string {
-	var helpText string
+	m.keys.Search.SetEnabled(!m.searchMode)
+	helpView := m.help.View(m.keys)
 
+	var statusLine string
 	if m.searchMode {
 		matchInfo := ""
 		if len(m.searchMatches) > 0 {
 			matchInfo = fmt.Sprintf(" (%d/%d)", m.currentMatch+1, len(m.searchMatches))
 		}
-		helpText = fmt.Sprintf("ESC: Clear/Back • Search: /%s%s", m.searchQuery, matchInfo)
+		searchStr := helpKeyStyle.Render("Search")
+		statusLine = valueStyle.Width(0).Render(fmt.Sprintf(" /%s%s", m.searchQuery, matchInfo))
+		statusLine = lipgloss.JoinHorizontal(lipgloss.Left, searchStr, statusLine)
 	} else if len(m.searchMatches) > 0 {
-		helpText = fmt.Sprintf("Match %d/%d • n/N: Next/Prev • /: Search • q: Quit",
-			m.currentMatch+1, len(m.searchMatches))
-	} else {
-		helpText = "ESC: Back • j/k: Scroll • gg/G: Top/Bottom • /: Search • q: Quit"
+		matchStr := helpKeyStyle.Render("Match")
+		statusLine = valueStyle.Width(0).Render(fmt.Sprintf(" %d/%d", m.currentMatch+1, len(m.searchMatches)))
+		statusLine = lipgloss.JoinHorizontal(lipgloss.Left, matchStr, statusLine)
 	}
 
-	return lipgloss.JoinVertical(lipgloss.Left,
-		"",
-		footerStyle.Render(helpText),
-	)
+	if statusLine != "" {
+		return lipgloss.JoinVertical(lipgloss.Left,
+			"",
+			statusLine,
+			helpView,
+		)
+	}
+
+	return lipgloss.JoinVertical(lipgloss.Left, "", helpView)
 }
 
 func (m metricsModel) renderBodyColumn() string {
@@ -114,29 +122,38 @@ func (m metricsModel) renderBodyColumn() string {
 		m.hexViewport.View(),
 	)
 
-	var size int
-	switch m.activeTab {
-	case TabResponseBody:
-		size = len(m.logStore.GetSelected().responseBody)
-	case TabRequestBody:
-		size = len(m.logStore.GetSelected().requestBody)
-	}
+	vertLabel := helpKeyStyle.Width(0).Render("Scroll-Y")
+	vertVal := valueStyle.Width(0).Render(fmt.Sprintf("%3.0f%%", m.hexViewport.ScrollPercent()*100))
+
+	horizLabel := helpKeyStyle.Width(0).Render("Scroll-X")
+	horizVal := valueStyle.Width(0).Render(fmt.Sprintf("%3.0f%%", m.viewport.HorizontalScrollPercent()*100))
+	separator := m.help.Styles.ShortSeparator.Render(" • ")
+	scrollInfo := fmt.Sprintf("%s %s%s%s %s",
+		vertLabel, vertVal,
+		separator,
+		horizLabel, horizVal,
+	)
 
 	body := lipgloss.JoinVertical(lipgloss.Left,
-		fmt.Sprintf("Body %s", formatBytes(uint64(size))),
+		valueStyle.Width(0).Render(fmt.Sprintf("Body %s", formatBytes(uint64(m.getBodySize())))),
 		"",
 		viewports,
 		"",
-		footerStyle.Render(
-			fmt.Sprintf(
-				"Scroll Y %3.f%% • Scroll X %3.f%%",
-				m.hexViewport.ScrollPercent()*100,
-				m.viewport.HorizontalScrollPercent()*100,
-			),
-		),
+		scrollInfo,
 	)
 
 	return body
+}
+
+func (m metricsModel) getBodySize() int {
+	log := m.logStore.GetSelected()
+	if log == nil {
+		return 0
+	}
+	if m.activeTab == TabResponseBody {
+		return len(log.responseBody)
+	}
+	return len(log.requestBody)
 }
 
 func (m metricsModel) formatDetailLineAligned(label, styledValue string, labelWidth int) string {

@@ -5,8 +5,8 @@ import (
 	"time"
 
 	"github.com/Dyastin-0/wormhole/core/proto"
+	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -19,8 +19,8 @@ const (
 type metricsModel struct {
 	name           string
 	spinner        spinner.Model
-	viewport       viewport.Model
-	hexViewport    viewport.Model
+	viewport       viewportModel
+	hexViewport    viewportModel
 	metricsData    MetricsData
 	startTime      time.Time
 	logStore       *HTTPLogStore
@@ -44,6 +44,9 @@ type metricsModel struct {
 	totalHexRows  int
 	visualMap     []int
 	lineOffsets   []int
+
+	keys KeyMap
+	help help.Model
 }
 
 type matchLocation struct {
@@ -64,6 +67,14 @@ func newMetricsModel(
 	httpLogch := make(chan *proto.HTTPLog, 16)
 	requestch := make(chan *http.Request, 16)
 
+	h := help.New()
+	h.ShortSeparator = " • "
+	h.Styles.ShortKey = helpKeyStyle
+	h.Styles.FullKey = helpKeyStyle
+	h.Styles.ShortDesc = footerStyle.Faint(true)
+	h.Styles.FullDesc = footerStyle.Faint(true)
+	h.Styles.ShortSeparator = footerStyle.Faint(true)
+
 	return httpLogch, requestch, metricsModel{
 		name:           name,
 		spinner:        s,
@@ -76,6 +87,8 @@ func newMetricsModel(
 		activeTab:      TabResponseBody,
 		httpLogch:      httpLogch,
 		requestch:      requestch,
+		keys:           DefaultKeyMap(),
+		help:           h,
 	}
 }
 

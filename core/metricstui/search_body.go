@@ -3,6 +3,8 @@ package metricstui
 import (
 	"sort"
 	"strings"
+
+	"github.com/charmbracelet/lipgloss"
 )
 
 func (m *metricsModel) findMatches(refresh bool) {
@@ -15,17 +17,14 @@ func (m *metricsModel) findMatches(refresh bool) {
 		return
 	}
 
-	query := strings.ReplaceAll(m.searchQuery, "\\n", "\n")
-	query = strings.ToLower(query)
-
-	content := m.stringContent
+	query := strings.ToLower(strings.ReplaceAll(m.searchQuery, "\\n", "\n"))
+	lowerContent := strings.ToLower(m.stringContent)
 	queryLen := len(query)
 
-	matches := make([]*matchLocation, 0, 1000)
-	currentLineIdx := 0
-	offset := 0
+	matches := make([]*matchLocation, 0, len(m.stringContent)/50)
 
-	lowerContent := strings.ToLower(content)
+	offset := 0
+	currentLineIdx := 0
 
 	for {
 		idx := strings.Index(lowerContent[offset:], query)
@@ -33,19 +32,20 @@ func (m *metricsModel) findMatches(refresh bool) {
 			break
 		}
 
-		actualIdx := offset + idx
+		actualStart := offset + idx
+		actualEnd := actualStart + queryLen
 
-		for currentLineIdx+1 < len(m.lineOffsets) && m.lineOffsets[currentLineIdx+1] <= actualIdx {
+		for currentLineIdx+1 < len(m.lineOffsets) && m.lineOffsets[currentLineIdx+1] <= actualStart {
 			currentLineIdx++
 		}
 
 		matches = append(matches, &matchLocation{
 			line:  currentLineIdx,
-			start: actualIdx,
-			end:   actualIdx + queryLen,
+			start: actualStart,
+			end:   actualEnd,
 		})
 
-		offset = actualIdx + queryLen
+		offset = actualStart + 1
 	}
 
 	m.searchMatches = matches
@@ -105,7 +105,7 @@ func (m *metricsModel) highlightHexMatches() string {
 		rowEndByte := min(rowStartByte+hexColumnSize, len(m.stringContent))
 
 		rowBytes := m.stringContent[rowStartByte:rowEndByte]
-		lineText := m.formatSingleHexRow(rowBytes)
+		lineText := hexLine(rowBytes)
 
 		if m.searchQuery != "" && len(m.searchMatches) > 0 {
 			result.WriteString(m.highlightHexLine(lineText, rowStartByte))
@@ -123,101 +123,85 @@ func (m *metricsModel) highlightHexMatches() string {
 	return result.String()
 }
 
-const hexChars = "0123456789ABCDEF"
-
-func (m *metricsModel) formatSingleHexRow(data string) string {
-	if len(data) == 0 {
-		return ""
-	}
-
-	res := make([]byte, len(data)*3)
-	for i := 0; i < len(data); i++ {
-		res[i*3] = hexChars[data[i]>>4]
-		res[i*3+1] = hexChars[data[i]&0x0f]
-		res[i*3+2] = ' '
-	}
-	return string(res[:len(res)-1])
-}
-
 func (m *metricsModel) highlightLine(lineText string, lineStartOffset int) string {
 	var result strings.Builder
-	lastIdx := 0
-	lineEndOffset := lineStartOffset + len(lineText)
 
 	startIndex := sort.Search(len(m.searchMatches), func(i int) bool {
 		return m.searchMatches[i].end > lineStartOffset
 	})
 
-	for i := startIndex; i < len(m.searchMatches); i++ {
-		match := m.searchMatches[i]
+	runes := []rune(lineText)
+	for i := range runes {
+		globalIdx := lineStartOffset + i
+		var activeStyle *lipgloss.Style
 
-		if match.start >= lineEndOffset {
-			break
+		for j := startIndex; j < len(m.searchMatches); j++ {
+			match := m.searchMatches[j]
+			if match.start > globalIdx {
+				break
+			}
+
+			if globalIdx >= match.start && globalIdx < match.end {
+				if j == m.currentMatch {
+					activeStyle = &currentMatchStyle
+					break
+				}
+				activeStyle = &searchHighlightStyle
+			}
 		}
 
-		relStart := max(0, match.start-lineStartOffset)
-		relEnd := min(len(lineText), match.end-lineStartOffset)
-
-		if relStart < lastIdx {
-			continue
-		}
-
-		result.WriteString(lineText[lastIdx:relStart])
-
-		target := lineText[relStart:relEnd]
-		if i == m.currentMatch {
-			result.WriteString(currentMatchStyle.Render(target))
+		char := string(runes[i])
+		if activeStyle != nil {
+			result.WriteString(activeStyle.Render(char))
 		} else {
-			result.WriteString(searchHighlightStyle.Render(target))
+			result.WriteString(char)
 		}
-
-		lastIdx = relEnd
 	}
-
-	result.WriteString(lineText[lastIdx:])
 	return result.String()
 }
 
 func (m *metricsModel) highlightHexLine(lineText string, lineStartByte int) string {
 	var result strings.Builder
-	lastCharIdx := 0
-	lineEndByte := lineStartByte + hexColumnSize
 
 	startIndex := sort.Search(len(m.searchMatches), func(i int) bool {
 		return m.searchMatches[i].end > lineStartByte
 	})
 
-	for i := startIndex; i < len(m.searchMatches); i++ {
-		match := m.searchMatches[i]
-		if match.start >= lineEndByte {
-			break
+	byteCount := (len(lineText) + 1) / 3
+
+	for i := range byteCount {
+		globalByteIdx := lineStartByte + i
+		charIdx := i * 3
+
+		var activeStyle *lipgloss.Style
+
+		for j := startIndex; j < len(m.searchMatches); j++ {
+			match := m.searchMatches[j]
+			if match.start > globalByteIdx {
+				break
+			}
+			if globalByteIdx >= match.start && globalByteIdx < match.end {
+				if j == m.currentMatch {
+					activeStyle = &currentMatchStyle
+					break
+				}
+				activeStyle = &searchHighlightStyle
+			}
 		}
 
-		rowMatchStart := max(lineStartByte, match.start)
-		rowMatchEnd := min(lineEndByte, match.end)
+		hexPair := lineText[charIdx : charIdx+2]
 
-		relStartChar := (rowMatchStart - lineStartByte) * 3
-		relEndChar := (rowMatchEnd - lineStartByte) * 3
-
-		if relEndChar > len(lineText) {
-			relEndChar = len(lineText)
-		} else if relEndChar > 0 && lineText[relEndChar-1] == ' ' {
-			relEndChar--
-		}
-
-		result.WriteString(lineText[lastCharIdx:relStartChar])
-
-		target := lineText[relStartChar:relEndChar]
-		if i == m.currentMatch {
-			result.WriteString(currentMatchStyle.Render(target))
+		if activeStyle != nil {
+			result.WriteString(activeStyle.Render(hexPair))
 		} else {
-			result.WriteString(searchHighlightStyle.Render(target))
+			result.WriteString(hexPair)
 		}
 
-		lastCharIdx = relEndChar
+		if charIdx+2 < len(lineText) {
+			result.WriteByte(' ')
+		}
 	}
 
-	result.WriteString(lineText[lastCharIdx:])
 	return result.String()
 }
 

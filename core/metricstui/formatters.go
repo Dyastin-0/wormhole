@@ -127,10 +127,18 @@ func formatHTTPLogSelected(log *HTTPLogMsg) string {
 // formatStatusCode formats an HTTP status code with appropriate styling.
 func formatStatusCode(code int, selected bool) string {
 	var style lipgloss.Style
-	if code >= 200 && code < 400 {
-		style = logStatusOKStyle
-	} else {
-		style = logStatusErrorStyle
+
+	switch {
+	case code >= 500:
+		style = logStatus5xxStyle
+	case code >= 400:
+		style = logStatus4xxStyle
+	case code >= 300:
+		style = logStatus3xxStyle
+	case code >= 200:
+		style = logStatus2xxStyle
+	default:
+		style = logStatus1xxStyle
 	}
 
 	if selected {
@@ -150,21 +158,15 @@ func sortAndRenderHeaders(headers http.Header) string {
 
 	var sb strings.Builder
 
-	keyNameStyle := labelStyle.Width(0)
-	colonStyle := lipgloss.NewStyle().Foreground(primary).Bold(true)
-	valStyle := lipgloss.NewStyle().
-		Width(headerValueWidth).
-		Align(lipgloss.Left)
-
 	for _, k := range keys {
 		paddingCount := max(headerKeyWidth-len(k)-1, 0)
 		padding := strings.Repeat(" ", paddingCount)
 
-		renderedKey := keyNameStyle.Render(k)
-		renderedColon := colonStyle.Render(":")
+		renderedKey := labelStyle.Width(0).Render(k)
+		renderedColon := valueStyle.Width(0).Bold(true).Render(":")
 
 		keyBlock := renderedKey + padding + renderedColon
-		valStr := valStyle.Render(strings.Join(headers[k], ", "))
+		valStr := valueStyle.Align(lipgloss.Left).Width(headerValueWidth).Render(strings.Join(headers[k], ", "))
 
 		row := lipgloss.JoinHorizontal(lipgloss.Top, keyBlock, " ", valStr)
 		sb.WriteString(row + "\n")
@@ -202,27 +204,18 @@ func readRequestBody(req *http.Request) ([]byte, error) {
 	return body, nil
 }
 
-func formatHexRows(data []byte, column int) string {
+const hexChars = "0123456789ABCDEF"
+
+func hexLine(data string) string {
 	if len(data) == 0 {
 		return ""
 	}
 
-	hexChars := "0123456789abcdef"
-
 	res := make([]byte, len(data)*3)
-
-	writeIdx := 0
-	for i, v := range data {
-		res[writeIdx] = hexChars[v>>4]
-		res[writeIdx+1] = hexChars[v&0x0f]
-
-		if (i+1)%column == 0 {
-			res[writeIdx+2] = '\n'
-		} else {
-			res[writeIdx+2] = ' '
-		}
-		writeIdx += 3
+	for i := 0; i < len(data); i++ {
+		res[i*3] = hexChars[data[i]>>4]
+		res[i*3+1] = hexChars[data[i]&0x0f]
+		res[i*3+2] = ' '
 	}
-
-	return string(res[:writeIdx])
+	return string(res[:len(res)-1])
 }

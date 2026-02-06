@@ -36,7 +36,6 @@ func (m metricsModel) viewList() string {
 		lines = append(lines, m.renderHTTPLogList()...)
 	}
 
-	lines = append(lines, "")
 	lines = append(lines, m.renderFooter()...)
 
 	return lipgloss.JoinVertical(lipgloss.Left, lines...)
@@ -57,7 +56,7 @@ func (m metricsModel) renderMetrics() []string {
 
 func (m metricsModel) renderHTTPLogList() []string {
 	lines := []string{
-		logHeaderStyle.Render(fmt.Sprintf("Requests (%d)", m.logStore.Len())),
+		labelStyle.Render(fmt.Sprintf("Requests (%d)", m.logStore.Len())),
 		"",
 	}
 
@@ -85,8 +84,5 @@ func (m metricsModel) renderHTTPLogList() []string {
 }
 
 func (m metricsModel) renderFooter() []string {
-	if m.logStore.Len() > 0 {
-		return []string{footerStyle.Render("j/k: Navigate • Enter: View details • q: Quit")}
-	}
-	return []string{footerStyle.Render("Press q to quit")}
+	return []string{"", m.help.View(m.keys)}
 }

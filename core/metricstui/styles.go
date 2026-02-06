@@ -24,10 +24,11 @@ const (
 )
 
 var (
-	subtle  = lipgloss.AdaptiveColor{Light: "#666666", Dark: "#808080"}
-	primary = lipgloss.AdaptiveColor{Light: "#000000", Dark: "#FFFFFF"}
-
-	selectedBG = lipgloss.AdaptiveColor{Light: "#E6F3FF", Dark: "#1A3A52"}
+	subtle       = lipgloss.AdaptiveColor{Light: "#666666", Dark: "#808080"}
+	primary      = lipgloss.AdaptiveColor{Light: "#000000", Dark: "#FFFFFF"}
+	highlight    = lipgloss.AdaptiveColor{Light: "#EE6FF8", Dark: "#F07178"}
+	selectedBG   = lipgloss.AdaptiveColor{Light: "#E6F3FF", Dark: "#1A3A52"}
+	helpKeyStyle = lipgloss.NewStyle().Foreground(highlight)
 )
 
 var (
@@ -47,6 +48,7 @@ var (
 	labelStyle = lipgloss.NewStyle().
 			Foreground(subtle).
 			Width(20).
+			Faint(true).
 			Align(lipgloss.Left)
 
 	valueStyle = lipgloss.NewStyle().
@@ -59,12 +61,8 @@ var (
 			Width(12).
 			Align(lipgloss.Right)
 
-	logHeaderStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(primary)
-
 	logTimeStyle = lipgloss.NewStyle().
-			Foreground(subtle).
+			Foreground(primary).
 			Width(timeWidth).
 			Align(lipgloss.Left)
 
@@ -73,13 +71,31 @@ var (
 			Width(methodWidth).
 			Align(lipgloss.Left)
 
-	logStatusOKStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("42")).
-				Width(statusWidth)
+	logStatus1xxStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("39")).
+				Width(statusWidth).
+				Bold(true)
 
-	logStatusErrorStyle = lipgloss.NewStyle().
+	logStatus2xxStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("42")).
+				Width(statusWidth).
+				Bold(true)
+
+	logStatus3xxStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("214")).
+				Width(statusWidth).
+				Bold(true)
+
+	logStatus4xxStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("208")).
+				Width(statusWidth).
+				Bold(true)
+
+	logStatus5xxStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("196")).
-				Width(statusWidth)
+				Width(statusWidth).
+				Bold(true).
+				Italic(true)
 
 	logPathStyle = lipgloss.NewStyle().
 			Foreground(primary).
@@ -92,13 +108,14 @@ var (
 			Align(lipgloss.Left)
 
 	logDurationStyle = lipgloss.NewStyle().
-				Foreground(subtle).
+				Foreground(primary).
 				Width(durationWidth).
 				Align(lipgloss.Right)
 
 	detailLabelStyle = lipgloss.NewStyle().
 				Foreground(subtle).
-				Bold(true)
+				Bold(true).
+				Faint(true)
 
-	footerStyle = lipgloss.NewStyle().Foreground(subtle)
+	footerStyle = lipgloss.NewStyle().Foreground(subtle).Faint(true)
 )

@@ -6,8 +6,8 @@ import (
 
 	"github.com/Dyastin-0/wormhole/core/proto"
 	"github.com/Dyastin-0/wormhole/stream"
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -52,9 +52,11 @@ func (m *metricsModel) handleWindowSize(msg tea.WindowSizeMsg) tea.Cmd {
 	width := min(viewportWidth, msg.Width)
 
 	if !m.ready {
-		m.viewport = viewport.New(width, msg.Height-verticalMarginHeight)
+		m.viewport = newViewport(width, msg.Height-verticalMarginHeight)
+		m.viewport.Style = valueStyle.Width(0)
 		m.viewport.YPosition = headerHeight
-		m.hexViewport = viewport.New(width, msg.Height-verticalMarginHeight)
+		m.hexViewport = newViewport(width, msg.Height-verticalMarginHeight)
+		m.hexViewport.Style = valueStyle.Width(0)
 		m.hexViewport.YPosition = headerHeight
 		m.ready = true
 	} else {
@@ -72,25 +74,27 @@ func (m *metricsModel) handleKeyPress(msg tea.KeyMsg) tea.Cmd {
 		return m.handleDetailViewKeys(msg)
 	}
 
-	switch msg.String() {
-	case "ctrl+c", "q":
-		return tea.Quit
+	if key.Matches(msg, m.keys.Help) {
+		m.help.ShowAll = !m.help.ShowAll
+		return nil
+	}
 
-	case "esc":
-		if m.viewMode == ViewModeDetail {
+	if key.Matches(msg, m.keys.Quit) {
+		return tea.Quit
+	}
+
+	if key.Matches(msg, m.keys.Back) {
+		if m.searchMode {
+		} else if m.viewMode == ViewModeDetail {
 			m.viewMode = ViewModeList
 			return nil
 		}
 	}
 
-	if m.viewMode == ViewModeDetail {
-		switch msg.String() {
-		case "l", "tab", "h", "shift+tab":
-			m.activeTab = (m.activeTab + 1) % 2
-			m.viewMode = ViewModeDetail
-			m.setSelectedLog()
-			return nil
-		}
+	if m.viewMode == ViewModeDetail && key.Matches(msg, m.keys.Tab) {
+		m.activeTab = (m.activeTab + 1) % 2
+		m.setSelectedLog()
+		return nil
 	}
 
 	switch m.viewMode {
@@ -104,114 +108,120 @@ func (m *metricsModel) handleKeyPress(msg tea.KeyMsg) tea.Cmd {
 }
 
 func (m *metricsModel) handleListViewKeys(msg tea.KeyMsg) tea.Cmd {
-	switch msg.String() {
-	case "enter":
+	switch {
+	case key.Matches(msg, m.keys.Up):
+		m.logStore.MoveUp()
+	case key.Matches(msg, m.keys.Down):
+		m.logStore.MoveDown()
+	case key.Matches(msg, m.keys.Enter):
 		if m.logStore.Len() > 0 {
 			m.setSelectedLog()
 			m.currentMatch = 0
 			m.viewMode = ViewModeDetail
 			m.activeTab = TabResponseBody
 		}
-
-	case "up", "k":
-		m.logStore.MoveUp()
-
-	case "down", "j":
-		m.logStore.MoveDown()
 	}
-
 	return nil
 }
 
 func (m *metricsModel) handleDetailViewKeys(msg tea.KeyMsg) tea.Cmd {
-	key := msg.String()
-
 	if m.searchMode {
-		switch key {
-		case "esc":
-			if m.searchQuery != "" {
-				m.currentMatch = 0
-				m.searchQuery = ""
-			} else {
-				m.searchMode = false
-			}
-			return nil
-
-		case "enter":
-			if len(m.searchMatches) > 0 {
-				m.currentMatch = 0
-				m.jumpToMatch()
-			}
-			m.searchMode = false
-			return nil
-
-		case "backspace", "ctrl+h":
-			if len(m.searchQuery) > 0 {
-				m.searchQuery = m.searchQuery[:len(m.searchQuery)-1]
-				m.findMatches(true)
-			}
-			return nil
-
-		default:
-			if len(key) == 1 {
-				m.searchQuery += key
-				m.findMatches(true)
-			}
-			return nil
-		}
+		return m.handleSearchInput(msg)
 	}
 
-	switch key {
-	case "/":
+	switch {
+	case key.Matches(msg, m.keys.Search):
 		m.searchMode = true
 		return nil
 
-	case "n":
+	case key.Matches(msg, m.keys.NextMatch):
 		if len(m.searchMatches) > 0 {
 			m.currentMatch = (m.currentMatch + 1) % len(m.searchMatches)
 			m.jumpToMatch()
 		}
 		return nil
 
-	case "N":
+	case key.Matches(msg, m.keys.PrevMatch):
 		if len(m.searchMatches) > 0 {
 			m.currentMatch = (m.currentMatch - 1 + len(m.searchMatches)) % len(m.searchMatches)
 			m.jumpToMatch()
 		}
 		return nil
 
-	case "g":
+	case key.Matches(msg, m.keys.GotoTop):
 		if time.Since(m.lastGPress) < 500*time.Millisecond {
 			m.viewport.GotoTop()
 			m.hexViewport.GotoTop()
-			m.lastGPress = time.Time{}
 			m.refreshViewportContent()
-			return nil
 		}
 		m.lastGPress = time.Now()
 		return nil
 
-	case "G":
+	case key.Matches(msg, m.keys.GotoBottom):
 		m.viewport.GotoBottom()
 		m.hexViewport.GotoBottom()
 		m.refreshViewportContent()
-		m.lastGPress = time.Time{}
 		return nil
 
-	case "left":
+	case key.Matches(msg, m.keys.GoToLeft):
+		m.viewport.GoToLeft()
+		return nil
+
+	case key.Matches(msg, m.keys.GoToRight):
+		m.viewport.GoToRight()
+		return nil
+
+	case key.Matches(msg, m.keys.Left):
 		m.viewport.ScrollLeft(3)
 		return nil
-	case "right":
+
+	case key.Matches(msg, m.keys.Right):
 		m.viewport.ScrollRight(3)
 		return nil
+
 	default:
-		m.lastGPress = time.Time{}
 		var cmd tea.Cmd
 		m.hexViewport, cmd = m.hexViewport.Update(msg)
 		m.viewport.SetYOffset(m.hexViewport.YOffset)
 		m.refreshViewportContent()
 		return cmd
 	}
+}
+
+func (m *metricsModel) handleSearchInput(msg tea.KeyMsg) tea.Cmd {
+	switch {
+	case key.Matches(msg, m.keys.CancelSearch):
+		if m.searchQuery != "" {
+			m.searchQuery = ""
+			m.currentMatch = 0
+			m.searchMatches = nil
+		} else {
+			m.searchMode = false
+		}
+		return nil
+
+	case key.Matches(msg, m.keys.Enter):
+		if len(m.searchMatches) > 0 {
+			m.currentMatch = 0
+			m.jumpToMatch()
+		}
+		m.searchMode = false
+		return nil
+
+	case msg.Type == tea.KeyBackspace || msg.Type == tea.KeyCtrlH:
+		if len(m.searchQuery) > 0 {
+			m.searchQuery = m.searchQuery[:len(m.searchQuery)-1]
+			m.findMatches(true)
+		}
+		return nil
+
+	case msg.Type == tea.KeyRunes || msg.String() == " ":
+		m.searchQuery += msg.String()
+		m.findMatches(true)
+		return nil
+	}
+
+	return nil
 }
 
 func (m *metricsModel) handleMetrics(msg MetricsMsg) {
