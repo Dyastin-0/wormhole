@@ -19,14 +19,17 @@ const (
 type metricsModel struct {
 	name           string
 	spinner        spinner.Model
-	viewport       viewportModel
-	hexViewport    viewportModel
 	metricsData    MetricsData
 	startTime      time.Time
 	logStore       *HTTPLogStore
 	hasMetrics     bool
 	hasHTTPLogging bool
-	ready          bool
+
+	viewWidth   int
+	viewHeight  int
+	textYOffset int
+	hexYOffset  int
+	xOffset     int
 
 	viewMode  ViewMode
 	activeTab Tab
@@ -42,8 +45,8 @@ type metricsModel struct {
 
 	stringContent string
 	totalHexRows  int
-	visualMap     []int
 	lineOffsets   []int
+	maxLineLength int
 
 	keys KeyMap
 	help help.Model
@@ -64,11 +67,12 @@ func newMetricsModel(
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(subtle)
 
-	httpLogch := make(chan *proto.HTTPLog, 16)
-	requestch := make(chan *http.Request, 16)
+	httpLogch := make(chan *proto.HTTPLog, 1)
+	requestch := make(chan *http.Request, 1)
 
 	h := help.New()
 	h.ShortSeparator = " • "
+	h.Styles.ShortSeparator = labelStyle.Width(0)
 	h.Styles.ShortKey = helpKeyStyle
 	h.Styles.FullKey = helpKeyStyle
 	h.Styles.ShortDesc = footerStyle.Faint(true)
@@ -110,29 +114,19 @@ func (m *metricsModel) setSelectedLog() {
 	}
 
 	m.stringContent = content
-	m.lineOffsets = getLineOffsets(m.stringContent)
+	m.lineOffsets, m.maxLineLength = getLineOffsets(m.stringContent)
 	m.totalHexRows = (len(m.stringContent) + hexColumnSize - 1) / hexColumnSize
 
-	m.viewport.SetYOffset(0)
-	m.hexViewport.SetYOffset(0)
-	m.viewport.SetXOffset(0)
+	m.textYOffset = 0
+	m.hexYOffset = 0
+	m.xOffset = 0
 
 	if m.searchQuery != "" {
-		m.findMatches(false)
+		m.findMatches()
 	} else {
 		m.searchMatches = nil
 		m.currentMatch = 0
 	}
-
-	m.refreshViewportContent()
-}
-
-func (m *metricsModel) refreshViewportContent() {
-	textDisplay := m.highlightMatches(m.stringContent)
-	m.viewport.SetContent(textDisplay)
-
-	hexDisplay := m.highlightHexMatches()
-	m.hexViewport.SetContent(hexDisplay)
 }
 
 func StartTUI(

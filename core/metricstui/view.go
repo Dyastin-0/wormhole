@@ -8,9 +8,6 @@ import (
 )
 
 func (m metricsModel) View() string {
-	if !m.ready {
-		return "Initializing..."
-	}
 	if m.viewMode == ViewModeDetail {
 		return m.viewDetail()
 	}

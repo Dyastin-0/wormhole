@@ -48,24 +48,8 @@ func (m metricsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *metricsModel) handleWindowSize(msg tea.WindowSizeMsg) tea.Cmd {
-	verticalMarginHeight := headerHeight + footerHeight
-	width := min(viewportWidth, msg.Width)
-
-	if !m.ready {
-		m.viewport = newViewport(width, msg.Height-verticalMarginHeight)
-		m.viewport.Style = valueStyle.Width(0)
-		m.viewport.YPosition = headerHeight
-		m.hexViewport = newViewport(width, msg.Height-verticalMarginHeight)
-		m.hexViewport.Style = valueStyle.Width(0)
-		m.hexViewport.YPosition = headerHeight
-		m.ready = true
-	} else {
-		m.viewport.Width = width
-		m.viewport.Height = msg.Height - verticalMarginHeight
-		m.hexViewport.Width = width
-		m.hexViewport.Height = msg.Height - verticalMarginHeight
-	}
-
+	m.viewWidth = 50
+	m.viewHeight = 20
 	return nil
 }
 
@@ -148,46 +132,52 @@ func (m *metricsModel) handleDetailViewKeys(msg tea.KeyMsg) tea.Cmd {
 		}
 		return nil
 
+	case key.Matches(msg, m.keys.Up):
+		m.textYOffset = max(0, m.textYOffset-1)
+		m.hexYOffset = max(0, m.hexYOffset-1)
+		m.xOffset = 0
+		return nil
+
+	case key.Matches(msg, m.keys.Down):
+		maxTextY := max(0, len(m.lineOffsets)-m.viewHeight)
+		maxHexY := max(0, m.totalHexRows-m.viewHeight)
+		m.textYOffset = min(maxTextY, m.textYOffset+1)
+		m.hexYOffset = min(maxHexY, m.hexYOffset+1)
+		return nil
+
 	case key.Matches(msg, m.keys.GotoTop):
 		if time.Since(m.lastGPress) < 500*time.Millisecond {
-			m.viewport.GotoTop()
-			m.hexViewport.GotoTop()
-			m.refreshViewportContent()
+			m.textYOffset = 0
+			m.hexYOffset = 0
 		}
 		m.lastGPress = time.Now()
 		return nil
 
 	case key.Matches(msg, m.keys.GotoBottom):
-		m.viewport.GotoBottom()
-		m.hexViewport.GotoBottom()
-		m.refreshViewportContent()
+		m.textYOffset = max(0, len(m.lineOffsets)-m.viewHeight)
+		m.hexYOffset = max(0, m.totalHexRows-m.viewHeight)
 		return nil
 
 	case key.Matches(msg, m.keys.GoToLeft):
-		m.viewport.GoToLeft()
+		m.xOffset = 0
 		return nil
 
 	case key.Matches(msg, m.keys.GoToRight):
-		m.viewport.GoToRight()
+		maxScroll := max(0, m.maxLineLength-m.viewWidth)
+		m.xOffset = maxScroll
 		return nil
 
 	case key.Matches(msg, m.keys.Left):
-		m.viewport.ScrollLeft(3)
-		m.refreshViewportContent()
+		m.xOffset = max(0, m.xOffset-1)
 		return nil
 
 	case key.Matches(msg, m.keys.Right):
-		m.viewport.ScrollRight(3)
-		m.refreshViewportContent()
+		maxHorizScroll := max(0, m.maxLineLength-m.viewWidth)
+		m.xOffset = min(maxHorizScroll, m.xOffset+1)
 		return nil
-
-	default:
-		var cmd tea.Cmd
-		m.hexViewport, cmd = m.hexViewport.Update(msg)
-		m.viewport.SetYOffset(m.hexViewport.YOffset)
-		m.refreshViewportContent()
-		return cmd
 	}
+
+	return nil
 }
 
 func (m *metricsModel) handleSearchInput(msg tea.KeyMsg) tea.Cmd {
@@ -197,7 +187,6 @@ func (m *metricsModel) handleSearchInput(msg tea.KeyMsg) tea.Cmd {
 			m.searchQuery = ""
 			m.currentMatch = 0
 			m.searchMatches = nil
-			m.refreshViewportContent()
 		} else {
 			m.searchMode = false
 		}
@@ -214,13 +203,13 @@ func (m *metricsModel) handleSearchInput(msg tea.KeyMsg) tea.Cmd {
 	case msg.Type == tea.KeyBackspace || msg.Type == tea.KeyCtrlH:
 		if len(m.searchQuery) > 0 {
 			m.searchQuery = m.searchQuery[:len(m.searchQuery)-1]
-			m.findMatches(true)
+			m.findMatches()
 		}
 		return nil
 
 	case msg.Type == tea.KeyRunes || msg.String() == " ":
 		m.searchQuery += msg.String()
-		m.findMatches(true)
+		m.findMatches()
 		return nil
 	}
 

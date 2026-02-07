@@ -204,7 +204,7 @@ func readRequestBody(req *http.Request) ([]byte, error) {
 	return body, nil
 }
 
-const hexChars = "0123456789ABCDEF"
+const hexChars = "0123456789abcdef"
 
 func hexLine(data string) string {
 	if len(data) == 0 {
@@ -218,4 +218,11 @@ func hexLine(data string) string {
 		res[i*3+2] = ' '
 	}
 	return string(res[:len(res)-1])
+}
+
+func formatPercent(label string, pct float64) string {
+	return fmt.Sprintf("%s %s",
+		helpKeyStyle.Render(label),
+		valueStyle.Width(5).Align(lipgloss.Right).Render(fmt.Sprintf("%3.0f%%", pct*100)),
+	)
 }

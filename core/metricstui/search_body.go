@@ -5,13 +5,10 @@ import (
 	"strings"
 )
 
-func (m *metricsModel) findMatches(refresh bool) {
+func (m *metricsModel) findMatches() {
 	if m.searchQuery == "" {
 		m.searchMatches = nil
 		m.currentMatch = 0
-		if refresh {
-			m.refreshViewportContent()
-		}
 		return
 	}
 
@@ -19,11 +16,7 @@ func (m *metricsModel) findMatches(refresh bool) {
 	queryLen := len(query)
 
 	matches := m.findMatchesBMH(query, queryLen)
-
 	m.searchMatches = matches
-	if refresh {
-		m.refreshViewportContent()
-	}
 }
 
 func (m *metricsModel) findMatchesBMH(query string, queryLen int) []*matchLocation {
@@ -81,102 +74,78 @@ func (m *metricsModel) findMatchesBMH(query string, queryLen int) []*matchLocati
 }
 
 func (m *metricsModel) highlightMatches(content string) string {
-	if m.searchQuery == "" || len(m.searchMatches) == 0 {
-		return content
-	}
-
-	startLine := m.viewport.YOffset
-	endLine := min(len(m.lineOffsets)-1, startLine+m.viewport.Height)
-
+	startLine := m.textYOffset
 	var result strings.Builder
-	result.Grow((endLine - startLine + 1) * 200)
+	result.Grow(m.viewHeight * (m.viewWidth + 1))
 
-	if startLine > 0 {
-		result.WriteString(strings.Repeat("\n", startLine))
-	}
+	for i := 0; i < m.viewHeight; i++ {
+		lineIdx := startLine + i
 
-	for i := startLine; i <= endLine; i++ {
-		lineStart := m.lineOffsets[i]
+		if lineIdx >= len(m.lineOffsets) {
+			result.WriteString(strings.Repeat(" ", m.viewWidth))
+			if i < m.viewHeight-1 {
+				result.WriteByte('\n')
+			}
+			continue
+		}
+
+		lineStart := m.lineOffsets[lineIdx]
 		lineEnd := len(content)
-		if i+1 < len(m.lineOffsets) {
-			lineEnd = m.lineOffsets[i+1] - 1
+		if lineIdx+1 < len(m.lineOffsets) {
+			lineEnd = m.lineOffsets[lineIdx+1] - 1
 		}
 
 		lineText := content[lineStart:lineEnd]
-		truncationOffset := 0
+		visibleStart := min(len(lineText), m.xOffset)
+		visibleEnd := min(len(lineText), m.xOffset+m.viewWidth)
 
-		maxLineLen := m.viewport.Width * 10
-		if len(lineText) > maxLineLen {
-			xOffset := m.viewport.xOffset
-			visibleStart := max(0, xOffset-100)
-			visibleEnd := min(len(lineText), xOffset+maxLineLen)
-
-			if visibleEnd <= visibleStart {
-				visibleEnd = min(len(lineText), visibleStart+maxLineLen)
+		displayedLen := 0
+		if visibleStart < visibleEnd {
+			segment := lineText[visibleStart:visibleEnd]
+			displayedLen = len(segment)
+			if m.searchQuery != "" && len(m.searchMatches) > 0 {
+				result.WriteString(m.highlightLine(segment, lineStart, visibleStart))
+			} else {
+				result.WriteString(segment)
 			}
-
-			if visibleStart >= len(lineText) {
-				visibleStart = max(0, len(lineText)-maxLineLen)
-			}
-			if visibleEnd > len(lineText) {
-				visibleEnd = len(lineText)
-			}
-			if visibleStart >= visibleEnd {
-				visibleStart = 0
-				visibleEnd = min(len(lineText), maxLineLen)
-			}
-
-			if visibleStart > 0 {
-				result.WriteString(strings.Repeat(" ", visibleStart))
-			}
-
-			truncationOffset = visibleStart
-			lineText = lineText[visibleStart:visibleEnd]
 		}
 
-		result.WriteString(m.highlightLine(lineText, lineStart, truncationOffset))
-		result.WriteByte('\n')
-	}
+		if displayedLen < m.viewWidth {
+			result.WriteString(strings.Repeat(" ", m.viewWidth-displayedLen))
+		}
 
-	remaining := (len(m.lineOffsets) - 1) - endLine
-	if remaining > 0 {
-		result.WriteString(strings.Repeat("\n", remaining))
+		if i < m.viewHeight-1 {
+			result.WriteByte('\n')
+		}
 	}
-
 	return result.String()
 }
 
 func (m *metricsModel) highlightHexMatches() string {
-	startRow := m.hexViewport.YOffset
-	endRow := min(m.totalHexRows-1, startRow+m.hexViewport.Height+2)
-
+	startRow := m.hexYOffset
 	var result strings.Builder
-	result.Grow((endRow - startRow + 1) * 80)
 
-	if startRow > 0 {
-		result.WriteString(strings.Repeat("\n", startRow))
-	}
+	for i := 0; i < m.viewHeight; i++ {
+		currentRow := startRow + i
+		rowStartByte := currentRow * hexColumnSize
 
-	for i := startRow; i <= endRow; i++ {
-		rowStartByte := i * hexColumnSize
-		rowEndByte := min(rowStartByte+hexColumnSize, len(m.stringContent))
-
-		rowBytes := m.stringContent[rowStartByte:rowEndByte]
-		lineText := hexLine(rowBytes)
-
-		if m.searchQuery != "" && len(m.searchMatches) > 0 {
-			result.WriteString(m.highlightHexLine(lineText, rowStartByte))
+		if rowStartByte >= len(m.stringContent) {
+			result.WriteString(strings.Repeat(" ", (hexColumnSize*3)-1))
 		} else {
-			result.WriteString(lineText)
+			rowEndByte := min(rowStartByte+hexColumnSize, len(m.stringContent))
+			lineText := hexLine(m.stringContent[rowStartByte:rowEndByte])
+
+			if m.searchQuery != "" && len(m.searchMatches) > 0 {
+				result.WriteString(m.highlightHexLine(lineText, rowStartByte))
+			} else {
+				result.WriteString(lineText)
+			}
 		}
-		result.WriteByte('\n')
-	}
 
-	remaining := (m.totalHexRows - 1) - endRow
-	if remaining > 0 {
-		result.WriteString(strings.Repeat("\n", remaining))
+		if i < m.viewHeight-1 {
+			result.WriteByte('\n')
+		}
 	}
-
 	return result.String()
 }
 
@@ -196,7 +165,7 @@ func (m *metricsModel) highlightLine(lineText string, lineStartOffset int, trunc
 		return lineText
 	}
 
-	maxMatchesToProcess := 200
+	maxMatchesToProcess := 300
 	totalMatches := endIdx - startIdx
 
 	if totalMatches > maxMatchesToProcess {
@@ -371,38 +340,50 @@ func (m *metricsModel) jumpToMatch() {
 	}
 	match := m.searchMatches[m.currentMatch]
 
-	lineStart := m.lineOffsets[match.line]
-	matchColumn := match.start - lineStart
+	maxTextY := max(0, len(m.lineOffsets)-m.viewHeight)
+	maxHexY := max(0, m.totalHexRows-m.viewHeight)
 
+	targetY := match.line - (m.viewHeight / 2)
 	hexRow := match.start / hexColumnSize
-	hexCol := match.start % hexColumnSize
+	targetHexY := hexRow - (m.viewHeight / 2)
 
-	targetY := max(0, match.line-(m.viewport.Height/2))
-	m.viewport.SetYOffset(targetY)
+	m.textYOffset = max(0, min(targetY, maxTextY))
+	m.hexYOffset = max(0, min(targetHexY, maxHexY))
 
-	targetX := max(0, matchColumn-(m.viewport.Width/2))
-	m.viewport.xOffset = targetX
+	lineStart := m.lineOffsets[match.line]
+	matchX := match.start - lineStart
 
-	targetHexY := max(0, hexRow-(m.hexViewport.Height/2))
-	m.hexViewport.YOffset = targetHexY
+	targetX := matchX - (m.viewWidth / 2)
 
-	hexCharPos := hexCol * 3
-	targetHexX := max(0, hexCharPos-(m.hexViewport.Width/2))
-	m.hexViewport.xOffset = targetHexX
-
-	m.refreshViewportContent()
+	maxTextX := max(0, m.maxLineLength-m.viewWidth)
+	m.xOffset = max(0, min(targetX, maxTextX))
 }
 
-func getLineOffsets(content string) []int {
+func getLineOffsets(content string) ([]int, int) {
 	estimatedLines := len(content)/80 + 100
 	offsets := make([]int, 0, estimatedLines)
 	offsets = append(offsets, 0)
 
+	maxLineLength := 0
+	lastOffset := 0
+
 	for i := 0; i < len(content); i++ {
 		if content[i] == '\n' {
+			lineLength := i - lastOffset
+			if lineLength > maxLineLength {
+				maxLineLength = lineLength
+			}
 			offsets = append(offsets, i+1)
+			lastOffset = i + 1
 		}
 	}
 
-	return offsets
+	if lastOffset < len(content) {
+		lineLength := len(content) - lastOffset
+		if lineLength > maxLineLength {
+			maxLineLength = lineLength
+		}
+	}
+
+	return offsets, maxLineLength
 }

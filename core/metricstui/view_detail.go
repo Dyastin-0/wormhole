@@ -106,40 +106,66 @@ func (m metricsModel) renderDetailFooter() string {
 
 	if statusLine != "" {
 		return lipgloss.JoinVertical(lipgloss.Left,
-			"",
 			statusLine,
 			helpView,
 		)
 	}
 
-	return lipgloss.JoinVertical(lipgloss.Left, "", helpView)
+	return helpView
 }
 
 func (m metricsModel) renderBodyColumn() string {
-	viewports := lipgloss.JoinHorizontal(lipgloss.Left,
-		m.viewport.View(),
+	textView := m.highlightMatches(m.stringContent)
+	hexView := m.highlightHexMatches()
+
+	text := textStyle.
+		Width(m.viewWidth).
+		MaxWidth(m.viewWidth).
+		Render(textView)
+
+	hex := textStyle.Render(hexView)
+
+	viewports := lipgloss.JoinHorizontal(lipgloss.Top,
+		text,
 		"  ",
-		m.hexViewport.View(),
+		hex,
 	)
 
-	vertLabel := helpKeyStyle.Width(0).Render("Scroll-Y")
-	vertVal := valueStyle.Width(0).Render(fmt.Sprintf("%3.0f%%", m.hexViewport.ScrollPercent()*100))
+	var textYPercent float64
+	if len(m.lineOffsets) <= m.viewHeight {
+		textYPercent = 1.0
+	} else {
+		maxTextY := len(m.lineOffsets) - m.viewHeight
+		textYPercent = float64(m.textYOffset) / float64(maxTextY)
+	}
 
-	horizLabel := helpKeyStyle.Width(0).Render("Scroll-X")
-	horizVal := valueStyle.Width(0).Render(fmt.Sprintf("%3.0f%%", m.viewport.HorizontalScrollPercent()*100))
-	separator := m.help.Styles.ShortSeparator.Render(" • ")
-	scrollInfo := fmt.Sprintf("%s %s%s%s %s",
-		vertLabel, vertVal,
-		separator,
-		horizLabel, horizVal,
+	var hexYPercent float64
+	maxHexY := m.totalHexRows - m.viewHeight
+	if maxHexY > 0 {
+		hexYPercent = float64(m.hexYOffset) / float64(maxHexY)
+	}
+
+	var horizPercent float64
+	maxHoriz := m.maxLineLength - m.viewWidth
+	if maxHoriz > 0 {
+		horizPercent = float64(m.xOffset) / float64(maxHoriz)
+	}
+
+	scrollInfo := fmt.Sprintf("%s%s%s%s%s",
+		formatPercent("Text-Y", textYPercent),
+		m.help.ShortSeparator,
+		formatPercent("Text-X", horizPercent),
+		m.help.ShortSeparator,
+		formatPercent("Hex-Y", hexYPercent),
 	)
+
+	footerRow := lipgloss.NewStyle().MarginTop(1).Render(scrollInfo)
 
 	body := lipgloss.JoinVertical(lipgloss.Left,
-		valueStyle.Width(0).Render(fmt.Sprintf("Body %s", formatBytes(uint64(m.getBodySize())))),
+		valueStyle.Render(fmt.Sprintf("Body %s", formatBytes(uint64(m.getBodySize())))),
 		"",
 		viewports,
-		"",
-		scrollInfo,
+		footerRow,
 	)
 
 	return body

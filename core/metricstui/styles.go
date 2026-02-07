@@ -17,10 +17,6 @@ const (
 	headerValueWidth = 50
 
 	hexColumnSize = 8
-	viewportWidth = 50
-
-	headerHeight = 12
-	footerHeight = 3
 )
 
 var (
@@ -50,6 +46,9 @@ var (
 			Width(20).
 			Faint(true).
 			Align(lipgloss.Left)
+
+	textStyle = lipgloss.NewStyle().
+			Foreground(primary)
 
 	valueStyle = lipgloss.NewStyle().
 			Foreground(primary).
