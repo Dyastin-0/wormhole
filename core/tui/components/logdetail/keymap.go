@@ -43,7 +43,7 @@ func DefaultKeyMap() KeyMap {
 }
 
 func (k KeyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Search, k.NextMatch, k.PrevMatch, k.Tab}
+	return []key.Binding{k.Search, k.NextMatch, k.PrevMatch, k.Tab, k.Help}
 }
 
 func (k KeyMap) FullHelp() [][]key.Binding {

@@ -40,7 +40,15 @@ func (m Model) viewList() string {
 		lines = append(lines, logListView)
 	}
 
-	lines = append(lines, "", m.help.View(m.keys))
+	allKeys := keyMapSlice{
+		m.logList.Keys().Up,
+		m.logList.Keys().Down,
+		m.logList.Keys().Enter,
+		m.keys.Back,
+		m.keys.Quit,
+	}
+
+	lines = append(lines, "", m.help.View(allKeys))
 
 	return lipgloss.JoinVertical(lipgloss.Left, lines...)
 }

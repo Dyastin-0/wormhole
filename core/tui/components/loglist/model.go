@@ -34,6 +34,10 @@ func (m Model) Init() tea.Cmd {
 	return nil
 }
 
+func (m Model) Keys() KeyMap {
+	return m.keys
+}
+
 func (m Model) GetSelected() *messages.HTTPLogMsg {
 	return m.store.Get(m.selectedIndex)
 }

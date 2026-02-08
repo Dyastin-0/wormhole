@@ -10,7 +10,6 @@ import (
 	"github.com/Dyastin-0/wormhole/core/tui/messages"
 	"github.com/Dyastin-0/wormhole/core/tui/styles"
 	"github.com/charmbracelet/bubbles/help"
-	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -31,12 +30,6 @@ type Model struct {
 
 	keys GlobalKeyMap
 	help help.Model
-}
-
-type GlobalKeyMap struct {
-	Quit key.Binding
-	Back key.Binding
-	Help key.Binding
 }
 
 func New(name string, hasMetrics, hasHTTPLogging bool) (Model, chan *proto.HTTPLog, chan *http.Request) {
@@ -69,14 +62,6 @@ func New(name string, hasMetrics, hasHTTPLogging bool) (Model, chan *proto.HTTPL
 	}, httpLogch, requestch
 }
 
-func DefaultGlobalKeyMap() GlobalKeyMap {
-	return GlobalKeyMap{
-		Quit: key.NewBinding(key.WithKeys("ctrl+c", "q"), key.WithHelp("q", "quit")),
-		Back: key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "back")),
-		Help: key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "help")),
-	}
-}
-
 func (m Model) Init() tea.Cmd {
 	return tea.Batch(
 		m.spinner.Tick,
@@ -84,14 +69,4 @@ func (m Model) Init() tea.Cmd {
 		m.logList.Init(),
 		m.logDetail.Init(),
 	)
-}
-
-func (k GlobalKeyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Back, k.Quit, k.Help}
-}
-
-func (k GlobalKeyMap) FullHelp() [][]key.Binding {
-	return [][]key.Binding{
-		{k.Back, k.Quit, k.Help},
-	}
 }

@@ -15,3 +15,7 @@ func DefaultKeyMap() KeyMap {
 		Enter: key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "view")),
 	}
 }
+
+func (k KeyMap) ShortKey() []key.Binding {
+	return []key.Binding{k.Up, k.Down, k.Enter}
+}
