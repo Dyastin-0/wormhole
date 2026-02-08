@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-const maxInspectSize = 5 * 1024 * 1024
+const maxInspectSize = 100 * 1024 * 1024
 
 // Stream handles bidirectional streaming between src and dst.
 func Stream(src, dst net.Conn) error {
@@ -111,8 +111,8 @@ func StreamHTTPWithContext(
 	defer src.Close()
 	defer dst.Close()
 
-	reqCh := make(chan *Request, 1)
-	respCh := make(chan *http.Response, 1)
+	reqCh := make(chan *Request, 16)
+	respCh := make(chan *http.Response, 16)
 	errCh := make(chan error, 2)
 
 	stopHTTP := make(chan struct{})

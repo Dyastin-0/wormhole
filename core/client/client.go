@@ -14,8 +14,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Dyastin-0/wormhole/core/metricstui"
 	"github.com/Dyastin-0/wormhole/core/proto"
+	"github.com/Dyastin-0/wormhole/core/tui"
+	"github.com/Dyastin-0/wormhole/core/tui/messages"
 	"github.com/Dyastin-0/wormhole/stream"
 	"github.com/hashicorp/yamux"
 	"github.com/rs/zerolog/log"
@@ -437,7 +438,7 @@ func (c *Client) handleMessages(ctx context.Context, session *yamux.Session) err
 			case proto.TypeMetrics:
 				c.metricsmu.Lock()
 				if c.metricsch == nil {
-					program, metricsch, httpLogch, requestch := metricstui.StartTUI(c.domain, c.metrics, c.httpLog)
+					program, metricsch, httpLogch, requestch := tui.Start(c.domain, c.metrics, c.httpLog)
 					go func() {
 						defer close(metricsch)
 						if _, err := program.Run(); err != nil {
@@ -454,7 +455,7 @@ func (c *Client) handleMessages(ctx context.Context, session *yamux.Session) err
 			case proto.TypeHTTPLog:
 				c.metricsmu.Lock()
 				if c.metricsch == nil {
-					program, metricsch, httpLogch, requestch := metricstui.StartTUI(c.domain, c.metrics, c.httpLog)
+					program, metricsch, httpLogch, requestch := tui.Start(c.domain, c.metrics, c.httpLog)
 					go func() {
 						defer close(metricsch)
 						if _, err := program.Run(); err != nil {
@@ -658,7 +659,7 @@ func (c *Client) handleMetrics(ctx context.Context, header *proto.Header, stream
 		return fmt.Errorf("failed to deserialize metrics: %w", err)
 	}
 
-	c.metricsch <- metricstui.MetricsMsg{
+	c.metricsch <- messages.MetricsMsg{
 		Ingress:           deserializedMetrics.Ingress,
 		Egress:            deserializedMetrics.Egress,
 		Uptime:            deserializedMetrics.Uptime,
@@ -697,7 +698,7 @@ func (c *Client) handleMetrics(ctx context.Context, header *proto.Header, stream
 				return fmt.Errorf("failed to deserialize metrics: %w", err)
 			}
 
-			c.metricsch <- metricstui.MetricsMsg{
+			c.metricsch <- messages.MetricsMsg{
 				Ingress:           deserializedMetrics.Ingress,
 				Egress:            deserializedMetrics.Egress,
 				Uptime:            deserializedMetrics.Uptime,

@@ -1,0 +1,129 @@
+// Package styles provides styles across the TUI.
+package styles
+
+import (
+	"github.com/charmbracelet/lipgloss"
+)
+
+const (
+	TimeWidth     = 8
+	MethodWidth   = 7
+	StatusWidth   = 3
+	PathWidth     = 40
+	SizeWidth     = 10
+	DurationWidth = 10
+	LabelWidth    = 12
+
+	HeaderKeyWidth   = 30
+	HeaderValueWidth = 50
+
+	HexColumnSize = 8
+)
+
+var (
+	Subtle     = lipgloss.AdaptiveColor{Light: "#666666", Dark: "#808080"}
+	Primary    = lipgloss.AdaptiveColor{Light: "#000000", Dark: "#FFFFFF"}
+	Highlight  = lipgloss.AdaptiveColor{Light: "#EE6FF8", Dark: "#F07178"}
+	SelectedBG = lipgloss.AdaptiveColor{Light: "#E6F3FF", Dark: "#1A3A52"}
+)
+
+var (
+	SearchHighlight = lipgloss.NewStyle().
+			Background(lipgloss.Color("226")).
+			Foreground(lipgloss.Color("#1a1a1a"))
+
+	CurrentMatch = lipgloss.NewStyle().
+			Background(lipgloss.Color("208")).
+			Foreground(lipgloss.Color("#000000")).
+			Bold(true)
+
+	Title = lipgloss.NewStyle().
+		Bold(true).
+		Foreground(Primary)
+
+	Label = lipgloss.NewStyle().
+		Foreground(Subtle).
+		Width(20).
+		Faint(true).
+		Align(lipgloss.Left)
+
+	Text = lipgloss.NewStyle().
+		Foreground(Primary)
+
+	Value = lipgloss.NewStyle().
+		Foreground(Primary).
+		Width(12).
+		Align(lipgloss.Right)
+
+	Rate = lipgloss.NewStyle().
+		Foreground(Subtle).
+		Width(12).
+		Align(lipgloss.Right)
+
+	HelpKey = lipgloss.NewStyle().
+		Foreground(Highlight)
+
+	Footer = lipgloss.NewStyle().
+		Foreground(Subtle).
+		Faint(true)
+
+	DetailLabel = lipgloss.NewStyle().
+			Foreground(Subtle).
+			Bold(true).
+			Faint(true)
+)
+
+var (
+	LogTime = lipgloss.NewStyle().
+		Foreground(Primary).
+		Width(TimeWidth).
+		Align(lipgloss.Left)
+
+	LogMethod = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("39")).
+			Width(MethodWidth).
+			Align(lipgloss.Left)
+
+	LogPath = lipgloss.NewStyle().
+		Foreground(Primary).
+		Width(PathWidth).
+		Align(lipgloss.Left)
+
+	LogSize = lipgloss.NewStyle().
+		Foreground(Primary).
+		Width(SizeWidth).
+		Align(lipgloss.Left)
+
+	LogDuration = lipgloss.NewStyle().
+			Foreground(Primary).
+			Width(DurationWidth).
+			Align(lipgloss.Right)
+)
+
+var (
+	Status1xx = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("39")).
+			Width(StatusWidth).
+			Bold(true)
+
+	Status2xx = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("42")).
+			Width(StatusWidth).
+			Bold(true)
+
+	Status3xx = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("214")).
+			Width(StatusWidth).
+			Bold(true)
+
+	Status4xx = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("208")).
+			Width(StatusWidth).
+			Bold(true)
+
+	Status5xx = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("196")).
+			Width(StatusWidth).
+			Bold(true).
+			Italic(true)
+)
