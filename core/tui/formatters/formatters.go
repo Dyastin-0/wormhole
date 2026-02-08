@@ -15,7 +15,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-const maxBodySize = 100 * 1024 * 1024
+const maxBodySize = 1 * 1024 * 1024
 
 func FormatBytes(bytes uint64) string {
 	const unit = 1024
