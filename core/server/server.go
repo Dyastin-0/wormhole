@@ -33,7 +33,9 @@ import (
 
 // DefaultTunnelTTL is the default time-to-live for tunnels (1 hour).
 const (
-	DefaultTunnelTTL = 1 * time.Hour
+	DefaultTunnelTTL           = 1 * time.Hour
+	DefaultPrivilegedTunnelTTL = 12 * time.Hour
+	MaxTunnelTTL               = 8766 * time.Hour
 	// Used for allocating TCP listeners for TCP tunnels.
 	MinPort      = 30000
 	MaxPort      = 31000
@@ -663,13 +665,14 @@ func (s *Server) handleRequest(ctx context.Context, stream net.Conn, session *ya
 		// we will use the ttl from the client request if provided.
 		if claims.TTL == 0 {
 			if req.TTL > 0 {
-				ttl = time.Duration(req.TTL) * time.Hour
+				ttl = min(time.Duration(req.TTL)*time.Hour, MaxTunnelTTL)
 				log.Info().Str("domain", domain).Uint64("ttl_hours", req.TTL).Msg("using client-specified ttl")
 			} else {
+				ttl = DefaultPrivilegedTunnelTTL
 				log.Debug().Str("domain", domain).Msg("privileged key with no ttl specified")
 			}
 		} else {
-			ttl = time.Duration(claims.TTL) * time.Hour
+			ttl = min(time.Duration(claims.TTL)*time.Hour, MaxTunnelTTL)
 		}
 	}
 
