@@ -2,7 +2,7 @@
 
 # Wormhole
 
-Secure tunneling solution for exposing local services to the internet. Features a built-in Terminal User Interface (TUI) and end-to-end encryption.
+Secure tunneling solution for exposing local services to the internet. Features a built-in Terminal User Interface ([bubbletea](https://github.com/charmbracelet/bubbletea)) and end-to-end encryption.
 
 ## Demos
 
@@ -10,7 +10,7 @@ Secure tunneling solution for exposing local services to the internet. Features 
 
 ![minecraft](/snapshots/minecraft_demo.gif)
 
-Wormhole uses a single multiplexed ([yamux](https://github.com/hashicorp/yamux)) TCP stream to handle multiple virtual connections efficiently.
+Wormhole uses [yamux](https://github.com/hashicorp/yamux) to tunnel multiple inbound connections over a single TCP stream.
 
 ---
 
