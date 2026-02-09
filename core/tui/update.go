@@ -44,8 +44,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		if key.Matches(msg, m.keys.Back) && m.viewMode == messages.ViewModeDetail {
-			m.viewMode = messages.ViewModeList
-			return m, nil
+			if !m.logDetail.IsSearching() {
+				m.viewMode = messages.ViewModeList
+				return m, nil
+			}
 		}
 
 		// if key.Matches(msg, m.keys.Help) {

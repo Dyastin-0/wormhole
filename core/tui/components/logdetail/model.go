@@ -76,6 +76,10 @@ func (m Model) Init() tea.Cmd {
 	return nil
 }
 
+func (m Model) IsSearching() bool {
+	return m.searchActive
+}
+
 func (m *Model) clampOffsets() {
 	totalRows := len(m.lineOffsets)
 	if m.wrapText {
