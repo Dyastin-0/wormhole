@@ -75,9 +75,9 @@ Launch the TUI by adding the `--metrics` or `--http-log` flags to any client com
 * **Bandwidth**: Real-time ingress/egress rates.
 * **Inspection**: View headers and body content (ASCII/Hex).
 
-![metrics](snapshots/tui_metrics.png)
+![metrics](/snapshots/tui_metrics.png)
 
-![inspect](snapshots/tui_inspect.png)
+![inspect](/snapshots/tui_inspect.png)
 
 ---
 
@@ -166,6 +166,6 @@ wormhole start \
 
 ## Demo
 
-![demo](snapshots/demo.gif)
+![demo](/snapshots/demo.gif)
 
-![minecraft](snapshots/minecraft_demo.gif)
+![minecraft](/snapshots/minecraft_demo.gif)

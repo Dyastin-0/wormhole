@@ -61,6 +61,8 @@ type Client struct {
 	allowTLSPassthrough bool
 	// url specifies the client CNAME that points to the given tunnel endpoint.
 	url string
+	// port is the specified port from the server.
+	port uint16
 	// metricsch is used to send http logs and metrics to bubbletea application.
 	metricsch chan any
 	requestch chan *http.Request
@@ -180,6 +182,7 @@ func (c *Client) Run(ctx context.Context) error {
 		return fmt.Errorf("unexpected response status: %v", response.Status)
 	}
 
+	c.port = response.Port
 	c.domain = response.Domain
 	endpoint := response.Domain
 
@@ -275,6 +278,7 @@ func (c *Client) RunWithTCP(ctx context.Context) error {
 		return fmt.Errorf("unexpected response status: %v", response.Status)
 	}
 
+	c.port = response.Port
 	c.domain = response.Domain
 	endpoint := response.Domain
 
@@ -438,7 +442,7 @@ func (c *Client) handleMessages(ctx context.Context, session *yamux.Session) err
 			case proto.TypeMetrics:
 				c.metricsmu.Lock()
 				if c.metricsch == nil {
-					program, metricsch, httpLogch, requestch := tui.Start(fmt.Sprintf("%s -> %s", c.domain, c.targetAddr), c.metrics, c.httpLog)
+					program, metricsch, httpLogch, requestch := tui.Start(fmt.Sprintf("%s:%d -> %s", c.domain, c.port, c.targetAddr), c.metrics, c.httpLog)
 					go func() {
 						defer close(metricsch)
 						if _, err := program.Run(); err != nil {
@@ -455,7 +459,7 @@ func (c *Client) handleMessages(ctx context.Context, session *yamux.Session) err
 			case proto.TypeHTTPLog:
 				c.metricsmu.Lock()
 				if c.metricsch == nil {
-					program, metricsch, httpLogch, requestch := tui.Start(fmt.Sprintf("%s -> %s", c.domain, c.targetAddr), c.metrics, c.httpLog)
+					program, metricsch, httpLogch, requestch := tui.Start(fmt.Sprintf("%s:%s -> %s", c.domain, c.port, c.targetAddr), c.metrics, c.httpLog)
 					go func() {
 						defer close(metricsch)
 						if _, err := program.Run(); err != nil {
