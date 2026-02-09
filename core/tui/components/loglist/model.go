@@ -2,6 +2,8 @@
 package loglist
 
 import (
+	"time"
+
 	"github.com/Dyastin-0/wormhole/core/tui/messages"
 	"github.com/Dyastin-0/wormhole/core/tui/store"
 	tea "github.com/charmbracelet/bubbletea"
@@ -18,6 +20,8 @@ type Model struct {
 	selectedIndex int
 	scrollOffset  int
 	keys          KeyMap
+
+	lastGPress time.Time
 }
 
 func New(enabled bool) Model {
@@ -72,6 +76,24 @@ func (m *Model) moveDown() {
 		m.selectedIndex++
 		if m.selectedIndex >= m.scrollOffset+maxVisibleLogs {
 			m.scrollOffset = m.selectedIndex - maxVisibleLogs + 1
+		}
+	}
+}
+
+func (m *Model) gotoTop() {
+	if m.store.Len() > 0 {
+		m.selectedIndex = 0
+		m.scrollOffset = 0
+	}
+}
+
+func (m *Model) gotoBottom() {
+	if m.store.Len() > 0 {
+		m.selectedIndex = m.store.Len() - 1
+		if m.selectedIndex >= maxVisibleLogs {
+			m.scrollOffset = m.selectedIndex - maxVisibleLogs + 1
+		} else {
+			m.scrollOffset = 0
 		}
 	}
 }

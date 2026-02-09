@@ -22,7 +22,6 @@ func (m Model) viewList() string {
 	title := styles.Title.Render(fmt.Sprintf("%s %s", m.name, m.spinner.View()))
 
 	lines := []string{
-		"",
 		title,
 		"",
 	}

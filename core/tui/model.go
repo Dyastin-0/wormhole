@@ -28,6 +28,9 @@ type Model struct {
 	httpLogch chan *proto.HTTPLog
 	requestch chan *http.Request
 
+	width  int
+	height int
+
 	keys GlobalKeyMap
 	help help.Model
 }

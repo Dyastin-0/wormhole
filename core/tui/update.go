@@ -7,6 +7,7 @@ import (
 	"github.com/Dyastin-0/wormhole/core/proto"
 	"github.com/Dyastin-0/wormhole/core/tui/formatters"
 	"github.com/Dyastin-0/wormhole/core/tui/messages"
+	"github.com/Dyastin-0/wormhole/core/tui/styles"
 	"github.com/Dyastin-0/wormhole/stream"
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/spinner"
@@ -19,12 +20,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+
 		m.metrics, cmd = m.metrics.Update(msg)
 		cmds = append(cmds, cmd)
 		m.logList, cmd = m.logList.Update(msg)
 		cmds = append(cmds, cmd)
-		m.logDetail, cmd = m.logDetail.Update(msg)
+
+		leftPanelWidth := styles.HeaderKeyWidth + /*header colon*/ 1 + styles.HeaderValueWidth + /*column padding*/ 2
+		detailWidth := msg.Width - leftPanelWidth
+		m.logDetail, cmd = m.logDetail.Update(tea.WindowSizeMsg{
+			Width:  detailWidth,
+			Height: msg.Height,
+		})
 		cmds = append(cmds, cmd)
+
+		return m, tea.Batch(cmds...)
 
 	case tea.KeyMsg:
 		if key.Matches(msg, m.keys.Quit) {
@@ -57,7 +69,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case messages.LogSelectedMsg:
 		m.viewMode = messages.ViewModeDetail
 		m.logDetail, cmd = m.logDetail.Update(messages.SetLogMsg(msg))
-		return m, cmd
+		cmds = append(cmds, cmd)
+
+		if m.width > 0 && m.height > 0 {
+			leftPanelWidth := styles.HeaderKeyWidth + /*header colon*/ 1 + styles.HeaderValueWidth + /*column padding*/ 2
+			detailWidth := m.width - leftPanelWidth
+
+			var sizeCmd tea.Cmd
+			m.logDetail, sizeCmd = m.logDetail.Update(tea.WindowSizeMsg{
+				Width:  detailWidth,
+				Height: m.height,
+			})
+			cmds = append(cmds, sizeCmd)
+		}
+
+		return m, tea.Batch(cmds...)
 
 	case spinner.TickMsg:
 		m.spinner, cmd = m.spinner.Update(msg)

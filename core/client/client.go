@@ -438,7 +438,7 @@ func (c *Client) handleMessages(ctx context.Context, session *yamux.Session) err
 			case proto.TypeMetrics:
 				c.metricsmu.Lock()
 				if c.metricsch == nil {
-					program, metricsch, httpLogch, requestch := tui.Start(c.domain, c.metrics, c.httpLog)
+					program, metricsch, httpLogch, requestch := tui.Start(fmt.Sprintf("%s -> %s", c.domain, c.targetAddr), c.metrics, c.httpLog)
 					go func() {
 						defer close(metricsch)
 						if _, err := program.Run(); err != nil {
@@ -455,7 +455,7 @@ func (c *Client) handleMessages(ctx context.Context, session *yamux.Session) err
 			case proto.TypeHTTPLog:
 				c.metricsmu.Lock()
 				if c.metricsch == nil {
-					program, metricsch, httpLogch, requestch := tui.Start(c.domain, c.metrics, c.httpLog)
+					program, metricsch, httpLogch, requestch := tui.Start(fmt.Sprintf("%s -> %s", c.domain, c.targetAddr), c.metrics, c.httpLog)
 					go func() {
 						defer close(metricsch)
 						if _, err := program.Run(); err != nil {

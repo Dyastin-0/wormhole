@@ -53,9 +53,9 @@ func HighlightMatches(content string, lineOffsets []int, matches []Match, curren
 			segment := lineText[visibleStart:visibleEnd]
 			displayedLen = len(segment)
 			if len(matches) > 0 {
-				result.WriteString(highlightLine(segment, lineStart, visibleStart, matches, currentMatch))
+				result.WriteString(highlightLine(sanitize(segment), lineStart, visibleStart, matches, currentMatch))
 			} else {
-				result.WriteString(segment)
+				result.WriteString(sanitize(segment))
 			}
 		}
 
@@ -88,6 +88,7 @@ func HighlightWrappedMatches(
 		} else {
 			vLine := visualLines[vIdx]
 			segment := content[vLine.StartOffset : vLine.StartOffset+vLine.Length]
+			segment = sanitize(segment)
 
 			highlighted := highlightLine(segment, vLine.StartOffset, 0, matches, currentMatch)
 			result.WriteString(highlighted)
@@ -383,4 +384,16 @@ func GetWrappedLines(content string, lineOffsets []int, viewWidth int) []VisualL
 		}
 	}
 	return visualLines
+}
+
+func sanitize(s string) string {
+	var result []rune
+	for _, r := range s {
+		if (r < 32 && r != '\n' && r != '\r') || r == 127 {
+			result = append(result, ' ')
+		} else {
+			result = append(result, r)
+		}
+	}
+	return string(result)
 }

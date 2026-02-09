@@ -5,22 +5,48 @@ import (
 
 	"github.com/Dyastin-0/wormhole/core/tui/messages"
 	"github.com/Dyastin-0/wormhole/core/tui/search"
+	"github.com/Dyastin-0/wormhole/core/tui/styles"
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
+const typeDebounceDuration = 100 * time.Millisecond
+
+type searchTickMsg time.Time
+
 func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	var cmd tea.Cmd
 
 	switch msg := msg.(type) {
+	case searchTickMsg:
+		if m.searchActive && time.Since(m.lastKeyPress) >= typeDebounceDuration {
+			m.searchMatches = search.FindMatches(m.stringContent, m.searchInput.Value(), m.lineOffsets, m.normalCase)
+			if len(m.searchMatches) > 0 {
+				m.currentMatch = 0
+				m.jumpToCurrentMatch()
+			}
+		}
+		return m, nil
+
 	case messages.SetLogMsg:
 		m.log = msg.Log
 		m.loadContent()
 
 	case tea.WindowSizeMsg:
-		m.viewWidth = 50
-		m.viewHeight = 20
+		m.absWidth = msg.Width
+		m.viewHeight = msg.Height - 7
+
+		if m.displayHex {
+			hexColumnWidth := (styles.HexColumnSize * 3) - 1
+			columnPadding := 2
+			m.viewWidth = m.absWidth - hexColumnWidth - columnPadding
+		} else {
+			m.viewWidth = m.absWidth
+		}
+
+		m.loadContent()
+		return m, nil
 
 	case tea.KeyMsg:
 		if m.searchActive {
@@ -28,6 +54,25 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		}
 
 		switch {
+		case key.Matches(msg, m.keys.DisplayText):
+			m.displayText = !m.displayText
+			m.loadContent()
+			return m, nil
+
+		case key.Matches(msg, m.keys.DisplayHex):
+			m.displayHex = !m.displayHex
+
+			if m.displayHex {
+				hexColumnWidth := (styles.HexColumnSize * 3) - 1
+				columnPadding := 2
+				m.viewWidth = m.absWidth - hexColumnWidth - columnPadding
+			} else {
+				m.viewWidth = m.absWidth
+			}
+
+			m.loadContent()
+			return m, nil
+
 		case key.Matches(msg, m.keys.NormalCase):
 			m.normalCase = !m.normalCase
 			m.loadContent()
@@ -120,6 +165,10 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			m.hexYOffset = min(maxHexY, m.hexYOffset+1)
 
 		case key.Matches(msg, m.keys.GotoTop):
+			m.textYOffset = 0
+			m.hexYOffset = 0
+
+		case key.Matches(msg, m.keys.GotoTopAlt):
 			if time.Since(m.lastGPress) < 500*time.Millisecond {
 				m.textYOffset = 0
 				m.hexYOffset = 0
@@ -151,4 +200,41 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	}
 
 	return m, cmd
+}
+
+func (m Model) handleSearchInput(msg tea.KeyMsg) (Model, tea.Cmd) {
+	var cmd tea.Cmd
+
+	switch {
+	case key.Matches(msg, key.NewBinding(key.WithKeys("esc"))):
+		if m.searchInput.Value() == "" {
+			m.searchActive = false
+			m.searchInput.Blur()
+			return m, nil
+		}
+		m.searchInput.SetValue("")
+		m.searchMatches = nil
+		m.currentMatch = 0
+		return m, nil
+
+	case key.Matches(msg, m.keys.Enter):
+		m.searchActive = false
+		m.searchInput.Blur()
+		if len(m.searchMatches) > 0 {
+			m.currentMatch = 0
+			m.jumpToCurrentMatch()
+		}
+		return m, nil
+	}
+
+	m.searchInput, cmd = m.searchInput.Update(msg)
+	m.lastKeyPress = time.Now()
+
+	return m, tea.Batch(cmd, m.scheduleSearch())
+}
+
+func (m *Model) scheduleSearch() tea.Cmd {
+	return tea.Tick(typeDebounceDuration, func(t time.Time) tea.Msg {
+		return searchTickMsg(t)
+	})
 }

@@ -11,13 +11,17 @@ type KeyMap struct {
 	GoToLeft     key.Binding
 	GoToRight    key.Binding
 	GotoTop      key.Binding
+	GotoTopAlt   key.Binding
 	GotoBottom   key.Binding
 	Search       key.Binding
+	Enter        key.Binding
 	NextMatch    key.Binding
 	PrevMatch    key.Binding
 	CancelSearch key.Binding
 	WrapText     key.Binding
 	NormalCase   key.Binding
+	DisplayHex   key.Binding
+	DisplayText  key.Binding
 	Help         key.Binding
 }
 
@@ -30,14 +34,18 @@ func DefaultKeyMap() KeyMap {
 		Right:        key.NewBinding(key.WithKeys("right", "l"), key.WithHelp("→/l", "right")),
 		GoToLeft:     key.NewBinding(key.WithKeys("shift+left", "H"), key.WithHelp("H", "start")),
 		GoToRight:    key.NewBinding(key.WithKeys("shift+right", "L"), key.WithHelp("L", "end")),
-		GotoTop:      key.NewBinding(key.WithKeys("g", "shift+up"), key.WithHelp("↑/gg", "top")),
-		GotoBottom:   key.NewBinding(key.WithKeys("G", "shift+down"), key.WithHelp("↓/G", "bottom")),
+		GotoTop:      key.NewBinding(key.WithKeys("shift+up", "K"), key.WithHelp("shift+↑", "top")),
+		GotoTopAlt:   key.NewBinding(key.WithKeys("g"), key.WithHelp("gg", "top")),
+		GotoBottom:   key.NewBinding(key.WithKeys("G", "shift+down", "J"), key.WithHelp("shift+↓", "bottom")),
 		Search:       key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "search")),
+		Enter:        key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "submit")),
 		NextMatch:    key.NewBinding(key.WithKeys("n"), key.WithHelp("n", "next match")),
 		PrevMatch:    key.NewBinding(key.WithKeys("N"), key.WithHelp("N", "prev match")),
 		CancelSearch: key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "cancel")),
-		WrapText:     key.NewBinding(key.WithKeys("ctrl+w"), key.WithHelp("ctrl+w", "wrap text")),
-		NormalCase:   key.NewBinding(key.WithKeys("ctrl+n"), key.WithHelp("ctrl+n", "normal case search")),
+		WrapText:     key.NewBinding(key.WithKeys("ctrl+w"), key.WithHelp("ctrl+w", "text wrap")),
+		NormalCase:   key.NewBinding(key.WithKeys("ctrl+n"), key.WithHelp("ctrl+n", "base case search")),
+		DisplayHex:   key.NewBinding(key.WithKeys("ctrl+h"), key.WithHelp("ctrl+h", "hex display")),
+		DisplayText:  key.NewBinding(key.WithKeys("ctrl+t"), key.WithHelp("ctrl+t", "text display")),
 		Help:         key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "help")),
 	}
 }
@@ -48,9 +56,9 @@ func (k KeyMap) ShortHelp() []key.Binding {
 
 func (k KeyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
-		{k.Up, k.Down, k.Left, k.Right},
-		{k.GotoTop, k.GotoBottom, k.GoToLeft, k.GoToRight},
-		{k.Search, k.NextMatch, k.PrevMatch, k.CancelSearch},
-		{k.Tab, k.Help, k.WrapText, k.NormalCase},
+		{k.Up, k.Down, k.Left, k.Right, k.GotoTop, k.GotoBottom, k.GoToLeft, k.GoToRight},
+		{k.DisplayHex, k.DisplayText, k.WrapText, k.NormalCase},
+		{k.Search, k.Enter, k.NextMatch, k.PrevMatch, k.CancelSearch},
+		{k.Help, k.Tab, k.GotoTopAlt},
 	}
 }
