@@ -598,6 +598,16 @@ func (s *Server) handleRequest(ctx context.Context, stream net.Conn, session *ya
 		attribute.String("protocol", proto.ProtoString(req.Proto)),
 	)
 
+	if (req.Proto == proto.ProtoTCP || req.Proto == proto.ProtoTLS) && !s.allowTCP {
+		err = errors.New("tcp disabled")
+		resp := proto.NewResponse(proto.StatusUnsupportedProto, 0, domain)
+		sendErr := s.sendResp(stream, resp)
+		if sendErr != nil {
+			return errors.Join(err, sendErr)
+		}
+		return err
+	}
+
 	if header.HasFlag(proto.FlagTLSPassthrough) {
 		var u *url.URL
 		u, err = url.ParseRequestURI(req.URL)
