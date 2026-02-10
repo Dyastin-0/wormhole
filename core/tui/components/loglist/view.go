@@ -18,25 +18,32 @@ func (m Model) View() string {
 		"",
 	}
 
-	endIdx := min(m.scrollOffset+maxVisibleLogs, m.store.Len())
+	endIdx := min(m.scrollOffset+m.visibleHeight, m.store.Len())
 	visibleLogs := m.store.GetRange(m.scrollOffset, endIdx)
 
 	for i, log := range visibleLogs {
 		actualIdx := m.scrollOffset + i
 		var logLine string
-
 		if actualIdx == m.selectedIndex {
 			logLine = formatters.FormatHTTPLogSelected(log)
 		} else {
 			logLine = formatters.FormatHTTPLog(log)
 		}
-
 		lines = append(lines, logLine)
 	}
 
-	if m.store.Len() > maxVisibleLogs {
+	if len(visibleLogs) < m.visibleHeight {
+		paddingNeeded := m.visibleHeight - len(visibleLogs)
+		for range paddingNeeded {
+			lines = append(lines, "")
+		}
+	}
+
+	if m.store.Len() > m.visibleHeight {
 		scrollInfo := fmt.Sprintf("Showing %d-%d of %d", m.scrollOffset+1, endIdx, m.store.Len())
 		lines = append(lines, "", styles.Footer.Render(scrollInfo))
+	} else {
+		lines = append(lines, "", "")
 	}
 
 	return lipgloss.JoinVertical(lipgloss.Left, lines...)

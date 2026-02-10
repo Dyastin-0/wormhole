@@ -11,7 +11,7 @@ import (
 
 const (
 	maxLogs        = 1024
-	maxVisibleLogs = 10
+	minVisibleLogs = 10
 )
 
 type Model struct {
@@ -19,6 +19,7 @@ type Model struct {
 	store         *store.LogStore
 	selectedIndex int
 	scrollOffset  int
+	visibleHeight int
 	keys          KeyMap
 
 	lastGPress time.Time
@@ -57,26 +58,32 @@ func (m *Model) addLog(log *messages.HTTPLogMsg) {
 		m.selectedIndex = m.store.Len() - 1
 	}
 
-	if m.selectedIndex >= m.scrollOffset+maxVisibleLogs {
-		m.scrollOffset = m.selectedIndex - maxVisibleLogs + 1
+	if m.selectedIndex >= m.scrollOffset+m.visibleHeight {
+		m.scrollOffset = m.selectedIndex - m.visibleHeight + 1
 	}
 }
 
 func (m *Model) moveUp() {
-	if m.store.Len() > 0 && m.selectedIndex > 0 {
-		m.selectedIndex--
-		if m.selectedIndex < m.scrollOffset {
-			m.scrollOffset = m.selectedIndex
-		}
+	if m.store.Len() == 0 {
+		return
+	}
+	m.selectedIndex = (m.selectedIndex - 1 + m.store.Len()) % m.store.Len()
+	if m.selectedIndex == m.store.Len()-1 {
+		m.scrollOffset = max(0, m.store.Len()-m.visibleHeight)
+	} else if m.selectedIndex < m.scrollOffset {
+		m.scrollOffset = m.selectedIndex
 	}
 }
 
 func (m *Model) moveDown() {
-	if m.store.Len() > 0 && m.selectedIndex < m.store.Len()-1 {
-		m.selectedIndex++
-		if m.selectedIndex >= m.scrollOffset+maxVisibleLogs {
-			m.scrollOffset = m.selectedIndex - maxVisibleLogs + 1
-		}
+	if m.store.Len() == 0 {
+		return
+	}
+	m.selectedIndex = (m.selectedIndex + 1) % m.store.Len()
+	if m.selectedIndex == 0 {
+		m.scrollOffset = 0
+	} else if m.selectedIndex >= m.scrollOffset+m.visibleHeight {
+		m.scrollOffset = m.selectedIndex - m.visibleHeight + 1
 	}
 }
 
@@ -90,8 +97,8 @@ func (m *Model) gotoTop() {
 func (m *Model) gotoBottom() {
 	if m.store.Len() > 0 {
 		m.selectedIndex = m.store.Len() - 1
-		if m.selectedIndex >= maxVisibleLogs {
-			m.scrollOffset = m.selectedIndex - maxVisibleLogs + 1
+		if m.selectedIndex >= m.visibleHeight {
+			m.scrollOffset = m.selectedIndex - m.visibleHeight + 1
 		} else {
 			m.scrollOffset = 0
 		}

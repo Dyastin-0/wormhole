@@ -7,7 +7,6 @@ import (
 	"github.com/Dyastin-0/wormhole/core/proto"
 	"github.com/Dyastin-0/wormhole/core/tui/formatters"
 	"github.com/Dyastin-0/wormhole/core/tui/messages"
-	"github.com/Dyastin-0/wormhole/core/tui/styles"
 	"github.com/Dyastin-0/wormhole/stream"
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/spinner"
@@ -28,10 +27,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.logList, cmd = m.logList.Update(msg)
 		cmds = append(cmds, cmd)
 
-		leftPanelWidth := styles.HeaderKeyWidth + /*header colon*/ 1 + styles.HeaderValueWidth + /*column padding*/ 2
-		detailWidth := msg.Width - leftPanelWidth
 		m.logDetail, cmd = m.logDetail.Update(tea.WindowSizeMsg{
-			Width:  detailWidth,
+			Width:  msg.Width,
 			Height: msg.Height,
 		})
 		cmds = append(cmds, cmd)
@@ -39,7 +36,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmds...)
 
 	case tea.KeyMsg:
-		if key.Matches(msg, m.keys.Quit) {
+		if key.Matches(msg, m.keys.Quit) && !m.logDetail.IsSearching() {
 			return m, tea.Quit
 		}
 
@@ -74,12 +71,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, cmd)
 
 		if m.width > 0 && m.height > 0 {
-			leftPanelWidth := styles.HeaderKeyWidth + /*header colon*/ 1 + styles.HeaderValueWidth + /*column padding*/ 2
-			detailWidth := m.width - leftPanelWidth
-
 			var sizeCmd tea.Cmd
 			m.logDetail, sizeCmd = m.logDetail.Update(tea.WindowSizeMsg{
-				Width:  detailWidth,
+				Width:  m.width,
 				Height: m.height,
 			})
 			cmds = append(cmds, sizeCmd)
@@ -88,8 +82,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmds...)
 
 	case spinner.TickMsg:
-		m.spinner, cmd = m.spinner.Update(msg)
-		cmds = append(cmds, cmd)
+		if m.viewMode == messages.ViewModeList {
+			m.spinner, cmd = m.spinner.Update(msg)
+			cmds = append(cmds, cmd)
+		}
+
+		// var detailCmd tea.Cmd
+		// m.logDetail, detailCmd = m.logDetail.Update(msg)
+		// cmds = append(cmds, detailCmd)
+		//
+		// return m, tea.Batch(cmds...)
 	}
 
 	switch m.viewMode {

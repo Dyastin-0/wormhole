@@ -175,7 +175,7 @@ func (c *Client) Run(ctx context.Context) error {
 		prettyPrint("err", fmt.Sprintf("subdomain '%s' is already in use", c.name))
 		return nil
 	case proto.StatusUnsupportedProto:
-		prettyPrint("err", fmt.Sprintf("protocol '%v' is not supported", c.proto))
+		prettyPrint("err", fmt.Sprintf("protocol '%v' is not supported", proto.ProtoString(c.proto)))
 		return nil
 	case proto.StatusOK:
 	default:
@@ -271,7 +271,7 @@ func (c *Client) RunWithTCP(ctx context.Context) error {
 		prettyPrint("err", fmt.Sprintf("subdomain '%s' is already in use", c.name))
 		return ErrNameTaken
 	case proto.StatusUnsupportedProto:
-		prettyPrint("err", fmt.Sprintf("protocol '%v' is not supported", c.proto))
+		prettyPrint("err", fmt.Sprintf("protocol '%v' is not supported", proto.ProtoString(c.proto)))
 		return ErrUnsupportedProto
 	case proto.StatusOK:
 	default:
@@ -442,7 +442,7 @@ func (c *Client) handleMessages(ctx context.Context, session *yamux.Session) err
 			case proto.TypeMetrics:
 				c.metricsmu.Lock()
 				if c.metricsch == nil {
-					program, metricsch, httpLogch, requestch := tui.Start(fmt.Sprintf("%s:%d -> %s", c.domain, c.port, c.targetAddr), c.metrics, c.httpLog)
+					program, metricsch, httpLogch, requestch := tui.Start(fmt.Sprintf("%s:%d → %s", c.domain, c.port, c.targetAddr), c.metrics, c.httpLog)
 					go func() {
 						defer close(metricsch)
 						if _, err := program.Run(); err != nil {
@@ -459,7 +459,7 @@ func (c *Client) handleMessages(ctx context.Context, session *yamux.Session) err
 			case proto.TypeHTTPLog:
 				c.metricsmu.Lock()
 				if c.metricsch == nil {
-					program, metricsch, httpLogch, requestch := tui.Start(fmt.Sprintf("%s:%s -> %s", c.domain, c.port, c.targetAddr), c.metrics, c.httpLog)
+					program, metricsch, httpLogch, requestch := tui.Start(fmt.Sprintf("%s:%d → %s", c.domain, c.port, c.targetAddr), c.metrics, c.httpLog)
 					go func() {
 						defer close(metricsch)
 						if _, err := program.Run(); err != nil {

@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/Dyastin-0/wormhole/core/tui/styles"
+	"github.com/charmbracelet/lipgloss"
 )
 
 const hexChars = "0123456789abcdef"
@@ -78,7 +79,7 @@ func HighlightWrappedMatches(
 	startY, viewHeight, viewWidth int,
 ) string {
 	var result strings.Builder
-	result.Grow(viewHeight * (viewWidth + 1))
+	result.Grow(viewHeight * (viewWidth * 2))
 
 	for i := range viewHeight {
 		vIdx := startY + i
@@ -92,6 +93,11 @@ func HighlightWrappedMatches(
 
 			highlighted := highlightLine(segment, vLine.StartOffset, 0, matches, currentMatch)
 			result.WriteString(highlighted)
+
+			currentLineWidth := lipgloss.Width(highlighted)
+			if currentLineWidth < viewWidth {
+				result.WriteString(strings.Repeat(" ", viewWidth-currentLineWidth))
+			}
 		}
 
 		if i < viewHeight-1 {
@@ -264,15 +270,18 @@ func highlightHexLine(lineText string, lineStartByte int, hexColumnSize int, mat
 			continue
 		}
 
+		var unmatchedHex strings.Builder
 		for i := lastByte; i < matchStartByte; i++ {
 			charIdx := i * 3
 			if charIdx+2 <= len(lineText) {
-				result.WriteString(lineText[charIdx : charIdx+2])
+				unmatchedHex.WriteString(lineText[charIdx : charIdx+2])
 				if charIdx+2 < len(lineText) {
-					result.WriteByte(' ')
+					unmatchedHex.WriteByte(' ')
 				}
 			}
 		}
+
+		result.WriteString(styles.Value.Width(0).Render(unmatchedHex.String()))
 
 		var matchedHex strings.Builder
 		for i := matchStartByte; i < matchEndByte; i++ {
@@ -313,6 +322,42 @@ func highlightHexLine(lineText string, lineStartByte int, hexColumnSize int, mat
 	return result.String()
 }
 
+type VisualLine struct {
+	StartOffset int
+	Length      int
+	SourceLine  int
+}
+
+func GetWrappedLines(content string, lineOffsets []int, viewWidth int) []VisualLine {
+	var visualLines []VisualLine
+
+	for lineIdx, start := range lineOffsets {
+		end := len(content)
+		if lineIdx+1 < len(lineOffsets) {
+			end = lineOffsets[lineIdx+1] - 1
+		}
+
+		lineText := content[start:end]
+		if len(lineText) == 0 {
+			visualLines = append(visualLines, VisualLine{start, 0, lineIdx})
+			continue
+		}
+
+		for i := 0; i < len(lineText); i += viewWidth {
+			size := viewWidth
+			if i+size > len(lineText) {
+				size = len(lineText) - i
+			}
+			visualLines = append(visualLines, VisualLine{
+				StartOffset: start + i,
+				Length:      size,
+				SourceLine:  lineIdx,
+			})
+		}
+	}
+	return visualLines
+}
+
 func JumpToMatch(
 	match Match,
 	totalLength int,
@@ -348,42 +393,6 @@ func JumpToMatch(
 	hexY = max(0, min(hexRow-(viewHeight/2), maxHexY))
 
 	return
-}
-
-type VisualLine struct {
-	StartOffset int
-	Length      int
-	SourceLine  int
-}
-
-func GetWrappedLines(content string, lineOffsets []int, viewWidth int) []VisualLine {
-	var visualLines []VisualLine
-
-	for lineIdx, start := range lineOffsets {
-		end := len(content)
-		if lineIdx+1 < len(lineOffsets) {
-			end = lineOffsets[lineIdx+1] - 1
-		}
-
-		lineText := content[start:end]
-		if len(lineText) == 0 {
-			visualLines = append(visualLines, VisualLine{start, 0, lineIdx})
-			continue
-		}
-
-		for i := 0; i < len(lineText); i += viewWidth {
-			size := viewWidth
-			if i+size > len(lineText) {
-				size = len(lineText) - i
-			}
-			visualLines = append(visualLines, VisualLine{
-				StartOffset: start + i,
-				Length:      size,
-				SourceLine:  lineIdx,
-			})
-		}
-	}
-	return visualLines
 }
 
 func sanitize(s string) string {

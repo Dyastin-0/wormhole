@@ -2,11 +2,11 @@ package logdetail
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/Dyastin-0/wormhole/core/tui/formatters"
-	"github.com/Dyastin-0/wormhole/core/tui/messages"
 	"github.com/Dyastin-0/wormhole/core/tui/search"
 	"github.com/Dyastin-0/wormhole/core/tui/styles"
 	"github.com/charmbracelet/lipgloss"
@@ -18,29 +18,17 @@ func (m Model) View() string {
 	}
 
 	var title string
-	var headerLines string
-
 	switch m.activeTab {
-	case messages.TabResponseBody:
+	case tabResponseBody:
 		title = "Response Details"
-		headerLines = formatters.SortAndRenderHeaders(m.log.Response.Header)
-	case messages.TabRequestBody:
+	case tabRequestBody:
 		title = "Request Details"
-		headerLines = formatters.SortAndRenderHeaders(m.log.Request.Header)
 	}
 
-	meta := m.renderMetadata(title)
-	footer := m.renderFooter()
+	headerCol := m.renderHeaderColumn(title)
+	bodyCol := m.renderBodyColumn()
 
-	headerColumn := lipgloss.JoinVertical(lipgloss.Left,
-		meta,
-		headerLines,
-		footer,
-	)
-
-	bodyColumn := m.renderBodyColumn()
-
-	return lipgloss.JoinHorizontal(lipgloss.Left, headerColumn, "  ", bodyColumn)
+	return lipgloss.JoinHorizontal(lipgloss.Top, headerCol, "  ", bodyCol)
 }
 
 func (m Model) renderMetadata(title string) string {
@@ -84,21 +72,20 @@ func (m Model) renderMetadata(title string) string {
 }
 
 func (m Model) renderFooter() string {
-	m.keys.Search.SetEnabled(!m.searchActive)
 	helpView := m.help.View(m.keys)
 
 	var statusLine string
 	if m.searchActive {
 		matchInfo := ""
 		if len(m.searchMatches) > 0 {
-			matchInfo = fmt.Sprintf(" (%d/%d)", m.currentMatch+1, len(m.searchMatches))
+			matchInfo = fmt.Sprintf(" (%d/%d)", m.currentMatch()+1, len(m.searchMatches))
 		}
 		searchStr := styles.HelpKey.Render("Search")
 		inputStr := styles.Value.Width(0).Render(fmt.Sprintf(" /%s%s", m.searchInput.Value(), matchInfo))
 		statusLine = lipgloss.JoinHorizontal(lipgloss.Left, searchStr, inputStr)
 	} else if len(m.searchMatches) > 0 {
 		matchStr := styles.HelpKey.Render("Match")
-		statusLine = styles.Value.Width(0).Render(fmt.Sprintf(" %d/%d", m.currentMatch+1, len(m.searchMatches)))
+		statusLine = styles.Value.Width(0).Render(fmt.Sprintf(" %d/%d", m.currentMatch()+1, len(m.searchMatches)))
 		statusLine = lipgloss.JoinHorizontal(lipgloss.Left, matchStr, statusLine)
 	}
 
@@ -110,6 +97,70 @@ func (m Model) renderFooter() string {
 	}
 
 	return helpView
+}
+
+func (m Model) renderHeaderColumn(title string) string {
+	meta := m.renderMetadata(title)
+
+	var matches []search.Match
+	if m.focusedPanel == focusHeaderPanel {
+		matches = m.searchMatches
+	}
+
+	var headerView string
+	if m.wrapHeaders {
+		headerView = search.HighlightWrappedMatches(
+			m.headerContent, m.headerVisualLines, matches,
+			m.headerCurrentMatch, m.headerYOffset, m.headerViewHeight, m.headerViewWidth,
+		)
+	} else {
+		headerView = search.HighlightMatches(
+			m.headerContent, m.headerLineOffsets, matches,
+			m.headerCurrentMatch, m.headerYOffset, m.headerViewHeight, m.headerViewWidth, m.headerXOffset,
+		)
+	}
+
+	headerIndicator := " "
+	if m.focusedPanel == focusHeaderPanel {
+		headerIndicator = "█"
+	}
+
+	headerTitle := lipgloss.JoinHorizontal(
+		lipgloss.Left,
+		styles.Title.Render("Header "),
+		styles.HelpKey.Render(headerIndicator),
+	)
+
+	header := lipgloss.JoinVertical(
+		lipgloss.Left,
+		headerTitle,
+		"",
+		styles.Text.Render(headerView),
+	)
+
+	totalRows := len(m.headerLineOffsets)
+	if m.wrapHeaders {
+		totalRows = len(m.headerVisualLines)
+	}
+	headerScrollInfo := ""
+	if totalRows > m.headerViewHeight {
+		end := min(totalRows, m.headerYOffset+m.headerViewHeight)
+		headerScrollInfo = lipgloss.JoinHorizontal(
+			lipgloss.Left, styles.HelpKey.Render("Rows "),
+			styles.Footer.Render(fmt.Sprintf(" %d-%d of %d", m.headerYOffset+1, end, totalRows)),
+		)
+	}
+
+	footer := m.renderFooter()
+
+	return lipgloss.JoinVertical(lipgloss.Left,
+		meta,
+		header,
+		"",
+		headerScrollInfo,
+		"",
+		footer,
+	)
 }
 
 func (m Model) renderBodyColumn() string {
@@ -125,26 +176,31 @@ func (m Model) renderBodyColumn() string {
 		strings.Contains(contentType, "+json") ||
 		strings.Contains(contentType, "+xml")
 
+	var matches []search.Match
+	if m.focusedPanel == focusBodyPanel {
+		matches = m.searchMatches
+	}
+
 	if m.displayText && isText {
-		if m.wrapText {
+		if m.wrapBody {
 			textView = search.HighlightWrappedMatches(
 				m.stringContent,
 				m.visualLines,
-				m.searchMatches,
-				m.currentMatch,
+				matches,
+				m.bodyCurrentMatch,
 				m.textYOffset,
 				m.viewHeight,
-				m.viewWidth,
+				max(minTextViewWidth, m.viewWidth),
 			)
 		} else {
 			textView = search.HighlightMatches(
 				m.stringContent,
 				m.lineOffsets,
-				m.searchMatches,
-				m.currentMatch,
+				matches,
+				m.bodyCurrentMatch,
 				m.textYOffset,
 				m.viewHeight,
-				m.viewWidth,
+				max(minTextViewWidth, m.viewWidth),
 				m.xOffset,
 			)
 		}
@@ -153,8 +209,8 @@ func (m Model) renderBodyColumn() string {
 	if m.displayHex {
 		hexView = search.HighlightHexMatches(
 			m.stringContent,
-			m.searchMatches,
-			m.currentMatch,
+			matches,
+			m.bodyCurrentMatch,
 			m.hexYOffset,
 			m.viewHeight,
 			styles.HexColumnSize,
@@ -165,30 +221,20 @@ func (m Model) renderBodyColumn() string {
 	showText := m.displayText && isText
 
 	if showText && m.displayHex {
-		textTitle := styles.Value.Width(0).Render("ascii")
-		textWithTitle := lipgloss.JoinVertical(lipgloss.Left, textTitle, "", textView)
-		text := styles.Text.Width(m.viewWidth).MaxWidth(m.viewWidth).Render(textWithTitle)
-
-		hexTitle := styles.Value.Width(0).Render("hex")
-		hexWithTitle := lipgloss.JoinVertical(lipgloss.Left, hexTitle, "", hexView)
-		hex := styles.Text.Render(hexWithTitle)
-
+		text := styles.Text.Width(m.viewWidth).MaxWidth(m.viewWidth).Render(textView)
+		hex := styles.Text.Render(hexView)
 		viewports = lipgloss.JoinHorizontal(lipgloss.Top, text, "  ", hex)
 	} else if showText {
-		textTitle := styles.Value.Width(0).Render("ascii")
-		textWithTitle := lipgloss.JoinVertical(lipgloss.Left, textTitle, "", textView)
-		viewports = styles.Text.Width(m.viewWidth).MaxWidth(m.viewWidth).Render(textWithTitle)
+		viewports = styles.Text.Width(m.viewWidth).MaxWidth(m.viewWidth).Render(textView)
 	} else if m.displayHex {
-		hexTitle := styles.Value.Width(0).Render("hex")
-		hexWithTitle := lipgloss.JoinVertical(lipgloss.Left, hexTitle, "", hexView)
-		viewports = styles.Text.Render(hexWithTitle)
+		viewports = styles.Text.Render(hexView)
 	}
 
 	var scrollInfoParts []string
 
 	if showText {
 		totalRows := len(m.lineOffsets)
-		if m.wrapText {
+		if m.wrapBody {
 			totalRows = len(m.visualLines)
 		}
 		currentRowEnd := min(totalRows, m.textYOffset+m.viewHeight)
@@ -198,7 +244,7 @@ func (m Model) renderBodyColumn() string {
 		)
 
 		var textXInfo string
-		if !m.wrapText {
+		if !m.wrapBody {
 			rightCol := min(m.maxLineLength, m.xOffset+m.viewWidth)
 			textXInfo = lipgloss.JoinHorizontal(lipgloss.Left,
 				styles.HelpKey.Render("Text cols"),
@@ -229,8 +275,20 @@ func (m Model) renderBodyColumn() string {
 		footerRow = lipgloss.NewStyle().MarginTop(1).Render(scrollInfo)
 	}
 
+	bodyIndicator := " "
+	if m.focusedPanel == focusBodyPanel {
+		bodyIndicator = "█"
+	}
+
+	bodyTitleStr := fmt.Sprintf("Body %s ", formatters.FormatBytes(uint64(m.getBodySize())))
+	bodyTitle := lipgloss.JoinHorizontal(
+		lipgloss.Left,
+		styles.Title.Render(bodyTitleStr),
+		styles.HelpKey.Render(bodyIndicator),
+	)
+
 	return lipgloss.JoinVertical(lipgloss.Left,
-		styles.Value.Width(0).Render(fmt.Sprintf("Body %s", formatters.FormatBytes(uint64(m.getBodySize())))),
+		bodyTitle,
 		"",
 		viewports,
 		footerRow,
@@ -249,36 +307,81 @@ func (m *Model) loadContent() {
 		return
 	}
 
-	var content string
-	if m.activeTab == messages.TabRequestBody {
-		content = string(m.log.RequestBody)
+	if m.activeTab == tabRequestBody {
+		m.stringContent = string(m.log.RequestBody)
+		m.headerContent = MergeHeaders(m.log.Request.Header)
 	} else {
-		content = string(m.log.ResponseBody)
+		m.stringContent = string(m.log.ResponseBody)
+		m.headerContent = MergeHeaders(m.log.Response.Header)
 	}
 
-	m.stringContent = content
+	m.headerLineOffsets, m.maxHeaderLineLength = search.GetLineOffsets(m.headerContent)
+
 	m.lineOffsets, m.maxLineLength = search.GetLineOffsets(m.stringContent)
 	m.totalHexRows = (len(m.stringContent) + styles.HexColumnSize - 1) / styles.HexColumnSize
 
-	if m.wrapText {
+	if m.wrapBody {
 		m.visualLines = search.GetWrappedLines(m.stringContent, m.lineOffsets, m.viewWidth)
+		m.headerVisualLines = search.GetWrappedLines(m.headerContent, m.headerLineOffsets, m.headerViewWidth)
 	} else {
 		m.visualLines = nil
+		m.headerVisualLines = nil
 	}
 
-	m.textYOffset = 0
-	m.hexYOffset = 0
-	m.xOffset = 0
+	switch m.focusedPanel {
+	case focusHeaderPanel:
+		m.headerYOffset = 0
+		m.headerXOffset = 0
+
+	case focusBodyPanel:
+		m.textYOffset = 0
+		m.hexYOffset = 0
+		m.xOffset = 0
+	}
 
 	m.findMatches()
+}
+
+func (m Model) currentMatch() int {
+	switch m.focusedPanel {
+	case focusHeaderPanel:
+		return m.headerCurrentMatch
+
+	case focusBodyPanel:
+		return m.bodyCurrentMatch
+	}
+
+	return 0
 }
 
 func (m Model) getBodySize() int {
 	if m.log == nil {
 		return 0
 	}
-	if m.activeTab == messages.TabResponseBody {
+	if m.activeTab == tabResponseBody {
 		return len(m.log.ResponseBody)
 	}
 	return len(m.log.RequestBody)
+}
+
+func MergeHeaders(headers map[string][]string) string {
+	if len(headers) == 0 {
+		return ""
+	}
+
+	keys := make([]string, 0, len(headers))
+	for k := range headers {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	var sb strings.Builder
+	for _, k := range keys {
+		values := headers[k]
+		for _, v := range values {
+			fmt.Fprintf(&sb, "%s: %s\n", k, v)
+		}
+	}
+
+	return strings.TrimSuffix(sb.String(), "\n")
 }

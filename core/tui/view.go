@@ -1,8 +1,6 @@
 package tui
 
 import (
-	"fmt"
-
 	"github.com/Dyastin-0/wormhole/core/tui/messages"
 	"github.com/Dyastin-0/wormhole/core/tui/styles"
 	"github.com/charmbracelet/lipgloss"
@@ -19,13 +17,14 @@ func (m Model) View() string {
 }
 
 func (m Model) viewList() string {
-	title := styles.Title.Render(fmt.Sprintf("%s %s", m.name, m.spinner.View()))
+	header := lipgloss.JoinHorizontal(
+		lipgloss.Top,
+		styles.Title.Render(m.name),
+		" ",
+		m.spinner.View(),
+	)
 
-	lines := []string{
-		title,
-		"",
-	}
-
+	lines := []string{header, ""}
 	metricsView := m.metrics.View()
 	if metricsView != "" {
 		lines = append(lines, metricsView)

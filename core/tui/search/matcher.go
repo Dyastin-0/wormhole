@@ -60,7 +60,7 @@ func FindMatches(content, query string, lineOffsets []int, normalCase bool) []Ma
 				Start: actualStart,
 				End:   actualEnd,
 			})
-			pos += 1
+			pos += queryLen
 		} else {
 			shift, ok := badChar[content[pos+queryLen-1]]
 			if !ok {

@@ -47,10 +47,3 @@ const (
 	ViewModeList ViewMode = iota
 	ViewModeDetail
 )
-
-type Tab int
-
-const (
-	TabRequestBody Tab = iota
-	TabResponseBody
-)
