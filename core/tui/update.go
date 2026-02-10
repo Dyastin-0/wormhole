@@ -82,10 +82,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmds...)
 
 	case spinner.TickMsg:
-		if m.viewMode == messages.ViewModeList {
-			m.spinner, cmd = m.spinner.Update(msg)
-			cmds = append(cmds, cmd)
-		}
+		m.spinner, cmd = m.spinner.Update(msg)
+		cmds = append(cmds, cmd)
 
 		// var detailCmd tea.Cmd
 		// m.logDetail, detailCmd = m.logDetail.Update(msg)
