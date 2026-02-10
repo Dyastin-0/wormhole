@@ -10,11 +10,14 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"sync"
 	"time"
 
 	"github.com/Dyastin-0/wormhole/core/proto"
-	"github.com/Dyastin-0/wormhole/core/proxy"
+	"github.com/Dyastin-0/wormhole/core/tui"
+	"github.com/Dyastin-0/wormhole/core/tui/messages"
+	"github.com/Dyastin-0/wormhole/stream"
 	"github.com/hashicorp/yamux"
 	"github.com/rs/zerolog/log"
 )
@@ -30,8 +33,6 @@ type Client struct {
 	addr string
 	// targetAddr is the TCP address (host:port) where incoming connections are forwarded.
 	targetAddr string
-	// withTLS specifies whether to use TLS when connecting to the targetAddr.
-	withTLS bool
 	// proto specifies the tunnel protocol (e.g., proto.ProtoHTTP, proto.ProtoTCP).
 	proto uint8
 	// name is the desired subdomain for the tunnel (e.g., "example" for "example.domain.com").
@@ -56,9 +57,21 @@ type Client struct {
 	authToken string
 	// allowHTTP specifies if this tunnel allows HTTP requests, ignored if tunnel protocol is HTTP.
 	allowHTTP bool
-	// metricsch i used to send http logs and metrics to bubbletea application.
-	metricsch chan<- any
+	// allowTLSPassthrough specifies if this tunnel want to terminate TLS at target address.
+	allowTLSPassthrough bool
+	// url specifies the client CNAME that points to the given tunnel endpoint.
+	url string
+	// port is the specified port from the server.
+	port uint16
+	// metricsch is used to send http logs and metrics to bubbletea application.
+	metricsch chan any
+	requestch chan *http.Request
+	httpLogch chan<- *proto.HTTPLog
 	metricsmu sync.Mutex
+	// session is the the yamux client session.
+	session *yamux.Session
+	// controlStream is a yamux.Stream used to handle tunnel request and controls.
+	controlStream net.Conn
 }
 
 // New creates a new Client with the specified configuration options.
@@ -84,84 +97,6 @@ func New(opts ...OptFunc) (*Client, error) {
 	return c, nil
 }
 
-func (c *Client) RunWithTCP(ctx context.Context) error {
-	dialer := net.Dialer{}
-
-	conn, err := dialer.DialContext(ctx, "tcp", c.addr)
-	if err != nil {
-		return fmt.Errorf("failed to dial server: %w", err)
-	}
-	defer conn.Close()
-
-	yamuxConfig := yamux.DefaultConfig()
-	yamuxConfig.EnableKeepAlive = false
-
-	session, err := yamux.Client(conn, yamuxConfig)
-	if err != nil {
-		return fmt.Errorf("failed to create yamux client: %w", err)
-	}
-	defer session.Close()
-
-	stream, err := session.Open()
-	if err != nil {
-		return fmt.Errorf("failed to open yamux session: %w", err)
-	}
-	defer stream.Close()
-
-	responseHeader, err := c.sendRequest(ctx, stream)
-	if err != nil {
-		return err
-	}
-
-	switch responseHeader.Type {
-	case proto.TypeResponse:
-		// OK
-	case proto.TypeError:
-		buf := make([]byte, responseHeader.Length)
-		_, err = io.ReadFull(stream, buf)
-		if err != nil {
-			return fmt.Errorf("failed to read error payload: %w", err)
-		}
-		return fmt.Errorf("server error: %s", string(buf))
-	default:
-		return fmt.Errorf("unexpected header type: %v", responseHeader.Type)
-	}
-
-	buf := make([]byte, responseHeader.Length)
-	_, err = io.ReadFull(stream, buf)
-	if err != nil {
-		return fmt.Errorf("failed to read response payload: %w", err)
-	}
-
-	response, err := proto.DeserializeResponse(buf)
-	if err != nil {
-		return fmt.Errorf("failed to deserialize response: %w", err)
-	}
-
-	switch response.Status {
-	case proto.StatusNameTaken:
-		prettyPrint("err", fmt.Sprintf("subdomain '%s' is already in use", c.name))
-		return ErrNameTaken
-	case proto.StatusUnsupportedProto:
-		prettyPrint("err", fmt.Sprintf("protocol '%v' is not supported", c.proto))
-		return ErrUnsupportedProto
-	case proto.StatusOK:
-	default:
-		prettyPrint("err", fmt.Sprintf("unexpected response status: %v", response.Status))
-		return fmt.Errorf("unexpected response status: %v", response.Status)
-	}
-
-	expiresAt := time.Now().Add(time.Duration(response.TTLHours))
-	prettyPrint(
-		"inf",
-		"tunnel created!",
-		fmt.Sprintf("%s%s", Proto(c.proto), response.Domain),
-		fmt.Sprintf("tunnel expires at %s", expiresAt.Format("Jan 2, 2006 3:04 PM")),
-	)
-
-	return c.handleMessages(ctx, session)
-}
-
 // Run initiates a tunnel handshake with the Wormhole server and manages incoming connections.
 func (c *Client) Run(ctx context.Context) error {
 	host, _, err := net.SplitHostPort(c.addr)
@@ -183,17 +118,24 @@ func (c *Client) Run(ctx context.Context) error {
 	}
 	defer conn.Close()
 
-	session, err := yamux.Client(conn, nil)
+	yamuxConfig := yamux.DefaultConfig()
+	yamuxConfig.EnableKeepAlive = false
+	yamuxConfig.MaxStreamWindowSize = 16 * 1024 * 1024
+
+	session, err := yamux.Client(conn, yamuxConfig)
 	if err != nil {
 		return fmt.Errorf("failed to create yamux client: %w", err)
 	}
-	defer session.Close()
+
+	c.session = session
 
 	stream, err := session.Open()
 	if err != nil {
 		return fmt.Errorf("failed to open yamux session: %w", err)
 	}
 	defer stream.Close()
+
+	c.controlStream = stream
 
 	responseHeader, err := c.sendRequest(ctx, stream)
 	if err != nil {
@@ -226,24 +168,134 @@ func (c *Client) Run(ctx context.Context) error {
 	}
 
 	switch response.Status {
+	case proto.StatusInvalidURL:
+		prettyPrint("err", fmt.Sprintf("invalid url: %s", c.url))
+		return nil
 	case proto.StatusNameTaken:
 		prettyPrint("err", fmt.Sprintf("subdomain '%s' is already in use", c.name))
 		return nil
 	case proto.StatusUnsupportedProto:
-		prettyPrint("err", fmt.Sprintf("protocol '%v' is not supported", c.proto))
+		prettyPrint("err", fmt.Sprintf("protocol '%v' is not supported", proto.ProtoString(c.proto)))
 		return nil
 	case proto.StatusOK:
 	default:
-		prettyPrint("err", fmt.Sprintf("unexpected response status: %v", response.Status))
 		return fmt.Errorf("unexpected response status: %v", response.Status)
 	}
 
+	c.port = response.Port
 	c.domain = response.Domain
+	endpoint := response.Domain
+
+	switch c.proto {
+	case proto.ProtoHTTP:
+		endpoint = fmt.Sprintf("https://%s", endpoint)
+	case proto.ProtoTCP:
+		endpoint = fmt.Sprintf("%s:%d", endpoint, response.Port)
+	case proto.ProtoTLS:
+		endpoint = fmt.Sprintf("%s:%d", endpoint, response.Port)
+	}
+
 	expiresAt := time.Now().Add(time.Duration(response.TTLHours))
 	prettyPrint(
 		"inf",
 		"tunnel created!",
-		fmt.Sprintf("%s%s", Proto(c.proto), response.Domain),
+		endpoint,
+		fmt.Sprintf("tunnel expires at %s", expiresAt.Format("Jan 2, 2006 3:04 PM")),
+	)
+
+	return c.handleMessages(ctx, session)
+}
+
+// RunWithTCP is the same as Run, but dials without TLS, useful for testing.
+func (c *Client) RunWithTCP(ctx context.Context) error {
+	dialer := net.Dialer{}
+
+	conn, err := dialer.DialContext(ctx, "tcp", c.addr)
+	if err != nil {
+		return fmt.Errorf("failed to dial server: %w", err)
+	}
+	defer conn.Close()
+
+	yamuxConfig := yamux.DefaultConfig()
+	yamuxConfig.EnableKeepAlive = false
+	yamuxConfig.MaxStreamWindowSize = 16 * 1024 * 1024
+
+	session, err := yamux.Client(conn, yamuxConfig)
+	if err != nil {
+		return fmt.Errorf("failed to create yamux client: %w", err)
+	}
+
+	c.session = session
+
+	stream, err := session.Open()
+	if err != nil {
+		return fmt.Errorf("failed to open yamux session: %w", err)
+	}
+
+	c.controlStream = stream
+
+	responseHeader, err := c.sendRequest(ctx, stream)
+	if err != nil {
+		return err
+	}
+
+	switch responseHeader.Type {
+	case proto.TypeResponse:
+		// OK
+	case proto.TypeError:
+		buf := make([]byte, responseHeader.Length)
+		_, err = io.ReadFull(stream, buf)
+		if err != nil {
+			return fmt.Errorf("failed to read error payload: %w", err)
+		}
+		return fmt.Errorf("server error: %s", string(buf))
+	default:
+		return fmt.Errorf("unexpected header type: %v", responseHeader.Type)
+	}
+
+	buf := make([]byte, responseHeader.Length)
+	_, err = io.ReadFull(stream, buf)
+	if err != nil {
+		return fmt.Errorf("failed to read response payload: %w", err)
+	}
+
+	response, err := proto.DeserializeResponse(buf)
+	if err != nil {
+		return fmt.Errorf("failed to deserialize response: %w", err)
+	}
+
+	switch response.Status {
+	case proto.StatusInvalidURL:
+		prettyPrint("err", fmt.Sprintf("invalid url: %s", c.url))
+	case proto.StatusNameTaken:
+		prettyPrint("err", fmt.Sprintf("subdomain '%s' is already in use", c.name))
+		return ErrNameTaken
+	case proto.StatusUnsupportedProto:
+		prettyPrint("err", fmt.Sprintf("protocol '%v' is not supported", proto.ProtoString(c.proto)))
+		return ErrUnsupportedProto
+	case proto.StatusOK:
+	default:
+		return fmt.Errorf("unexpected response status: %v", response.Status)
+	}
+
+	c.port = response.Port
+	c.domain = response.Domain
+	endpoint := response.Domain
+
+	switch c.proto {
+	case proto.ProtoHTTP:
+		endpoint = fmt.Sprintf("https://%s", endpoint)
+	case proto.ProtoTCP:
+		endpoint = fmt.Sprintf("%s:%d", endpoint, response.Port)
+	case proto.ProtoTLS:
+		endpoint = fmt.Sprintf("%s:%d", endpoint, response.Port)
+	}
+
+	expiresAt := time.Now().Add(time.Duration(response.TTLHours))
+	prettyPrint(
+		"inf",
+		"tunnel created!",
+		endpoint,
 		fmt.Sprintf("tunnel expires at %s", expiresAt.Format("Jan 2, 2006 3:04 PM")),
 	)
 
@@ -257,8 +309,9 @@ func (c *Client) sendRequest(ctx context.Context, stream net.Conn) (*proto.Heade
 	} else {
 		stream.SetDeadline(time.Now().Add(5 * time.Second))
 	}
+	defer stream.SetDeadline(time.Time{})
 
-	request := proto.NewRequest(c.proto, c.name, c.ttl, c.apiKey)
+	request := proto.NewRequest(c.proto, c.name, c.url, c.ttl, c.apiKey)
 	request.AuthType = c.authType
 	request.AuthUsername = c.authUsername
 	request.AuthPassword = c.authPassword
@@ -278,6 +331,10 @@ func (c *Client) sendRequest(ctx context.Context, stream net.Conn) (*proto.Heade
 	}
 	if c.httpLog {
 		header.SetFlag(proto.FlagHTTPLog)
+	}
+
+	if c.allowTLSPassthrough {
+		header.SetFlag(proto.FlagTLSPassthrough)
 	}
 
 	serializedHeader, err := proto.SerializeHeader(header)
@@ -310,27 +367,20 @@ func (c *Client) sendRequest(ctx context.Context, stream net.Conn) (*proto.Heade
 }
 
 // ForwardStream forwards a multiplexed stream from the server to the target address.
-func (c *Client) ForwardStream(ctx context.Context, stream net.Conn) error {
+func (c *Client) ForwardStream(ctx context.Context, ystream net.Conn) error {
 	var localConn net.Conn
 	var err error
 
-	if c.withTLS {
-		localConn, err = (&tls.Dialer{
-			Config: &tls.Config{
-				InsecureSkipVerify: true,
-			},
-		}).DialContext(ctx, "tcp", c.targetAddr)
-		if err != nil {
-			return fmt.Errorf("failed to dial tls target address: %w", err)
-		}
-	} else {
-		localConn, err = (&net.Dialer{}).DialContext(ctx, "tcp", c.targetAddr)
-		if err != nil {
-			return fmt.Errorf("failed to dial tcp target address: %w", err)
-		}
+	localConn, err = (&net.Dialer{}).DialContext(ctx, "tcp", c.targetAddr)
+	if err != nil {
+		return fmt.Errorf("failed to dial tcp target address: %w", err)
 	}
 
-	return proxy.StreamWithContext(ctx, localConn, stream)
+	if c.httpLog {
+		return stream.StreamHTTPWithRequestResponseContext(ctx, ystream, localConn, c.metricsch, c.requestch)
+	}
+
+	return stream.StreamWithContext(ctx, ystream, localConn)
 }
 
 // handleMessages processes incoming multiplexed streams (control streams) from the server.
@@ -339,8 +389,9 @@ func (c *Client) handleMessages(ctx context.Context, session *yamux.Session) err
 
 	go func() {
 		<-cancelCtx.Done()
-		session.Close()
+		c.Close()
 	}()
+	go c.handleControlMessages(cancelCtx)
 
 	for {
 		stream, err := session.Accept()
@@ -352,80 +403,114 @@ func (c *Client) handleMessages(ctx context.Context, session *yamux.Session) err
 			return err
 		}
 
-		buf := make([]byte, proto.HeaderSize)
-		_, err = io.ReadFull(stream, buf)
-		if err != nil {
-			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
-				log.Debug().Err(err).Msg("stream connection closed")
+		go func() {
+			buf := make([]byte, proto.HeaderSize)
+			_, err = io.ReadFull(stream, buf)
+			if err != nil {
+				if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+					log.Debug().Err(err).Msg("stream connection closed")
+					stream.Close()
+					return
+				}
+				log.Warn().Err(err).Msg("failed to read stream header")
 				stream.Close()
-				continue
+				return
+			}
+
+			header, err := proto.DeserializeHeader(buf)
+			if err != nil {
+				log.Error().Err(err).Msg("failed to deserialize header")
+				stream.Close()
+				return
+			}
+
+			switch header.Type {
+			case proto.TypePing:
+				go handlePingStream(cancelCtx, stream)
+			case proto.TypeAccess:
+				go func(ctx context.Context, stream net.Conn) {
+					defer stream.Close()
+					err = c.ForwardStream(cancelCtx, stream)
+					if isDialError(err) && ctx.Err() == nil {
+						fmt.Printf("wormhole [err] %s\n", err.Error())
+						// for some reason, cursor is at the end of previous line
+						// clear the line and move cursor to start
+						fmt.Print("\033[2K\r")
+						cancel()
+					}
+				}(cancelCtx, stream)
+			case proto.TypeMetrics:
+				c.metricsmu.Lock()
+				if c.metricsch == nil {
+					program, metricsch, httpLogch, requestch := tui.Start(fmt.Sprintf("%s:%d → %s", c.domain, c.port, c.targetAddr), c.metrics, c.httpLog)
+					go func() {
+						defer close(metricsch)
+						if _, err := program.Run(); err != nil {
+							log.Error().Err(err).Msg("metrics display error")
+						}
+						cancel()
+					}()
+					c.metricsch = metricsch
+					c.httpLogch = httpLogch
+					c.requestch = requestch
+				}
+				c.metricsmu.Unlock()
+				go c.handleMetrics(cancelCtx, header, stream)
+			case proto.TypeHTTPLog:
+				c.metricsmu.Lock()
+				if c.metricsch == nil {
+					program, metricsch, httpLogch, requestch := tui.Start(fmt.Sprintf("%s:%d → %s", c.domain, c.port, c.targetAddr), c.metrics, c.httpLog)
+					go func() {
+						defer close(metricsch)
+						if _, err := program.Run(); err != nil {
+							log.Error().Err(err).Msg("metrics display error")
+						}
+						cancel()
+					}()
+					c.metricsch = metricsch
+					c.httpLogch = httpLogch
+					c.requestch = requestch
+				}
+				c.metricsmu.Unlock()
+				go c.handleHTTPLog(cancelCtx, header, stream)
+			default:
+				stream.Close()
+			}
+		}()
+	}
+}
+
+func (c *Client) handleControlMessages(ctx context.Context) {
+	for {
+		buf := make([]byte, proto.HeaderSize)
+		_, err := io.ReadFull(c.controlStream, buf)
+		if err != nil {
+			if ctx.Err() != nil {
+				return
 			}
 			log.Warn().Err(err).Msg("failed to read stream header")
-			stream.Close()
-			continue
+			return
 		}
 
 		header, err := proto.DeserializeHeader(buf)
 		if err != nil {
 			log.Error().Err(err).Msg("failed to deserialize header")
-			stream.Close()
-			continue
+			return
 		}
 
 		switch header.Type {
-		case proto.TypePing:
-			go handlePingStream(cancelCtx, stream)
-		case proto.TypeAccess:
-			go func(ctx context.Context, stream net.Conn) {
-				defer stream.Close()
-				err = c.ForwardStream(cancelCtx, stream)
-				if isDialError(err) && ctx.Err() == nil {
-					fmt.Printf("wormhole [err] %s\n", err.Error())
-					// for some reason, cursor is at the end of previous line
-					// clear the line and move cursor to start
-					fmt.Print("\033[2K\r")
-					cancel()
-				}
-			}(cancelCtx, stream)
-		case proto.TypeMetrics:
-			c.metricsmu.Lock()
-			if c.metricsch == nil {
-				program, metricsch := StartMetricsDisplay(c.domain, c.metrics, c.httpLog)
-				defer close(metricsch)
-				go func() {
-					if _, err := program.Run(); err != nil {
-						log.Error().Err(err).Msg("metrics display error")
-					}
-					cancel()
-				}()
-				c.metricsch = metricsch
-			}
-			c.metricsmu.Unlock()
-			go c.handleMetrics(cancelCtx, header, stream)
-		case proto.TypeHTTPLog:
-			c.metricsmu.Lock()
-			if c.metricsch == nil {
-				program, metricsch := StartMetricsDisplay(c.domain, c.metrics, c.httpLog)
-				defer close(metricsch)
-				go func() {
-					if _, err := program.Run(); err != nil {
-						log.Error().Err(err).Msg("metrics display error")
-					}
-					cancel()
-				}()
-				c.metricsch = metricsch
-			}
-			c.metricsmu.Unlock()
-			go c.handleHTTPLog(cancelCtx, header, stream)
 		case proto.TypeEnd:
-			stream.Close()
-			cancel()
-			prettyPrint("inf", "tunnel timed out")
-			return nil
+			c.Close()
 		default:
-			stream.Close()
 		}
 	}
+}
+
+func (c *Client) Close() error {
+	if c.session == nil {
+		return nil
+	}
+	return c.session.Close()
 }
 
 func isDialError(err error) bool {
@@ -458,12 +543,13 @@ func (c *Client) handleHTTPLog(ctx context.Context, header *proto.Header, stream
 		return fmt.Errorf("failed to read http log: %w", err)
 	}
 
-	// This is the "READY" log, should be ignored.
-	_, err = proto.DeserializeHTTPLog(buf)
+	httpLog, err := proto.DeserializeHTTPLog(buf)
 	if err != nil {
 		log.Error().Err(err).Msg("failed to deserialize http log")
 		return fmt.Errorf("failed to deserialize http log: %w", err)
 	}
+
+	c.httpLogch <- httpLog
 
 	for {
 		select {
@@ -504,13 +590,7 @@ func (c *Client) handleHTTPLog(ctx context.Context, header *proto.Header, stream
 				return fmt.Errorf("failed to deserialize http log: %w", err)
 			}
 
-			c.metricsch <- HTTPLogMsg{
-				Method:    httpLog.Method,
-				Path:      httpLog.Path,
-				Duration:  httpLog.Duration,
-				Timestamp: httpLog.Timestamp,
-				Status:    httpLog.Status,
-			}
+			c.httpLogch <- httpLog
 		}
 	}
 }
@@ -583,7 +663,7 @@ func (c *Client) handleMetrics(ctx context.Context, header *proto.Header, stream
 		return fmt.Errorf("failed to deserialize metrics: %w", err)
 	}
 
-	c.metricsch <- MetricsMsg{
+	c.metricsch <- messages.MetricsMsg{
 		Ingress:           deserializedMetrics.Ingress,
 		Egress:            deserializedMetrics.Egress,
 		Uptime:            deserializedMetrics.Uptime,
@@ -622,7 +702,7 @@ func (c *Client) handleMetrics(ctx context.Context, header *proto.Header, stream
 				return fmt.Errorf("failed to deserialize metrics: %w", err)
 			}
 
-			c.metricsch <- MetricsMsg{
+			c.metricsch <- messages.MetricsMsg{
 				Ingress:           deserializedMetrics.Ingress,
 				Egress:            deserializedMetrics.Egress,
 				Uptime:            deserializedMetrics.Uptime,
@@ -631,18 +711,6 @@ func (c *Client) handleMetrics(ctx context.Context, header *proto.Header, stream
 				RTT:               deserializedMetrics.RTT,
 			}
 		}
-	}
-}
-
-// Proto converts a protocol constant to its string representation.
-func Proto(p uint8) string {
-	switch p {
-	case proto.ProtoHTTP:
-		return "https://"
-	case proto.ProtoTCP:
-		return "tcp:"
-	default:
-		return ""
 	}
 }
 

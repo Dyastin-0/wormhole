@@ -24,10 +24,20 @@ func WithName(name string) OptFunc {
 	}
 }
 
+func WithURL(url string) OptFunc {
+	return func(c *Client) {
+		c.url = url
+	}
+}
+
 func WithProto(proto uint8) OptFunc {
 	return func(c *Client) {
 		c.proto = proto
 	}
+}
+
+func WithProtoTLS(c *Client) {
+	c.proto = proto.ProtoTLS
 }
 
 func WithProtoTCP(c *Client) {
@@ -85,4 +95,8 @@ func WithHTTPLog(httpLog bool) OptFunc {
 	return func(c *Client) {
 		c.httpLog = httpLog
 	}
+}
+
+func WithAllowTLSPassthrough(c *Client) {
+	c.allowTLSPassthrough = true
 }

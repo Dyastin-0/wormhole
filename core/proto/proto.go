@@ -46,8 +46,10 @@ const (
 	FlagMetrics = 0x01
 	// FlagAllowHTTP indicates that the client explicitly allows HTTP requests regardless of protocol.
 	FlagAllowHTTP = 0x02
-	// FlagHTTPLog indicates the the client wants to receive HTTP request logs.
+	// FlagHTTPLog indicates that the client wants to receive HTTP request logs.
 	FlagHTTPLog = 0x04
+	// FlagTLSPassthrough indicates that the client wants to terminate TLS on its end.
+	FlagTLSPassthrough = 0x08
 )
 
 // Constants definition for protocol limits and sizes.
@@ -58,14 +60,12 @@ const (
 	MaxStringLength uint32 = 4096
 	// HeaderSize is the fixed size of a protocol header in bytes (12 bytes).
 	HeaderSize uint8 = 12
-	// RequestSize is the fixed size of a request's non-string fields in bytes (30 bytes).
-	RequestSize = 30
-	// ResponseSize is the fixed size of a response's non-string fields in bytes (13 bytes).
-	ResponseSize uint8 = 13
-	// MetricsSize is the fixed size of a metrics' fields in bytes (36).
+	// RequestSize is the fixed size of a request's non-string fields in bytes (34 bytes).
+	RequestSize = 34
+	// ResponseSize is the fixed size of a response's non-string fields in bytes (15 bytes).
+	ResponseSize uint8 = 15
+	// MetricsSize is the fixed size of a metrics' fields in bytes (40).
 	MetricsSize uint8 = 40
-	// HTTPLogSize is the fixed size of an HTTPLog's non-string fields in bytes (18 bytes).
-	HTTPLogSize uint8 = 18
 )
 
 // Constants definition of supported protocols for tunneling.
@@ -74,12 +74,16 @@ const (
 	ProtoHTTP uint8 = 0x01
 	// ProtoTCP indicates a TCP-based tunnel.
 	ProtoTCP uint8 = 0x02
+	// ProtoTLS indicates a TLS wrapped TCP tunnel.
+	ProtoTLS uint8 = 0x03
 )
 
 // Constants definition of response status codes.
 const (
 	// StatusOK indicates a successful tunnel creation.
 	StatusOK uint8 = 0x01
+	// StatusInvalidURL indicates that the URL paramater is invalid.
+	StatusInvalidURL uint8 = 0x02
 	// StatusNameTaken indicates the requested subdomain is already in use.
 	StatusNameTaken uint8 = 0x03
 	// StatusUnsupportedProto indicates the requested protocol is not supported.
@@ -89,9 +93,9 @@ const (
 // Constants definition of the protocol version.
 const (
 	// Version is the current protocol version (0x10).
-	Version uint8 = 0x11
+	Version uint8 = 0x12
 	// VERSION is the human-readable protocol version ("1.0").
-	VERSION = "1.1"
+	VERSION = "1.2"
 )
 
 // Errors returned by the Wormhole protocol.
@@ -192,6 +196,8 @@ type Response struct {
 	Status uint8
 	// TTLHours specifies the tunnel's lifetime in hours.
 	TTLHours uint64
+	// Port specifies the allocated TCP port for TCP tunnels (443 if not a TCP tunnel).
+	Port uint16
 	// DomainLength is the length of the Domain field in bytes (must not exceed MaxStringLength).
 	DomainLength uint32
 	// Domain is the assigned domain for the tunnel (e.g., "example.domain.com").
@@ -273,6 +279,9 @@ func SerializeResponse(resp *Response) ([]byte, error) {
 	if err := binary.Write(buf, binary.BigEndian, resp.TTLHours); err != nil {
 		return nil, fmt.Errorf("failed to write ttl: %w", err)
 	}
+	if err := binary.Write(buf, binary.BigEndian, resp.Port); err != nil {
+		return nil, fmt.Errorf("failed to write tcp port: %w", err)
+	}
 	if err := binary.Write(buf, binary.BigEndian, resp.DomainLength); err != nil {
 		return nil, fmt.Errorf("failed to write domain length: %w", err)
 	}
@@ -299,6 +308,9 @@ func DeserializeResponse(data []byte) (*Response, error) {
 	}
 	if err := binary.Read(reader, binary.BigEndian, &resp.TTLHours); err != nil {
 		return nil, fmt.Errorf("failed to read TTL: %w", err)
+	}
+	if err := binary.Read(reader, binary.BigEndian, &resp.Port); err != nil {
+		return nil, fmt.Errorf("failed to read tcp port: %w", err)
 	}
 	if err := binary.Read(reader, binary.BigEndian, &resp.DomainLength); err != nil {
 		return nil, fmt.Errorf("failed to read domain length: %w", err)
@@ -346,7 +358,7 @@ func validateHeader(header *Header) error {
 // validateResponse validates a Response's fields.
 func validateResponse(resp *Response) error {
 	switch resp.Status {
-	case StatusOK, StatusNameTaken, StatusUnsupportedProto:
+	case StatusOK, StatusInvalidURL, StatusNameTaken, StatusUnsupportedProto:
 		// OK
 	default:
 		return ErrInvalidStatus
@@ -395,6 +407,7 @@ func NewResponse(status uint8, ttlHours uint64, domain string) *Response {
 	return &Response{
 		Status:       status,
 		TTLHours:     ttlHours,
+		Port:         0,
 		DomainLength: uint32(len(domain)),
 		Domain:       domain,
 	}
@@ -416,6 +429,9 @@ func ProtoString(proto uint8) string {
 	}
 	if proto == ProtoTCP {
 		return "tcp"
+	}
+	if proto == ProtoTLS {
+		return "tls"
 	}
 	return ""
 }

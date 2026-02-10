@@ -8,8 +8,8 @@ import (
 
 	"github.com/Dyastin-0/wormhole/core/auth"
 	"github.com/Dyastin-0/wormhole/core/proto"
-	"github.com/Dyastin-0/wormhole/core/proxy"
 	"github.com/Dyastin-0/wormhole/metrics"
+	"github.com/Dyastin-0/wormhole/stream"
 	"github.com/hashicorp/yamux"
 )
 
@@ -27,22 +27,32 @@ type Tunnel struct {
 	auth auth.Authenticator
 	// allowHTTP specifies if this tunnel allows HTTP requests, ignored if tunnel protocol is HTTP.
 	allowHTTP bool
+	// allowTLSPassthrough
+	allowTLSPassthrough bool
 	// httpLogch is used to send HTTP logs to the client.
-	httpLogch chan *proto.HTTPLog
+	httpLogch chan *HTTPLog
 	// domain specifies the tunnel's subdomain.
 	domain string
 	// createdAt specifies the tunnel's creation time.
 	createdAt time.Time
+	// port is the allocated port for this tunnel (443 if HTTP/TLS).
+	port int
+	// tcpListener is the tunnel's listener.
+	tcpListener net.Listener
+	// controlStream is a yamux.Stream used to handle tunnel request and controls.
+	controlStream net.Conn
+}
+
+type HTTPLog struct {
+	*proto.HTTPLog
+	Method string
+	Path   string
+	Status int
 }
 
 // Proxy opens a stream from the session then forwards the stream to it.
-func (t *Tunnel) Proxy(ctx context.Context, stream net.Conn) error {
-	defer stream.Close()
-
-	if t.metrics != nil {
-		t.metrics.IncrementConnections()
-		defer t.metrics.DecrementActiveConnections()
-	}
+func (t *Tunnel) Proxy(ctx context.Context, ystream net.Conn) error {
+	defer ystream.Close()
 
 	remoteStream, err := t.session.Open()
 	if err != nil {
@@ -62,21 +72,16 @@ func (t *Tunnel) Proxy(ctx context.Context, stream net.Conn) error {
 	}
 
 	if t.metrics != nil {
-		proxyStream := t.metrics.NewProxyReadWriter(stream)
-		return proxy.StreamWithContext(ctx, proxyStream, remoteStream)
+		proxyStream := t.metrics.NewProxyConn(ystream)
+		return stream.StreamWithContext(ctx, proxyStream, remoteStream)
 	}
-	return proxy.StreamWithContext(ctx, stream, remoteStream)
+	return stream.StreamWithContext(ctx, ystream, remoteStream)
 }
 
 // ProxyWithInspect opens a stream from the session, forwards the stream to it,
 // then inspects and logs the response.
-func (t *Tunnel) ProxyWithInspect(ctx context.Context, stream net.Conn) error {
-	defer stream.Close()
-
-	if t.metrics != nil {
-		t.metrics.IncrementConnections()
-		defer t.metrics.DecrementActiveConnections()
-	}
+func (t *Tunnel) ProxyWithInspect(ctx context.Context, ystream net.Conn) error {
+	defer ystream.Close()
 
 	remoteStream, err := t.session.Open()
 	if err != nil {
@@ -96,12 +101,12 @@ func (t *Tunnel) ProxyWithInspect(ctx context.Context, stream net.Conn) error {
 	}
 
 	if t.metrics != nil {
-		proxyStream := t.metrics.NewProxyReadWriter(stream)
-		return proxy.StreamHTTPWithInspect(ctx, proxyStream, remoteStream, func(start time.Time, method, path string, status int) {
+		proxyStream := t.metrics.NewProxyConn(ystream)
+		return stream.StreamHTTPWithContext(ctx, proxyStream, remoteStream, func(start time.Time, method, path string, status int) {
 			t.logHTTPRequest(start, method, path, status)
 		})
 	}
-	return proxy.StreamHTTPWithInspect(ctx, stream, remoteStream, func(start time.Time, method, path string, status int) {
+	return stream.StreamHTTPWithContext(ctx, ystream, remoteStream, func(start time.Time, method, path string, status int) {
 		t.logHTTPRequest(start, method, path, status)
 	})
 }
@@ -112,14 +117,17 @@ func (t *Tunnel) logHTTPRequest(start time.Time, method, path string, status int
 
 	log := proto.NewHTTPLog(
 		time.Now().Unix(),
-		method,
-		path,
-		uint16(status),
 		duration,
 	)
 
 	select {
-	case t.httpLogch <- log:
+	case t.httpLogch <- &HTTPLog{
+		HTTPLog: log,
+		Method:  method,
+		Path:    path,
+		Status:  status,
+	}:
+
 	default:
 	}
 }

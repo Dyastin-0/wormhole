@@ -20,7 +20,7 @@ func TestHeaderSerializeDeserialize(t *testing.T) {
 }
 
 func TestRequestSerializeDeserialize(t *testing.T) {
-	original := NewRequest(ProtoHTTP, "test-subdomain", 0, "")
+	original := NewRequest(ProtoHTTP, "test-subdomain", "dyastin.dev", 0, "qweqweqe")
 
 	serialized, err := SerializeRequest(original)
 	require.NoError(t, err)

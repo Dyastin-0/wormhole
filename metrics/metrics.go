@@ -1,40 +1,40 @@
-// Package metrics implement a metrics for an io.ReadWriter.
+// Package metrics implement a metrics for an io.ReadWriteCloser.
 package metrics
 
 import (
-	"io"
+	"net"
 	"sync/atomic"
 	"time"
 )
 
-// MetricsReadWriter implements io.ReadWriter.
-type MetricsReadWriter struct {
-	rw      io.ReadWriter
+// MetricsConn implements io.ReadWriteCloser.
+type MetricsConn struct {
+	net.Conn
 	metrics *Metrics
 }
 
-// NewMetricsReadWriter returns a new MetricsReadWriter.
-func NewMetricsReadWriter(rw io.ReadWriter, m *Metrics) *MetricsReadWriter {
-	return &MetricsReadWriter{
-		rw:      rw,
+// NewMetricsConn returns a new MetricsConn.
+func NewMetricsConn(conn net.Conn, m *Metrics) *MetricsConn {
+	return &MetricsConn{
+		Conn:    conn,
 		metrics: m,
 	}
 }
 
-// Read reads p using the underlying io.ReadWriter and adds n in the ingress metrics.
-func (mrw *MetricsReadWriter) Read(p []byte) (n int, err error) {
-	n, err = mrw.rw.Read(p)
+// Read reads p using the underlying net.Conn and adds n in the ingress metrics.
+func (mc *MetricsConn) Read(p []byte) (n int, err error) {
+	n, err = mc.Conn.Read(p)
 	if n > 0 {
-		mrw.metrics.AddIngressBytes(uint64(n))
+		mc.metrics.AddIngressBytes(uint64(n))
 	}
 	return n, err
 }
 
-// Write writes p using the underlying io.ReadWriter and adds n in the egress metrics.
-func (mrw *MetricsReadWriter) Write(p []byte) (n int, err error) {
-	n, err = mrw.rw.Write(p)
+// Write writes p using the underlying net.Conn and adds n in the egress metrics.
+func (mc *MetricsConn) Write(p []byte) (n int, err error) {
+	n, err = mc.Conn.Write(p)
 	if n > 0 {
-		mrw.metrics.AddEgressBytes(uint64(n))
+		mc.metrics.AddEgressBytes(uint64(n))
 	}
 	return n, err
 }
@@ -139,10 +139,7 @@ func (m *Metrics) GetUptime() time.Duration {
 	return time.Since(m.StartTime)
 }
 
-// NewProxyReadWriter return a new MetricsReadWriter using the underlying metrics.
-func (m *Metrics) NewProxyReadWriter(rw io.ReadWriter) *MetricsReadWriter {
-	return &MetricsReadWriter{
-		rw:      rw,
-		metrics: m,
-	}
+// NewProxyConn return a new MetricsConn using the underlying metrics.
+func (m *Metrics) NewProxyConn(rwc net.Conn) *MetricsConn {
+	return NewMetricsConn(rwc, m)
 }

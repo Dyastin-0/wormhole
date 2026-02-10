@@ -17,7 +17,9 @@ import (
 	"github.com/Dyastin-0/wormhole/core/proto"
 	wserver "github.com/Dyastin-0/wormhole/core/server"
 	"github.com/Dyastin-0/wormhole/observer"
+	"github.com/caddyserver/certmagic"
 	"github.com/common-nighthawk/go-figure"
+	"github.com/mholt/acmez/v3"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/urfave/cli/v3"
 	"go.opentelemetry.io/otel/sdk/metric"
@@ -50,6 +52,7 @@ type Config struct {
 	WithTracer       bool   `yaml:"withTracer"`
 	TempoAddress     string `yaml:"tempoAddress"`
 	CollectorAddress string `yaml:"collectorAddress"`
+	AllowTCP         bool   `yaml:"allowTCP"`
 }
 
 func loadConfig(path string) (*Config, error) {
@@ -231,6 +234,10 @@ func startCommand() *cli.Command {
 				Usage: "set the otel collector address, used when using otel observer",
 				Value: ":4327",
 			},
+			&cli.BoolFlag{
+				Name:  "allow-tcp",
+				Usage: "allow clients to create plain TCP tunnels",
+			},
 		},
 		Action: start,
 	}
@@ -298,6 +305,9 @@ func start(ctx context.Context, cmd *cli.Command) error {
 
 		withPromExporter, err = getValue(cfg.WithPromExporter, os.Getenv("WITH_PROM_EXPORTER"), cmd.Bool("with-prom-exporter"), cmd.Count("with-prom-exporter"), "with-prom-exporter")
 	}
+	if err != nil {
+		return err
+	}
 
 	// tracer
 	withTracer, err := getValue(cfg.WithTracer, os.Getenv("WITH_TRACER"), cmd.Bool("with-tracer"), cmd.Count("with-tracer"), "with-tracer")
@@ -333,11 +343,30 @@ func start(ctx context.Context, cmd *cli.Command) error {
 		return err
 	}
 
+	allowTCP, err := getValue(cfg.AllowTCP, os.Getenv("ALLOW_TCP"), cmd.Bool("allow-tcp"), cmd.Count("allow-tcp"), "allow-tcp")
+	if err != nil {
+		return err
+	}
+
+	magic := certmagic.NewDefault()
+	err = magic.ManageAsync(ctx, []string{domain, fmt.Sprintf("*.%s", domain)})
+	if err != nil {
+		return err
+	}
+
+	tlsConfig := magic.TLSConfig()
+	tlsConfig.NextProtos = []string{"http/1.1", acmez.ACMETLS1Protocol}
+
 	serverOpts := []wserver.OptFunc{
 		wserver.WithAddr(addr),
 		wserver.WithServeAddr(serveAddr),
 		wserver.WithDomain(domain),
 		wserver.WithAPIKeyIssuer(apiKeyIssuer),
+		wserver.WithTLSConfig(tlsConfig),
+	}
+
+	if allowTCP {
+		serverOpts = append(serverOpts, wserver.WithAllowTCP)
 	}
 
 	if withObserver {
@@ -473,7 +502,7 @@ func start(ctx context.Context, cmd *cli.Command) error {
 func httpCommand() *cli.Command {
 	return &cli.Command{
 		Name:   "http",
-		Usage:  "start a wormhole http reverse tunnel client",
+		Usage:  "start a wormhole http tunnel client",
 		Flags:  baseClientFlags(),
 		Action: http,
 	}
@@ -524,12 +553,25 @@ func http(ctx context.Context, cmd *cli.Command) error {
 func tcpCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "tcp",
-		Usage: "start a wormhole tcp reverse tunnel client",
+		Usage: "start a wormhole tcp tunnel client",
 		Flags: append(baseClientFlags(),
 			&cli.BoolFlag{
 				Name:  "allow-http",
 				Usage: "allow HTTP traffic on this TCP tunnel",
-			}),
+			},
+			&cli.BoolFlag{
+				Name:  "without-tls",
+				Usage: "allows tunnel to stream without TLS encryption",
+			},
+			&cli.BoolFlag{
+				Name:  "tls-passthrough",
+				Usage: "allows TLS passthrough (target address must terminate TLS)",
+			},
+			&cli.StringFlag{
+				Name:  "url",
+				Usage: "set the url for TLS passthrough tunnels",
+			},
+		),
 		Action: tcp,
 	}
 }
@@ -543,6 +585,9 @@ func tcp(ctx context.Context, cmd *cli.Command) error {
 	metrics := cmd.Bool("metrics")
 	httpLog := cmd.Bool("http-log")
 	allowHTTP := cmd.Bool("allow-http")
+	withoutTLS := cmd.Bool("without-tls")
+	allowTLSPassthrough := cmd.Bool("tls-passthrough")
+	url := cmd.String("url")
 
 	authType := cmd.String("auth-type")
 	authUser := cmd.String("auth-user")
@@ -550,7 +595,6 @@ func tcp(ctx context.Context, cmd *cli.Command) error {
 	authToken := cmd.String("auth-token")
 
 	opts := []wclient.OptFunc{
-		wclient.WithProtoTCP,
 		wclient.WithName(name),
 		wclient.WithAddr(addr),
 		wclient.WithTargetAddr(targetAddr),
@@ -559,6 +603,17 @@ func tcp(ctx context.Context, cmd *cli.Command) error {
 		wclient.WithAPIKey(apiKey),
 		wclient.WithTTL(ttl),
 		wclient.WithAllowHTTP(allowHTTP),
+		wclient.WithURL(url),
+	}
+
+	if allowTLSPassthrough {
+		opts = append(opts, wclient.WithAllowTLSPassthrough)
+	}
+
+	if withoutTLS {
+		opts = append(opts, wclient.WithProtoTCP)
+	} else {
+		opts = append(opts, wclient.WithProtoTLS)
 	}
 
 	if err := addAuthOptions(&opts, authType, authUser, authPass, authToken); err != nil {

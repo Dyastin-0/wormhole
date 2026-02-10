@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
-	"io"
 	"net"
 	"testing"
 	"time"
@@ -98,95 +97,6 @@ func TestSendResp(t *testing.T) {
 	}
 }
 
-func TestSendErr(t *testing.T) {
-	srv, err := New(
-		WithAddr("localhost:8080"),
-		WithServeAddr("localhost:8443"),
-		WithDomain("test.com"),
-	)
-	require.NoError(t, err)
-
-	serverConn, clientConn := net.Pipe()
-	defer serverConn.Close()
-	defer clientConn.Close()
-
-	errorMsg := "test error message"
-
-	errChan := make(chan error, 1)
-	go func() {
-		errChan <- srv.sendErr(clientConn, errorMsg)
-	}()
-
-	buf := make([]byte, proto.HeaderSize)
-	_, err = serverConn.Read(buf)
-	require.NoError(t, err)
-
-	header, err := proto.DeserializeHeader(buf)
-	require.NoError(t, err)
-	assert.Equal(t, proto.TypeError, header.Type)
-	assert.Equal(t, uint64(len(errorMsg)), header.Length)
-
-	buf = make([]byte, header.Length)
-	_, err = serverConn.Read(buf)
-	require.NoError(t, err)
-
-	msg := string(buf)
-	require.Equal(t, errorMsg, msg)
-
-	select {
-	case err := <-errChan:
-		assert.NoError(t, err)
-	case <-time.After(1 * time.Second):
-		t.Error("sendErr did not return within timeout")
-	}
-}
-
-func TestSendEnd(t *testing.T) {
-	srv, err := New(
-		WithAddr("localhost:8080"),
-		WithServeAddr("localhost:8443"),
-		WithDomain("test.com"),
-	)
-	require.NoError(t, err)
-
-	serverConn, clientConn := net.Pipe()
-	defer serverConn.Close()
-	defer clientConn.Close()
-
-	errChan := make(chan error, 1)
-
-	go func() {
-		session, errr := yamux.Client(clientConn, nil)
-		if errr != nil {
-			errChan <- err
-		}
-		errChan <- srv.sendEnd(session)
-	}()
-
-	session, err := yamux.Server(serverConn, nil)
-	require.NoError(t, err)
-	defer session.Close()
-
-	stream, err := session.Accept()
-	require.NoError(t, err)
-	defer stream.Close()
-
-	buf := make([]byte, proto.HeaderSize)
-	_, err = io.ReadFull(stream, buf)
-	require.NoError(t, err)
-
-	header, err := proto.DeserializeHeader(buf)
-	require.NoError(t, err)
-	assert.Equal(t, proto.TypeEnd, header.Type)
-
-	select {
-	case err := <-errChan:
-		assert.NoError(t, err)
-	case <-time.After(1 * time.Second):
-		t.Error("sendErr did not return within timeout")
-	}
-}
-
 func createYamuxSessionPair(t *testing.T) (*yamux.Session, *yamux.Session, func()) {
 	serverConn, clientConn := net.Pipe()
 
@@ -217,7 +127,7 @@ func TestHandleRequestSuccess(t *testing.T) {
 	serverSession, clientSession, cleanup := createYamuxSessionPair(t)
 	defer cleanup()
 
-	request := proto.NewRequest(proto.ProtoHTTP, "testapp", 0, "")
+	request := proto.NewRequest(proto.ProtoHTTP, "testapp", "", 0, "")
 	serializedRequest, err := proto.SerializeRequest(request)
 	require.NoError(t, err)
 
@@ -260,7 +170,7 @@ func TestHandleRequestNameTaken(t *testing.T) {
 	serverSession, clientSession, cleanup := createYamuxSessionPair(t)
 	defer cleanup()
 
-	request := proto.NewRequest(proto.ProtoHTTP, "testapp", 0, "")
+	request := proto.NewRequest(proto.ProtoHTTP, "testapp", "", 0, "")
 	serializedRequest, err := proto.SerializeRequest(request)
 	require.NoError(t, err)
 

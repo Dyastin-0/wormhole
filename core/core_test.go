@@ -9,7 +9,6 @@ import (
 	"crypto/x509/pkix"
 	"fmt"
 	"math/big"
-	"net"
 	"net/http"
 	"testing"
 	"time"
@@ -78,17 +77,6 @@ func TestRequestResponse(t *testing.T) {
 
 	time.Sleep(100 * time.Millisecond)
 
-	srv, err := server.New(
-		server.WithAddr("localhost:0"),
-		server.WithServeAddr("localhost:0"),
-		server.WithDomain("app.com"),
-	)
-	require.NoError(t, err)
-
-	controlListener, err := net.Listen("tcp", "localhost:0")
-	require.NoError(t, err)
-	defer controlListener.Close()
-
 	cert, err := NewTestCert()
 	require.NoError(t, err)
 
@@ -99,25 +87,29 @@ func TestRequestResponse(t *testing.T) {
 		},
 	}
 
-	tunnelListener, err := tls.Listen("tcp", "localhost:0", sTLSConfig)
+	srv, err := server.New(
+		server.WithAddr(":30000"),
+		server.WithServeAddr(":30001"),
+		server.WithDomain("app.com"),
+		server.WithTLSConfig(sTLSConfig),
+	)
 	require.NoError(t, err)
-	defer tunnelListener.Close()
 
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 
 	sErrch := make(chan error, 2)
 	go func() {
-		sErrch <- srv.RunWithListener(ctx, controlListener)
+		sErrch <- srv.Run(ctx)
 	}()
 	go func() {
-		sErrch <- srv.RunTunnelerWithListener(ctx, tunnelListener)
+		sErrch <- srv.RunTunneler(ctx)
 	}()
 
 	time.Sleep(100 * time.Millisecond)
 
 	c, err := client.New(
-		client.WithAddr(controlListener.Addr().String()),
+		client.WithAddr(":30000"),
 		client.WithName("testapp"),
 		client.WithProto(proto.ProtoHTTP),
 		client.WithTargetAddr("localhost:8591"),
@@ -136,8 +128,9 @@ func TestRequestResponse(t *testing.T) {
 		ServerName:         "testapp.app.com",
 	}
 
-	tunnelConn, err := tls.Dial("tcp", tunnelListener.Addr().String(), tlsConfig)
+	tunnelConn, err := tls.Dial("tcp", ":30001", tlsConfig)
 	require.NoError(t, err)
+	defer tunnelConn.Close()
 
 	request := "GET /test?msg=hello HTTP/1.1\r\nHost: testapp.app.com\r\n\r\n"
 	_, err = tunnelConn.Write([]byte(request))
@@ -149,7 +142,8 @@ func TestRequestResponse(t *testing.T) {
 	require.NotEqual(t, 0, n)
 	responseStr := string(response[:n])
 	require.Contains(t, responseStr, "Test response: hello")
-	tunnelConn.Close()
+
+	time.Sleep(100 * time.Millisecond)
 
 	cancel()
 
@@ -170,28 +164,24 @@ func TestRequestResponse(t *testing.T) {
 
 func TestRequestResponseNameTaken(t *testing.T) {
 	srv, err := server.New(
-		server.WithAddr("localhost:0"),
+		server.WithAddr("localhost:35000"),
 		server.WithServeAddr("localhost:0"),
 		server.WithDomain("app.com"),
 	)
 	require.NoError(t, err)
-
-	controlListener, err := net.Listen("tcp", "localhost:0")
-	require.NoError(t, err)
-	defer controlListener.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	sErrch := make(chan error, 2)
 	go func() {
-		sErrch <- srv.RunWithListener(ctx, controlListener)
+		sErrch <- srv.Run(ctx)
 	}()
 
 	time.Sleep(100 * time.Millisecond)
 
 	c1, err := client.New(
-		client.WithAddr(controlListener.Addr().String()),
+		client.WithAddr(":35000"),
 		client.WithName("testapp"),
 		client.WithProto(proto.ProtoHTTP),
 		client.WithTargetAddr("localhost:9090"),
@@ -206,7 +196,7 @@ func TestRequestResponseNameTaken(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 
 	c2, err := client.New(
-		client.WithAddr(controlListener.Addr().String()),
+		client.WithAddr(":35000"),
 		client.WithName("testapp"),
 		client.WithProto(proto.ProtoHTTP),
 		client.WithTargetAddr("localhost:9090"),
