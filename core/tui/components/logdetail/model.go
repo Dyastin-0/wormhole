@@ -18,7 +18,8 @@ type Model struct {
 	activeTab    tab
 	focusedPanel focusedPanel
 
-	absWidth int
+	absWidth  int
+	absHeight int
 
 	headerContent       string
 	headerLineOffsets   []int
@@ -45,8 +46,10 @@ type Model struct {
 	normalCase   bool
 	searchActive bool
 
-	searchMatches []search.Match
-	searchInput   textinput.Model
+	bodySearchMatches   []search.Match
+	headerSearchMatches []search.Match
+	bodySearchInput     textinput.Model
+	headerSearchInput   textinput.Model
 
 	bodyCurrentMatch   int
 	headerCurrentMatch int
@@ -71,19 +74,29 @@ func New() Model {
 	h.Styles.FullDesc = styles.Footer.Faint(true)
 	h.Styles.ShortSeparator = styles.Footer.Faint(true)
 
-	ti := textinput.New()
-	ti.Cursor.Style = lipgloss.NewStyle().Foreground(styles.Highlight)
-	ti.Placeholder = "Search..."
-	ti.CharLimit = 100
-	ti.Prompt = ""
+	bodyInput := textinput.New()
+	bodyInput.TextStyle = styles.Text
+	bodyInput.Cursor.Style = lipgloss.NewStyle().Foreground(styles.Highlight)
+	bodyInput.CharLimit = 100
+	bodyInput.PromptStyle = styles.Text
+	bodyInput.Prompt = "> "
+
+	headerInput := textinput.New()
+	headerInput.TextStyle = styles.Text
+	headerInput.Cursor.Style = lipgloss.NewStyle().Foreground(styles.Highlight)
+	headerInput.CharLimit = 100
+	headerInput.PromptStyle = styles.Text
+	headerInput.Prompt = "> "
 
 	return Model{
-		activeTab:   tabResponseBody,
-		searchInput: ti,
-		keys:        DefaultKeyMap(),
-		help:        h,
-		displayHex:  true,
-		displayText: true,
+		activeTab:         tabResponseBody,
+		bodySearchInput:   bodyInput,
+		headerSearchInput: headerInput,
+		keys:              DefaultKeyMap(),
+		help:              h,
+		helpHeight:        2,
+		displayHex:        true,
+		displayText:       true,
 	}
 }
 
@@ -113,38 +126,53 @@ func (m *Model) clampOffsets() {
 }
 
 func (m *Model) findMatches() {
-	if m.searchInput.Value() == "" {
-		m.searchMatches = nil
-		m.bodyCurrentMatch = 0
-		return
-	}
-
 	switch m.focusedPanel {
 	case focusHeaderPanel:
-		m.searchMatches = search.FindMatches(m.headerContent, m.searchInput.Value(), m.headerLineOffsets, m.normalCase)
-	case focusBodyPanel:
-		m.searchMatches = search.FindMatches(m.stringContent, m.searchInput.Value(), m.lineOffsets, m.normalCase)
-	}
-
-	if len(m.searchMatches) > 0 {
-		if m.currentMatch() >= len(m.searchMatches) {
-			m.resetCurrentMatch()
+		if m.headerSearchInput.Value() == "" {
+			m.headerSearchMatches = nil
+			m.headerCurrentMatch = 0
+			return
 		}
-		m.jumpToCurrentMatch()
-	} else {
-		m.resetCurrentMatch()
+
+		m.headerSearchMatches = search.FindMatches(m.headerContent, m.headerSearchInput.Value(), m.headerLineOffsets, m.normalCase)
+
+		if len(m.headerSearchMatches) > 0 {
+			if m.headerCurrentMatch >= len(m.headerSearchMatches) {
+				m.headerCurrentMatch = 0
+			}
+			m.jumpToCurrentMatch()
+		} else {
+			m.headerCurrentMatch = 0
+		}
+
+	case focusBodyPanel:
+		if m.bodySearchInput.Value() == "" {
+			m.bodySearchMatches = nil
+			m.bodyCurrentMatch = 0
+			return
+		}
+
+		m.bodySearchMatches = search.FindMatches(m.stringContent, m.bodySearchInput.Value(), m.lineOffsets, m.normalCase)
+
+		if len(m.bodySearchMatches) > 0 {
+			if m.bodyCurrentMatch >= len(m.bodySearchMatches) {
+				m.bodyCurrentMatch = 0
+			}
+			m.jumpToCurrentMatch()
+		} else {
+			m.bodyCurrentMatch = 0
+		}
 	}
 }
 
 func (m *Model) jumpToCurrentMatch() {
-	if len(m.searchMatches) == 0 || m.bodyCurrentMatch >= len(m.searchMatches) || m.headerCurrentMatch > len(m.searchMatches) {
-		return
-	}
-
 	switch m.focusedPanel {
 	case focusHeaderPanel:
+		if len(m.headerSearchMatches) == 0 || m.headerCurrentMatch >= len(m.headerSearchMatches) {
+			return
+		}
 		m.headerYOffset, _, m.headerXOffset = search.JumpToMatch(
-			m.searchMatches[m.headerCurrentMatch],
+			m.headerSearchMatches[m.headerCurrentMatch],
 			len(m.headerContent),
 			m.headerLineOffsets,
 			m.headerVisualLines,
@@ -155,8 +183,11 @@ func (m *Model) jumpToCurrentMatch() {
 			m.maxHeaderLineLength,
 		)
 	case focusBodyPanel:
+		if len(m.bodySearchMatches) == 0 || m.bodyCurrentMatch >= len(m.bodySearchMatches) {
+			return
+		}
 		m.textYOffset, m.hexYOffset, m.xOffset = search.JumpToMatch(
-			m.searchMatches[m.bodyCurrentMatch],
+			m.bodySearchMatches[m.bodyCurrentMatch],
 			len(m.stringContent),
 			m.lineOffsets,
 			m.visualLines,
@@ -167,4 +198,40 @@ func (m *Model) jumpToCurrentMatch() {
 			m.maxLineLength,
 		)
 	}
+}
+
+// Helper methods
+func (m *Model) activeSearchInput() *textinput.Model {
+	if m.focusedPanel == focusHeaderPanel {
+		return &m.headerSearchInput
+	}
+	return &m.bodySearchInput
+}
+
+func (m *Model) activeSearchMatches() *[]search.Match {
+	if m.focusedPanel == focusHeaderPanel {
+		return &m.headerSearchMatches
+	}
+	return &m.bodySearchMatches
+}
+
+func (m *Model) activeCurrentMatch() *int {
+	if m.focusedPanel == focusHeaderPanel {
+		return &m.headerCurrentMatch
+	}
+	return &m.bodyCurrentMatch
+}
+
+func (m *Model) activeContent() string {
+	if m.focusedPanel == focusHeaderPanel {
+		return m.headerContent
+	}
+	return m.stringContent
+}
+
+func (m *Model) activeLineOffsets() []int {
+	if m.focusedPanel == focusHeaderPanel {
+		return m.headerLineOffsets
+	}
+	return m.lineOffsets
 }

@@ -6,8 +6,8 @@ import (
 	"github.com/Dyastin-0/wormhole/core/tui/messages"
 	"github.com/Dyastin-0/wormhole/core/tui/search"
 	"github.com/Dyastin-0/wormhole/core/tui/styles"
+	"github.com/charmbracelet/bubbles/cursor"
 	"github.com/charmbracelet/bubbles/key"
-	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -29,6 +29,7 @@ const (
 	typeDebounceDuration = 100 * time.Millisecond
 	minTextViewWidth     = 50
 	minAbsWidth          = 150
+	minAbsHeight         = 15
 	minHeight            = 10
 )
 
@@ -38,14 +39,21 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	var cmd tea.Cmd
 
 	switch msg := msg.(type) {
+	case cursor.BlinkMsg:
+		input := m.activeSearchInput()
+		*input, cmd = input.Update(msg)
+		return m, cmd
+
 	case searchTickMsg:
 		if m.searchActive && time.Since(m.lastKeyPress) >= typeDebounceDuration {
-			if m.focusedPanel == focusHeaderPanel {
-				m.searchMatches = search.FindMatches(m.headerContent, m.searchInput.Value(), m.headerLineOffsets, m.normalCase)
-			} else {
-				m.searchMatches = search.FindMatches(m.stringContent, m.searchInput.Value(), m.lineOffsets, m.normalCase)
-			}
-			if len(m.searchMatches) > 0 {
+			matches := m.activeSearchMatches()
+			*matches = search.FindMatches(
+				m.activeContent(),
+				m.activeSearchInput().Value(),
+				m.activeLineOffsets(),
+				m.normalCase,
+			)
+			if len(*matches) > 0 {
 				m.resetCurrentMatch()
 				m.jumpToCurrentMatch()
 			}
@@ -54,23 +62,31 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 
 	case messages.SetLogMsg:
 		m.log = msg.Log
+		m.headerSearchMatches = nil
+		m.bodySearchMatches = nil
+		m.headerCurrentMatch = 0
+		m.bodyCurrentMatch = 0
+		m.searchActive = false
+		m.headerYOffset = 0
+		m.headerXOffset = 0
+		m.textYOffset = 0
+		m.hexYOffset = 0
+		m.xOffset = 0
 		m.loadContent()
+		m.calculateBodyHeight()
+		m.calculateBodyWidth()
+		m.calculateHeaderHeight()
+		return m, nil
 
 	case tea.WindowSizeMsg:
 		m.absWidth = max(msg.Width, minAbsWidth)
-		windowHeight := max(msg.Height, minHeight)
-
-		m.viewHeight = windowHeight - /*body header and footer*/ 5
-
+		m.absHeight = max(msg.Height, minAbsHeight)
 		m.headerViewWidth = (m.absWidth / 2)
+
+		m.calculateBodyHeight()
+		m.calculateBodyWidth()
 		m.calculateHeaderHeight()
 
-		if m.displayHex {
-			hexColumnWidth := (styles.HexColumnSize * 3) - /*trimmed space at last hex*/ 1
-			m.viewWidth = m.absWidth - m.headerViewWidth - /*column padding*/ 4 - hexColumnWidth
-		} else {
-			m.viewWidth = m.absWidth - m.headerViewWidth - /*column padding*/ 2
-		}
 		m.loadContent()
 		return m, nil
 
@@ -82,17 +98,13 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		switch {
 		case key.Matches(msg, m.keys.DisplayText):
 			m.displayText = !m.displayText
+			m.calculateBodyHeight()
 			return m, nil
 
 		case key.Matches(msg, m.keys.DisplayHex):
 			m.displayHex = !m.displayHex
-
-			if m.displayHex {
-				hexColumnWidth := (styles.HexColumnSize * 3) - /*trimmed space at last hex*/ 1
-				m.viewWidth = m.absWidth - m.headerViewWidth - /*column padding*/ 4 - hexColumnWidth
-			} else {
-				m.viewWidth = m.absWidth - m.headerViewWidth - /*column padding*/ 2
-			}
+			m.calculateBodyWidth()
+			m.calculateBodyHeight()
 
 			if m.wrapBody {
 				m.visualLines = search.GetWrappedLines(m.stringContent, m.lineOffsets, m.viewWidth)
@@ -103,6 +115,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			m.normalCase = !m.normalCase
 			m.findMatches()
 			m.calculateHeaderHeight()
+			return m, nil
 
 		case key.Matches(msg, m.keys.WrapText):
 			if m.focusedPanel == focusHeaderPanel {
@@ -182,59 +195,60 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 					}
 				}
 			}
-
 			m.clampOffsets()
 			m.jumpToCurrentMatch()
 			return m, nil
+
 		case key.Matches(msg, m.keys.Help):
 			m.help.ShowAll = !m.help.ShowAll
 			m.calculateHeaderHeight()
+			return m, nil
 
 		case key.Matches(msg, m.keys.Search):
 			m.searchActive = true
-			m.searchInput.Focus()
+			input := m.activeSearchInput()
+			input.Focus()
 			m.calculateHeaderHeight()
-			return m, textinput.Blink
+			return m, nil
 
 		case key.Matches(msg, m.keys.NextMatch):
-			if len(m.searchMatches) > 0 {
-				switch m.focusedPanel {
-				case focusHeaderPanel:
-					m.headerCurrentMatch = (m.headerCurrentMatch + 1) % len(m.searchMatches)
-				case focusBodyPanel:
-					m.bodyCurrentMatch = (m.bodyCurrentMatch + 1) % len(m.searchMatches)
-				}
+			matches := m.activeSearchMatches()
+			if len(*matches) > 0 {
+				currentMatch := m.activeCurrentMatch()
+				*currentMatch = (*currentMatch + 1) % len(*matches)
 				m.jumpToCurrentMatch()
 			}
+			return m, nil
 
 		case key.Matches(msg, m.keys.PrevMatch):
-			if len(m.searchMatches) > 0 {
-				switch m.focusedPanel {
-				case focusHeaderPanel:
-					m.headerCurrentMatch = (m.headerCurrentMatch - 1 + len(m.searchMatches)) % len(m.searchMatches)
-				case focusBodyPanel:
-					m.bodyCurrentMatch = (m.bodyCurrentMatch - 1 + len(m.searchMatches)) % len(m.searchMatches)
-				}
+			matches := m.activeSearchMatches()
+			if len(*matches) > 0 {
+				currentMatch := m.activeCurrentMatch()
+				*currentMatch = (*currentMatch - 1 + len(*matches)) % len(*matches)
 				m.jumpToCurrentMatch()
 			}
+			return m, nil
 
 		case key.Matches(msg, m.keys.Tab):
 			m.activeTab = (m.activeTab + 1) % 2
 			m.loadContent()
+			return m, nil
 
 		case key.Matches(msg, m.keys.Focus):
 			m.focusedPanel = (m.focusedPanel + 1) % 2
 			m.findMatches()
 			m.calculateHeaderHeight()
+			m.calculateHeaderHeight()
+			return m, nil
 
 		case key.Matches(msg, m.keys.Up):
 			if m.focusedPanel == focusHeaderPanel {
 				m.headerYOffset = max(0, m.headerYOffset-1)
 			} else {
-
 				m.textYOffset = max(0, m.textYOffset-1)
 				m.hexYOffset = max(0, m.hexYOffset-1)
 			}
+			return m, nil
 
 		case key.Matches(msg, m.keys.Down):
 			if m.focusedPanel == focusHeaderPanel {
@@ -255,6 +269,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				m.textYOffset = min(maxTextY, m.textYOffset+1)
 				m.hexYOffset = min(maxHexY, m.hexYOffset+1)
 			}
+			return m, nil
 
 		case key.Matches(msg, m.keys.GotoTop):
 			if m.focusedPanel == focusHeaderPanel {
@@ -263,6 +278,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				m.textYOffset = 0
 				m.hexYOffset = 0
 			}
+			return m, nil
 
 		case key.Matches(msg, m.keys.GotoTopAlt):
 			if time.Since(m.lastGPress) < 500*time.Millisecond {
@@ -274,6 +290,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				}
 			}
 			m.lastGPress = time.Now()
+			return m, nil
 
 		case key.Matches(msg, m.keys.GotoBottom):
 			if m.focusedPanel == focusHeaderPanel {
@@ -290,6 +307,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				m.textYOffset = max(0, totalTextRows-m.viewHeight)
 				m.hexYOffset = max(0, m.totalHexRows-m.viewHeight)
 			}
+			return m, nil
 
 		case key.Matches(msg, m.keys.GotoBottomAlt):
 			if m.focusedPanel == focusHeaderPanel {
@@ -306,6 +324,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				m.textYOffset = max(0, totalTextRows-m.viewHeight)
 				m.hexYOffset = max(0, m.totalHexRows-m.viewHeight)
 			}
+			return m, nil
 
 		case key.Matches(msg, m.keys.GoToLeft):
 			if m.focusedPanel == focusHeaderPanel {
@@ -313,6 +332,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			} else {
 				m.xOffset = 0
 			}
+			return m, nil
 
 		case key.Matches(msg, m.keys.GoToRight):
 			if m.focusedPanel == focusHeaderPanel {
@@ -322,12 +342,15 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				maxScroll := max(0, m.maxLineLength-m.viewWidth)
 				m.xOffset = maxScroll
 			}
+			return m, nil
+
 		case key.Matches(msg, m.keys.Left):
 			if m.focusedPanel == focusHeaderPanel {
 				m.headerXOffset = max(0, m.headerXOffset-1)
 			} else {
 				m.xOffset = max(0, m.xOffset-1)
 			}
+			return m, nil
 
 		case key.Matches(msg, m.keys.Right):
 			if m.focusedPanel == focusHeaderPanel {
@@ -337,6 +360,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				maxHorizScroll := max(0, m.maxLineLength-m.viewWidth)
 				m.xOffset = min(maxHorizScroll, m.xOffset+1)
 			}
+			return m, nil
 		}
 	}
 
@@ -348,31 +372,34 @@ func (m Model) handleSearchInput(msg tea.KeyMsg) (Model, tea.Cmd) {
 
 	switch {
 	case key.Matches(msg, m.keys.CancelSearch):
-		if m.searchInput.Value() == "" {
+		input := m.activeSearchInput()
+		if input.Value() == "" {
 			m.searchActive = false
-			m.searchInput.Blur()
-			m.helpHeight -= 1
-			m.headerViewHeight = m.viewHeight - /*metadata height*/ 10 - m.helpHeight
+			input.Blur()
+			m.calculateHeaderHeight()
 			return m, nil
 		}
-		m.searchInput.SetValue("")
-		m.searchMatches = nil
+		input.SetValue("")
+		matches := m.activeSearchMatches()
+		*matches = nil
 		m.resetCurrentMatch()
+		m.calculateHeaderHeight()
 		return m, nil
 
 	case key.Matches(msg, m.keys.Enter):
 		m.searchActive = false
-		m.searchInput.Blur()
-		m.helpHeight -= 1
-		if len(m.searchMatches) > 0 {
+		input := m.activeSearchInput()
+		input.Blur()
+		matches := m.activeSearchMatches()
+		if len(*matches) > 0 {
 			m.jumpToCurrentMatch()
-			m.helpHeight += 1
 		}
-		m.headerViewHeight = m.viewHeight - /*metadata height*/ 10 - m.helpHeight
+		m.calculateHeaderHeight()
 		return m, nil
 	}
 
-	m.searchInput, cmd = m.searchInput.Update(msg)
+	input := m.activeSearchInput()
+	*input, cmd = input.Update(msg)
 	m.lastKeyPress = time.Now()
 
 	return m, tea.Batch(cmd, m.scheduleSearch())
@@ -385,23 +412,44 @@ func (m *Model) scheduleSearch() tea.Cmd {
 }
 
 func (m *Model) calculateHeaderHeight() {
-	m.helpHeight = 0
+	m.helpHeight = 2
 	if m.help.ShowAll {
-		m.helpHeight = 7
+		m.helpHeight = 9
 	}
 
-	if m.searchActive || len(m.searchMatches) > 0 {
+	matches := m.activeSearchMatches()
+	if m.searchActive || len(*matches) > 0 {
 		m.helpHeight += 1
 	}
 
-	m.headerViewHeight = max(m.viewHeight-10-m.helpHeight, 0)
+	height := m.absHeight - /*meta + header*/ 11 - m.helpHeight
+	if len(m.headerLineOffsets) > height {
+		height -= 2
+	}
+
+	m.headerViewHeight = max(height, 0)
 }
 
 func (m *Model) resetCurrentMatch() {
-	switch m.focusedPanel {
-	case focusHeaderPanel:
-		m.headerCurrentMatch = 0
-	case focusBodyPanel:
-		m.bodyCurrentMatch = 0
+	currentMatch := m.activeCurrentMatch()
+	*currentMatch = 0
+}
+
+func (m *Model) calculateBodyHeight() {
+	m.viewHeight = max(m.absHeight, minHeight) - 2
+
+	if m.displayHex && m.displayText {
+		m.viewHeight -= 3
+	} else if m.displayHex || m.displayText {
+		m.viewHeight -= 2
+	}
+}
+
+func (m *Model) calculateBodyWidth() {
+	if m.displayHex {
+		hexColumnWidth := (styles.HexColumnSize * 3) - /*trimmed space at last hex*/ 1
+		m.viewWidth = m.absWidth - m.headerViewWidth - /*column padding*/ 4 - hexColumnWidth
+	} else {
+		m.viewWidth = m.absWidth - m.headerViewWidth - /*column padding*/ 2
 	}
 }

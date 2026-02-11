@@ -17,15 +17,7 @@ func (m Model) View() string {
 		return styles.Title.Render("No request selected")
 	}
 
-	var title string
-	switch m.activeTab {
-	case tabResponseBody:
-		title = "Response Details"
-	case tabRequestBody:
-		title = "Request Details"
-	}
-
-	headerCol := m.renderHeaderColumn(title)
+	headerCol := m.renderHeaderColumn()
 	bodyCol := m.renderBodyColumn()
 
 	return lipgloss.JoinHorizontal(lipgloss.Top, headerCol, "  ", bodyCol)
@@ -71,21 +63,23 @@ func (m Model) renderMetadata(title string) string {
 	return lipgloss.JoinVertical(lipgloss.Left, metaLines...)
 }
 
-func (m Model) renderFooter() string {
+func (m Model) renderHeaderFooter() string {
 	helpView := m.help.View(m.keys)
 
 	var statusLine string
+	matches := m.activeSearchMatches()
+
 	if m.searchActive {
 		matchInfo := ""
-		if len(m.searchMatches) > 0 {
-			matchInfo = fmt.Sprintf(" (%d/%d)", m.currentMatch()+1, len(m.searchMatches))
+		if len(*matches) > 0 {
+			matchInfo = fmt.Sprintf(" (%d/%d)", m.currentMatch()+1, len(*matches))
 		}
 		searchStr := styles.HelpKey.Render("Search")
-		inputStr := styles.Value.Width(0).Render(fmt.Sprintf(" /%s%s", m.searchInput.Value(), matchInfo))
-		statusLine = lipgloss.JoinHorizontal(lipgloss.Left, searchStr, inputStr)
-	} else if len(m.searchMatches) > 0 {
+		inputStr := m.activeSearchInput().View()
+		statusLine = lipgloss.JoinHorizontal(lipgloss.Left, searchStr, " ", inputStr, styles.Footer.Render(matchInfo))
+	} else if len(*matches) > 0 {
 		matchStr := styles.HelpKey.Render("Match")
-		statusLine = styles.Value.Width(0).Render(fmt.Sprintf(" %d/%d", m.currentMatch()+1, len(m.searchMatches)))
+		statusLine = styles.Value.Width(0).Render(fmt.Sprintf(" %d/%d", m.currentMatch()+1, len(*matches)))
 		statusLine = lipgloss.JoinHorizontal(lipgloss.Left, matchStr, statusLine)
 	}
 
@@ -99,12 +93,20 @@ func (m Model) renderFooter() string {
 	return helpView
 }
 
-func (m Model) renderHeaderColumn(title string) string {
+func (m Model) renderHeaderColumn() string {
+	var title string
+	switch m.activeTab {
+	case tabResponseBody:
+		title = "Response Details"
+	case tabRequestBody:
+		title = "Request Details"
+	}
+
 	meta := m.renderMetadata(title)
 
 	var matches []search.Match
 	if m.focusedPanel == focusHeaderPanel {
-		matches = m.searchMatches
+		matches = m.headerSearchMatches
 	}
 
 	var headerView string
@@ -151,7 +153,7 @@ func (m Model) renderHeaderColumn(title string) string {
 		)
 	}
 
-	footer := m.renderFooter()
+	footer := m.renderHeaderFooter()
 
 	return lipgloss.JoinVertical(lipgloss.Left,
 		meta,
@@ -178,7 +180,7 @@ func (m Model) renderBodyColumn() string {
 
 	var matches []search.Match
 	if m.focusedPanel == focusBodyPanel {
-		matches = m.searchMatches
+		matches = m.bodySearchMatches
 	}
 
 	if m.displayText && isText {
@@ -230,6 +232,29 @@ func (m Model) renderBodyColumn() string {
 		viewports = styles.Text.Render(hexView)
 	}
 
+	bodyIndicator := " "
+	if m.focusedPanel == focusBodyPanel {
+		bodyIndicator = "█"
+	}
+
+	bodyTitleStr := fmt.Sprintf("Body %s ", formatters.FormatBytes(uint64(m.getBodySize())))
+	bodyTitle := lipgloss.JoinHorizontal(
+		lipgloss.Left,
+		styles.Title.Render(bodyTitleStr),
+		styles.HelpKey.Render(bodyIndicator),
+	)
+
+	footerRow := m.renderBodyFooter(showText)
+
+	return lipgloss.JoinVertical(lipgloss.Left,
+		bodyTitle,
+		"",
+		viewports,
+		footerRow,
+	)
+}
+
+func (m Model) renderBodyFooter(showText bool) string {
 	var scrollInfoParts []string
 
 	if showText {
@@ -269,30 +294,12 @@ func (m Model) renderBodyColumn() string {
 		scrollInfoParts = append(scrollInfoParts, hexYInfo)
 	}
 
-	var footerRow string
-	if len(scrollInfoParts) > 0 {
-		scrollInfo := lipgloss.JoinVertical(lipgloss.Left, scrollInfoParts...)
-		footerRow = lipgloss.NewStyle().MarginTop(1).Render(scrollInfo)
+	if len(scrollInfoParts) == 0 {
+		return ""
 	}
 
-	bodyIndicator := " "
-	if m.focusedPanel == focusBodyPanel {
-		bodyIndicator = "█"
-	}
-
-	bodyTitleStr := fmt.Sprintf("Body %s ", formatters.FormatBytes(uint64(m.getBodySize())))
-	bodyTitle := lipgloss.JoinHorizontal(
-		lipgloss.Left,
-		styles.Title.Render(bodyTitleStr),
-		styles.HelpKey.Render(bodyIndicator),
-	)
-
-	return lipgloss.JoinVertical(lipgloss.Left,
-		bodyTitle,
-		"",
-		viewports,
-		footerRow,
-	)
+	scrollInfo := lipgloss.JoinVertical(lipgloss.Left, scrollInfoParts...)
+	return lipgloss.NewStyle().MarginTop(1).Render(scrollInfo)
 }
 
 func (m Model) formatDetailLine(label, styledValue string) string {
