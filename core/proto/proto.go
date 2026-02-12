@@ -94,7 +94,7 @@ const (
 const (
 	// Version is the current protocol version (0x10).
 	Version uint8 = 0x12
-	// VERSION is the human-readable protocol version ("1.0").
+	// VERSION is the human-readable protocol version ("1.2").
 	VERSION = "1.2"
 )
 

@@ -267,7 +267,7 @@ func (s *Server) tunnel(ctx context.Context, conn net.Conn) error {
 		detectedProtocol, conn = stream.Conn(conn)
 
 		if detectedProtocol == stream.ProtoHTTP {
-			s.writeNoTunnel(conn, sni)
+			s.writeNotFound(conn, sni)
 		}
 
 		return nil
