@@ -159,9 +159,6 @@ func (m Model) renderHeaderColumn() string {
 
 	if !m.wrapHeaders {
 		totalCols := m.maxHeaderLineLength
-		if m.wrapHeaders {
-			totalCols = min(m.maxHeaderLineLength, m.headerViewWidth)
-		}
 
 		end = min(m.maxHeaderLineLength, m.headerXOffset+m.headerViewWidth)
 		visible = m.headerXOffset + 1
@@ -309,9 +306,6 @@ func (m Model) renderBodyFooter(showText bool) string {
 			}
 
 			totalCols := m.maxLineLength
-			if m.wrapBody {
-				totalCols = min(m.maxHeaderLineLength, m.viewWidth)
-			}
 
 			textXInfo = lipgloss.JoinHorizontal(lipgloss.Left,
 				styles.HelpKey.Render("Text cols"),

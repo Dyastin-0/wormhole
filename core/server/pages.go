@@ -166,8 +166,8 @@ func (s *Server) writeHomePage(conn net.Conn) {
 <div class="container">
   <div class="header">
     <span class="brand">Wormhole /// Gateway</span>
-    <h1>Localhost, Public.</h1>
-    <div class="description">Secure high-performance tunneling infrastructure.</div>
+    <h1>Your localhost, live.</h1>
+    <div class="description">Secure tunnels for development, game servers, and more.</div>
   </div>
 
   <div class="section">
