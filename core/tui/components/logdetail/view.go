@@ -27,7 +27,7 @@ func (m Model) renderMetadata(title string) string {
 	statusValue := formatters.FormatStatusCode(m.log.Response.StatusCode, false)
 
 	metaLines := []string{
-		styles.Title.Render(title),
+		styles.Title.Foreground(styles.Highlight).Render(title),
 		"",
 		m.formatDetailLine(
 			"Timestamp",
@@ -129,7 +129,7 @@ func (m Model) renderHeaderColumn() string {
 
 	headerTitle := lipgloss.JoinHorizontal(
 		lipgloss.Left,
-		styles.Title.Render("Header "),
+		styles.Title.Foreground(styles.Highlight).Render("Header "),
 		styles.HelpKey.Render(headerIndicator),
 	)
 
@@ -144,12 +144,35 @@ func (m Model) renderHeaderColumn() string {
 	if m.wrapHeaders {
 		totalRows = len(m.headerVisualLines)
 	}
+
 	headerScrollInfo := ""
-	if totalRows > m.headerViewHeight {
-		end := min(totalRows, m.headerYOffset+m.headerViewHeight)
-		headerScrollInfo = lipgloss.JoinHorizontal(
-			lipgloss.Left, styles.HelpKey.Render("Rows "),
-			styles.Footer.Render(fmt.Sprintf(" %d-%d of %d", m.headerYOffset+1, end, totalRows)),
+
+	end := min(totalRows, m.headerYOffset+m.headerViewHeight)
+	visible := m.headerYOffset + 1
+	if m.maxHeaderLineLength <= 0 {
+		visible = 0
+	}
+	headerScrollInfo = lipgloss.JoinHorizontal(
+		lipgloss.Left, styles.HelpKey.Render("Rows"),
+		styles.Footer.Render(fmt.Sprintf(" %d-%d of %d", visible, end, totalRows)),
+	)
+
+	if !m.wrapHeaders {
+		totalCols := m.maxHeaderLineLength
+		if m.wrapHeaders {
+			totalCols = min(m.maxHeaderLineLength, m.headerViewWidth)
+		}
+
+		end = min(m.maxHeaderLineLength, m.headerXOffset+m.headerViewWidth)
+		visible = m.headerXOffset + 1
+		if len(m.lineOffsets) <= 0 {
+			visible = 0
+		}
+		headerScrollInfo = lipgloss.JoinHorizontal(lipgloss.Left,
+			headerScrollInfo,
+			m.help.Styles.ShortSeparator.Render(m.help.ShortSeparator),
+			styles.HelpKey.Render("Cols"),
+			styles.Footer.Render(fmt.Sprintf(" %d-%d of %d", visible, end, totalCols)),
 		)
 	}
 
@@ -237,7 +260,10 @@ func (m Model) renderBodyColumn() string {
 		bodyIndicator = "█"
 	}
 
-	bodyTitleStr := fmt.Sprintf("Body %s ", formatters.FormatBytes(uint64(m.getBodySize())))
+	bodyTitleStr := fmt.Sprintf("%s %s ",
+		styles.Title.Foreground(styles.Highlight).Render("Body"),
+		styles.Title.Render(formatters.FormatBytes(uint64(m.getBodySize()))),
+	)
 	bodyTitle := lipgloss.JoinHorizontal(
 		lipgloss.Left,
 		styles.Title.Render(bodyTitleStr),
@@ -263,17 +289,33 @@ func (m Model) renderBodyFooter(showText bool) string {
 			totalRows = len(m.visualLines)
 		}
 		currentRowEnd := min(totalRows, m.textYOffset+m.viewHeight)
+		visible := m.textYOffset + 1
+		if len(m.lineOffsets) <= 0 {
+			visible = 0
+		}
 		textYInfo := lipgloss.JoinHorizontal(lipgloss.Left,
 			styles.HelpKey.Render("Text rows"),
-			styles.Footer.Render(fmt.Sprintf(" %d-%d of %d", m.textYOffset+1, currentRowEnd, totalRows)),
+			styles.Footer.Render(fmt.Sprintf(" %d-%d of %d", visible, currentRowEnd, totalRows)),
 		)
 
 		var textXInfo string
+
 		if !m.wrapBody {
 			rightCol := min(m.maxLineLength, m.xOffset+m.viewWidth)
+			visible = m.xOffset + 1
+
+			if m.maxLineLength <= 0 {
+				visible = 0
+			}
+
+			totalCols := m.maxLineLength
+			if m.wrapBody {
+				totalCols = min(m.maxHeaderLineLength, m.viewWidth)
+			}
+
 			textXInfo = lipgloss.JoinHorizontal(lipgloss.Left,
 				styles.HelpKey.Render("Text cols"),
-				styles.Footer.Render(fmt.Sprintf(" %d-%d of %d", m.xOffset+1, rightCol, m.maxLineLength)),
+				styles.Footer.Render(fmt.Sprintf(" %d-%d of %d", visible, rightCol, totalCols)),
 			)
 		}
 
@@ -287,9 +329,13 @@ func (m Model) renderBodyFooter(showText bool) string {
 
 	if m.displayHex {
 		bottomHex := min(m.totalHexRows, m.hexYOffset+m.viewHeight)
+		visible := m.hexYOffset + 1
+		if m.totalHexRows <= 0 {
+			visible = 0
+		}
 		hexYInfo := lipgloss.JoinHorizontal(lipgloss.Left,
 			styles.HelpKey.Render("Hex rows"),
-			styles.Footer.Render(fmt.Sprintf(" %d-%d of %d", m.hexYOffset+1, bottomHex, m.totalHexRows)),
+			styles.Footer.Render(fmt.Sprintf(" %d-%d of %d", visible, bottomHex, m.totalHexRows)),
 		)
 		scrollInfoParts = append(scrollInfoParts, hexYInfo)
 	}

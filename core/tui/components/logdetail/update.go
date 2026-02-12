@@ -422,12 +422,9 @@ func (m *Model) calculateHeaderHeight() {
 		m.helpHeight += 1
 	}
 
-	height := m.absHeight - /*meta + header*/ 11 - m.helpHeight
-	if len(m.headerLineOffsets) > height {
-		height -= 2
-	}
+	height := m.absHeight - /*meta + header*/ 13 - m.helpHeight
 
-	m.headerViewHeight = max(height, 0)
+	m.headerViewHeight = max(height, minHeight)
 }
 
 func (m *Model) resetCurrentMatch() {
