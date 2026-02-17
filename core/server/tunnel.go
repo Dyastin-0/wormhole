@@ -32,9 +32,6 @@ type Tunnel struct {
 	controlStream net.Conn
 }
 
-// HTTPLog is the server-side envelope sent to the client over the log stream.
-// It carries the full proto.HTTPLog (Timestamp + Duration) plus the HTTP
-// metadata and the raw headers/body copies for TUI inspection.
 type HTTPLog struct {
 	*proto.HTTPLog
 	Method      string
@@ -74,7 +71,6 @@ func (t *Tunnel) Proxy(ctx context.Context, ystream net.Conn) error {
 
 // ProxyWithInspect opens a stream from the session, proxies HTTP traffic,
 // and emits HTTPEvents into t.eventch for each request/response pair.
-// The server measures all timing; the client does not participate.
 func (t *Tunnel) ProxyWithInspect(ctx context.Context, ystream net.Conn) error {
 	defer ystream.Close()
 

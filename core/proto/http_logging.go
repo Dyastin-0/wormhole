@@ -48,7 +48,7 @@ func NewHTTPLog(timestamp int64, duration uint32) *HTTPLog {
 
 // SerializeHTTPLog serializes an HTTPLog into a byte slice.
 //
-// Layout:
+// Wire ayout:
 //
 //	[8] Timestamp (int64, big-endian)
 //	[4] Duration  (uint32, big-endian)
@@ -73,7 +73,6 @@ func NewHTTPLog(timestamp int64, duration uint32) *HTTPLog {
 func SerializeHTTPLog(log *HTTPLog) ([]byte, error) {
 	buf := new(bytes.Buffer)
 
-	// Fixed fields.
 	if err := binary.Write(buf, binary.BigEndian, log.Timestamp); err != nil {
 		return nil, fmt.Errorf("failed to write timestamp: %w", err)
 	}
@@ -87,7 +86,6 @@ func SerializeHTTPLog(log *HTTPLog) ([]byte, error) {
 		return nil, fmt.Errorf("failed to write response size: %w", err)
 	}
 
-	// Method and Path — bounded by uint16 (max 65535 bytes each, well within HTTP limits).
 	if err := writeString16(buf, log.Method); err != nil {
 		return nil, fmt.Errorf("failed to write method: %w", err)
 	}
@@ -95,7 +93,6 @@ func SerializeHTTPLog(log *HTTPLog) ([]byte, error) {
 		return nil, fmt.Errorf("failed to write path: %w", err)
 	}
 
-	// Bodies — bounded by uint32 (up to 4GiB, capped upstream at maxInspectSize).
 	if err := writeBytes32(buf, log.ReqBody); err != nil {
 		return nil, fmt.Errorf("failed to write req body: %w", err)
 	}
@@ -103,7 +100,6 @@ func SerializeHTTPLog(log *HTTPLog) ([]byte, error) {
 		return nil, fmt.Errorf("failed to write resp body: %w", err)
 	}
 
-	// Headers.
 	if err := writeHeaders(buf, log.ReqHeaders); err != nil {
 		return nil, fmt.Errorf("failed to write req headers: %w", err)
 	}
@@ -119,7 +115,6 @@ func DeserializeHTTPLog(data []byte) (*HTTPLog, error) {
 	r := bytes.NewReader(data)
 	log := &HTTPLog{}
 
-	// Fixed fields.
 	if err := binary.Read(r, binary.BigEndian, &log.Timestamp); err != nil {
 		return nil, fmt.Errorf("failed to read timestamp: %w", err)
 	}
@@ -159,13 +154,7 @@ func DeserializeHTTPLog(data []byte) (*HTTPLog, error) {
 	return log, nil
 }
 
-// ---------------------------------------------------------------------------
-// helpers — length-prefixed primitives
-// ---------------------------------------------------------------------------
-
 // writeString16 writes a uint16 length prefix followed by the string bytes.
-// Strings longer than 65535 bytes are silently truncated — no HTTP method or
-// path should ever approach that limit.
 func writeString16(buf *bytes.Buffer, s string) error {
 	b := []byte(s)
 	if len(b) > 0xFFFF {

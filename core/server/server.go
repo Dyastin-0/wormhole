@@ -372,6 +372,12 @@ func (s *Server) httpAuthProxy(ctx context.Context, conn net.Conn, tunnel *Tunne
 		span.SetStatus(codes.Error, "authentication failed")
 		span.SetAttributes(attribute.Int("http.status_code", http.StatusUnauthorized))
 		s.sendUnauthorized(conn, tunnel.auth)
+		if tunnel.eventch != nil {
+			select {
+			case tunnel.eventch <- stream.NewHTTPEventWithoutcontext(req.Method, req.URL.Path, http.StatusUnauthorized):
+			default:
+			}
+		}
 		return err
 	}
 

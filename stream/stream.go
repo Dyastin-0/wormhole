@@ -74,6 +74,16 @@ type LimitedTeeReader struct {
 	N int64
 }
 
+func NewHTTPEventWithoutcontext(method, path string, status int) HTTPEvent {
+	return HTTPEvent{
+		ID:     uuid.NewString(),
+		Start:  time.Now(),
+		Method: method,
+		Path:   path,
+		Status: status,
+	}
+}
+
 // Stream handles bidirectional streaming between src and dst.
 func Stream(src, dst net.Conn) error {
 	errc := make(chan error, 2)
