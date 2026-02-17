@@ -106,7 +106,7 @@ var (
 			Width(StatusWidth).
 			Bold(true)
 	Status2xx = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#00d700")).
+			Foreground(lipgloss.Color("#00af5f")).
 			Width(StatusWidth).
 			Bold(true)
 	Status3xx = lipgloss.NewStyle().
