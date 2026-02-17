@@ -17,10 +17,8 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.visibleHeight = max(minVisibleLogs, msg.Height- /*metrics and footer height*/ 17)
 
-	case messages.HTTPLogReadyMsg:
-		if msg.Log != nil {
-			m.addLog(msg.Log)
-		}
+	case messages.HTTPLogMsg:
+		m.addLog(&msg)
 
 	case tea.KeyMsg:
 		switch {

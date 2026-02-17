@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"net/http"
 	"sync"
 	"time"
 
@@ -40,7 +39,7 @@ type Client struct {
 	// metrics specifies if the client want to stream the tunnel metrics.
 	metrics bool
 	// httpLog species if the client want to stream http logs.
-	httpLog bool
+	LogHTTP bool
 	// domain specifies the approved requested domain name.
 	domain string
 	// apiKey specifies the server-issued JWT token.
@@ -65,8 +64,6 @@ type Client struct {
 	port uint16
 	// metricsch is used to send http logs and metrics to bubbletea application.
 	metricsch chan any
-	requestch chan *http.Request
-	httpLogch chan<- *proto.HTTPLog
 	metricsmu sync.Mutex
 	// session is the the yamux client session.
 	session *yamux.Session
@@ -329,7 +326,7 @@ func (c *Client) sendRequest(ctx context.Context, stream net.Conn) (*proto.Heade
 	if c.allowHTTP {
 		header.SetFlag(proto.FlagAllowHTTP)
 	}
-	if c.httpLog {
+	if c.LogHTTP {
 		header.SetFlag(proto.FlagHTTPLog)
 	}
 
@@ -376,8 +373,8 @@ func (c *Client) ForwardStream(ctx context.Context, ystream net.Conn) error {
 		return fmt.Errorf("failed to dial tcp target address: %w", err)
 	}
 
-	if c.httpLog {
-		return stream.StreamHTTPWithRequestResponseContext(ctx, ystream, localConn, c.metricsch, c.requestch)
+	if c.LogHTTP {
+		return stream.StreamWithContext(ctx, ystream, localConn)
 	}
 
 	return stream.StreamWithContext(ctx, ystream, localConn)
@@ -442,7 +439,7 @@ func (c *Client) handleMessages(ctx context.Context, session *yamux.Session) err
 			case proto.TypeMetrics:
 				c.metricsmu.Lock()
 				if c.metricsch == nil {
-					program, metricsch, httpLogch, requestch := tui.Start(fmt.Sprintf("%s:%d → %s", c.domain, c.port, c.targetAddr), c.metrics, c.httpLog)
+					program, metricsch := tui.Start(fmt.Sprintf("%s:%d → %s", c.domain, c.port, c.targetAddr), c.metrics, c.LogHTTP)
 					go func() {
 						defer close(metricsch)
 						if _, err := program.Run(); err != nil {
@@ -451,15 +448,13 @@ func (c *Client) handleMessages(ctx context.Context, session *yamux.Session) err
 						cancel()
 					}()
 					c.metricsch = metricsch
-					c.httpLogch = httpLogch
-					c.requestch = requestch
 				}
 				c.metricsmu.Unlock()
 				go c.handleMetrics(cancelCtx, header, stream)
 			case proto.TypeHTTPLog:
 				c.metricsmu.Lock()
 				if c.metricsch == nil {
-					program, metricsch, httpLogch, requestch := tui.Start(fmt.Sprintf("%s:%d → %s", c.domain, c.port, c.targetAddr), c.metrics, c.httpLog)
+					program, metricsch := tui.Start(fmt.Sprintf("%s:%d → %s", c.domain, c.port, c.targetAddr), c.metrics, c.LogHTTP)
 					go func() {
 						defer close(metricsch)
 						if _, err := program.Run(); err != nil {
@@ -468,8 +463,6 @@ func (c *Client) handleMessages(ctx context.Context, session *yamux.Session) err
 						cancel()
 					}()
 					c.metricsch = metricsch
-					c.httpLogch = httpLogch
-					c.requestch = requestch
 				}
 				c.metricsmu.Unlock()
 				go c.handleHTTPLog(cancelCtx, header, stream)
@@ -549,7 +542,7 @@ func (c *Client) handleHTTPLog(ctx context.Context, header *proto.Header, stream
 		return fmt.Errorf("failed to deserialize http log: %w", err)
 	}
 
-	c.httpLogch <- httpLog
+	c.metricsch <- httpLog
 
 	for {
 		select {
@@ -590,7 +583,7 @@ func (c *Client) handleHTTPLog(ctx context.Context, header *proto.Header, stream
 				return fmt.Errorf("failed to deserialize http log: %w", err)
 			}
 
-			c.httpLogch <- httpLog
+			c.metricsch <- httpLog
 		}
 	}
 }

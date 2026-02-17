@@ -21,6 +21,7 @@ import (
 	"github.com/Dyastin-0/wormhole/metrics"
 	"github.com/Dyastin-0/wormhole/observer"
 	"github.com/Dyastin-0/wormhole/stream"
+	streamutil "github.com/Dyastin-0/wormhole/stream"
 	"github.com/hashicorp/yamux"
 	cmap "github.com/orcaman/concurrent-map/v2"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -320,7 +321,7 @@ func (s *Server) tunnel(ctx context.Context, conn net.Conn) error {
 		return err
 	}
 
-	if !allowTLSPassthrough && isHTTP && tunnel.httpLogch != nil {
+	if !allowTLSPassthrough && isHTTP && tunnel.eventch != nil {
 		err = tunnel.ProxyWithInspect(ctx, conn)
 		if err != nil {
 			span.RecordError(err)
@@ -383,7 +384,7 @@ func (s *Server) httpAuthProxy(ctx context.Context, conn net.Conn, tunnel *Tunne
 		return fmt.Errorf("failed to serialize request: %w", err)
 	}
 
-	if tunnel.httpLogch != nil {
+	if tunnel.eventch != nil {
 		err = tunnel.ProxyWithInspect(ctx, httpConn)
 		if err != nil {
 			span.RecordError(err)
@@ -411,30 +412,27 @@ func (s *Server) streamHTTPLogs(ctx context.Context, tunnel *Tunnel) error {
 	)
 	defer span.End()
 
-	stream, err := tunnel.session.Open()
+	logStream, err := tunnel.session.Open()
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "failed to open yamux stream")
 		return fmt.Errorf("failed to open yamux stream: %w", err)
 	}
-	defer stream.Close()
+	defer logStream.Close()
 
 	span.SetStatus(codes.Ok, "streaming http logs")
 
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-tunnel.session.CloseChan():
-			return nil
-		case httpLog := <-tunnel.httpLogch:
-			s.observer.RecordHTTPRequest(tunnel.domain, httpLog.Method, fmt.Sprint(httpLog.Status), time.Duration(httpLog.Duration))
-			if err := s.sendHTTPLog(stream, httpLog); err != nil {
-				span.RecordError(err)
-				return fmt.Errorf("failed to send http log: %w", err)
-			}
-		}
-	}
+	tunnel.logLoop(ctx, func(httpLog *HTTPLog) error {
+		s.observer.RecordHTTPRequest(
+			tunnel.domain,
+			httpLog.Method,
+			fmt.Sprint(httpLog.Status),
+			time.Duration(httpLog.Duration),
+		)
+		return s.sendHTTPLog(logStream, httpLog)
+	})
+
+	return nil
 }
 
 // sendHTTPLog sends an HTTP log entry to the client.
@@ -717,9 +715,7 @@ func (s *Server) handleRequest(ctx context.Context, stream net.Conn, session *ya
 	span.SetAttributes(attribute.Bool("tls_passthrough", tunnel.allowTLSPassthrough))
 
 	if header.HasFlag(proto.FlagHTTPLog) {
-		tunnel.httpLogch = make(chan *HTTPLog, 100)
-		span.SetAttributes(attribute.Bool("http_log_enabled", true))
-
+		tunnel.eventch = make(chan streamutil.HTTPEvent, 100)
 		go func(ctx context.Context, tunnel *Tunnel) {
 			er := s.streamHTTPLogs(ctx, tunnel)
 			if er != nil {

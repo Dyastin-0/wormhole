@@ -91,9 +91,9 @@ func WithAllowHTTP(allowHTTP bool) OptFunc {
 	}
 }
 
-func WithHTTPLog(httpLog bool) OptFunc {
+func WithHTTPLog(logHTTP bool) OptFunc {
 	return func(c *Client) {
-		c.httpLog = httpLog
+		c.LogHTTP = logHTTP
 	}
 }
 

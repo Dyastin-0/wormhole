@@ -2,19 +2,8 @@
 package messages
 
 import (
-	"net/http"
-
 	"github.com/Dyastin-0/wormhole/core/proto"
-	"github.com/Dyastin-0/wormhole/stream"
 )
-
-type HTTPLogMsg struct {
-	*proto.HTTPLog
-	Request      *http.Request
-	Response     *stream.Response
-	ResponseBody []byte
-	RequestBody  []byte
-}
 
 type MetricsMsg struct {
 	Ingress           uint64
@@ -25,15 +14,15 @@ type MetricsMsg struct {
 	RTT               uint32
 }
 
+type HTTPLogMsg struct {
+	*proto.HTTPLog
+}
+
 type SetLogMsg struct {
 	Log *HTTPLogMsg
 }
 
 type LogSelectedMsg struct {
-	Log *HTTPLogMsg
-}
-
-type HTTPLogReadyMsg struct {
 	Log *HTTPLogMsg
 }
 

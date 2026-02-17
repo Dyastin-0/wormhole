@@ -60,23 +60,23 @@ func FormatMetricLine(label, value, rate string) string {
 func FormatHTTPLog(log *messages.HTTPLogMsg) string {
 	timestamp := time.Unix(log.Timestamp, 0).Format("15:04:05")
 	timeStr := styles.LogTime.Render(timestamp)
-	methodStr := styles.LogMethod.Render(log.Request.Method)
+	methodStr := styles.LogMethod.Render(log.Method)
 
 	var sizeStr string
-	if log.Response.Size > 0 {
-		sizeStr = FormatBytes(uint64(log.Response.Size))
+	if log.RespSize > 0 {
+		sizeStr = FormatBytes(uint64(log.RespSize))
 	} else {
 		sizeStr = FormatBytes(0)
 	}
 	sizeStr = styles.LogSize.Render(sizeStr)
 
-	path := log.Request.URL.Path
+	path := log.Path
 	if len(path) > 40 {
 		path = path[:37] + "..."
 	}
 	pathStr := styles.LogPath.Render(path)
 
-	statusStr := FormatStatusCode(log.Response.StatusCode, false)
+	statusStr := FormatStatusCode(log.Status, false)
 
 	durationMs := float64(log.Duration) / 1000.0
 	durationStr := styles.LogDuration.Render(fmt.Sprintf("%.1f ms", durationMs))
@@ -95,13 +95,13 @@ func FormatHTTPLogSelected(log *messages.HTTPLogMsg) string {
 	timestamp := time.Unix(log.Timestamp, 0).Format("15:04:05")
 
 	var sizeStr string
-	if log.Response.Size > 0 {
-		sizeStr = FormatBytes(uint64(log.Response.Size))
+	if log.RespSize > 0 {
+		sizeStr = FormatBytes(uint64(log.RespSize))
 	} else {
 		sizeStr = FormatBytes(0)
 	}
 
-	path := log.Request.URL.Path
+	path := log.Path
 	if len(path) > 40 {
 		path = path[:37] + "..."
 	}
@@ -109,8 +109,8 @@ func FormatHTTPLogSelected(log *messages.HTTPLogMsg) string {
 	durationMs := float64(log.Duration) / 1000.0
 
 	timeStr := styles.LogTime.Background(styles.SelectedBG).Width(styles.TimeWidth + 1).Render(timestamp)
-	methodStr := styles.LogMethod.Background(styles.SelectedBG).Width(styles.MethodWidth + 1).Render(log.Request.Method)
-	statusStr := FormatStatusCode(log.Response.StatusCode, true)
+	methodStr := styles.LogMethod.Background(styles.SelectedBG).Width(styles.MethodWidth + 1).Render(log.Method)
+	statusStr := FormatStatusCode(log.Status, true)
 	pathStr := styles.LogPath.Background(styles.SelectedBG).Width(styles.PathWidth + 1).Render(path)
 	sizeStrStyled := styles.LogSize.Background(styles.SelectedBG).Width(styles.SizeWidth + 1).Render(sizeStr)
 	durationStr := styles.LogDuration.Background(styles.SelectedBG).Render(fmt.Sprintf("%.1f ms", durationMs))
@@ -125,7 +125,7 @@ func FormatHTTPLogSelected(log *messages.HTTPLogMsg) string {
 	)
 }
 
-func FormatStatusCode(code int, selected bool) string {
+func FormatStatusCode(code int32, selected bool) string {
 	var style lipgloss.Style
 
 	switch {

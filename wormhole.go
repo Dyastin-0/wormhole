@@ -515,7 +515,7 @@ func http(ctx context.Context, cmd *cli.Command) error {
 	apiKey := cmd.String("api-key")
 	ttl := cmd.Uint64("ttl")
 	metrics := cmd.Bool("metrics")
-	httpLog := cmd.Bool("http-log")
+	logHTTP := cmd.Bool("http-logging")
 
 	authType := cmd.String("auth-type")
 	authUser := cmd.String("auth-user")
@@ -528,7 +528,7 @@ func http(ctx context.Context, cmd *cli.Command) error {
 		wclient.WithAddr(addr),
 		wclient.WithTargetAddr(targetAddr),
 		wclient.WithMetrics(metrics),
-		wclient.WithHTTPLog(httpLog),
+		wclient.WithHTTPLog(logHTTP),
 		wclient.WithAPIKey(apiKey),
 		wclient.WithTTL(ttl),
 	}
@@ -583,7 +583,7 @@ func tcp(ctx context.Context, cmd *cli.Command) error {
 	apiKey := cmd.String("api-key")
 	ttl := cmd.Uint64("ttl")
 	metrics := cmd.Bool("metrics")
-	httpLog := cmd.Bool("http-log")
+	logHTTP := cmd.Bool("http-logging")
 	allowHTTP := cmd.Bool("allow-http")
 	withoutTLS := cmd.Bool("without-tls")
 	allowTLSPassthrough := cmd.Bool("tls-passthrough")
@@ -599,7 +599,7 @@ func tcp(ctx context.Context, cmd *cli.Command) error {
 		wclient.WithAddr(addr),
 		wclient.WithTargetAddr(targetAddr),
 		wclient.WithMetrics(metrics),
-		wclient.WithHTTPLog(httpLog),
+		wclient.WithHTTPLog(logHTTP),
 		wclient.WithAPIKey(apiKey),
 		wclient.WithTTL(ttl),
 		wclient.WithAllowHTTP(allowHTTP),

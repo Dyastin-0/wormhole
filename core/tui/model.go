@@ -1,9 +1,6 @@
 package tui
 
 import (
-	"net/http"
-
-	"github.com/Dyastin-0/wormhole/core/proto"
 	"github.com/Dyastin-0/wormhole/core/tui/components/logdetail"
 	"github.com/Dyastin-0/wormhole/core/tui/components/loglist"
 	"github.com/Dyastin-0/wormhole/core/tui/components/metrics"
@@ -16,32 +13,22 @@ import (
 )
 
 type Model struct {
-	name    string
-	spinner spinner.Model
-
+	name      string
+	spinner   spinner.Model
 	metrics   metrics.Model
 	logList   loglist.Model
 	logDetail logdetail.Model
-
-	viewMode messages.ViewMode
-
-	httpLogch chan *proto.HTTPLog
-	requestch chan *http.Request
-
-	width  int
-	height int
-
-	keys GlobalKeyMap
-	help help.Model
+	viewMode  messages.ViewMode
+	width     int
+	height    int
+	keys      GlobalKeyMap
+	help      help.Model
 }
 
-func New(name string, hasMetrics, hasHTTPLogging bool) (Model, chan *proto.HTTPLog, chan *http.Request) {
+func New(name string, hasMetrics, hasHTTPLogging bool) Model {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(styles.Subtle)
-
-	httpLogch := make(chan *proto.HTTPLog, 16)
-	requestch := make(chan *http.Request, 16)
 
 	h := help.New()
 	h.ShortSeparator = " • "
@@ -58,11 +45,9 @@ func New(name string, hasMetrics, hasHTTPLogging bool) (Model, chan *proto.HTTPL
 		logList:   loglist.New(hasHTTPLogging),
 		logDetail: logdetail.New(),
 		viewMode:  messages.ViewModeList,
-		httpLogch: httpLogch,
-		requestch: requestch,
 		keys:      DefaultGlobalKeyMap(),
 		help:      h,
-	}, httpLogch, requestch
+	}
 }
 
 func (m Model) Init() tea.Cmd {
