@@ -428,7 +428,7 @@ func (s *Server) streamHTTPLogs(ctx context.Context, tunnel *Tunnel) error {
 
 	span.SetStatus(codes.Ok, "streaming http logs")
 
-	tunnel.logLoop(ctx, func(httpLog *HTTPLog) error {
+	tunnel.logLoop(ctx, func(httpLog *proto.HTTPLog) error {
 		s.observer.RecordHTTPRequest(
 			tunnel.domain,
 			httpLog.Method,
@@ -442,8 +442,8 @@ func (s *Server) streamHTTPLogs(ctx context.Context, tunnel *Tunnel) error {
 }
 
 // sendHTTPLog sends an HTTP log entry to the client.
-func (s *Server) sendHTTPLog(stream net.Conn, httpLog *HTTPLog) error {
-	serialized, err := proto.SerializeHTTPLog(httpLog.HTTPLog)
+func (s *Server) sendHTTPLog(stream net.Conn, httpLog *proto.HTTPLog) error {
+	serialized, err := proto.SerializeHTTPLog(httpLog)
 	if err != nil {
 		return fmt.Errorf("failed to serialize http log: %w", err)
 	}

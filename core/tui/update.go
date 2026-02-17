@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"github.com/Dyastin-0/wormhole/core/proto"
 	"github.com/Dyastin-0/wormhole/core/tui/messages"
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/spinner"
@@ -42,7 +41,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.metrics, cmd = m.metrics.Update(msg)
 		return m, cmd
 
-	case *proto.HTTPLog:
+	case messages.HTTPLogMsg:
 		m.logList, cmd = m.logList.Update(msg)
 		return m, cmd
 

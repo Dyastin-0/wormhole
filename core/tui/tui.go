@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"github.com/Dyastin-0/wormhole/core/proto"
 	"github.com/Dyastin-0/wormhole/core/tui/messages"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -23,6 +24,8 @@ func Start(
 			switch v := msg.(type) {
 			case messages.MetricsMsg:
 				p.Send(v)
+			case *proto.HTTPLog:
+				p.Send(messages.HTTPLogMsg{HTTPLog: v})
 			default:
 				p.Send(v)
 			}

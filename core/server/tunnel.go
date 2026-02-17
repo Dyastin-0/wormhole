@@ -32,18 +32,6 @@ type Tunnel struct {
 	controlStream net.Conn
 }
 
-type HTTPLog struct {
-	*proto.HTTPLog
-	Method      string
-	Path        string
-	Status      int
-	RespSize    int64
-	ReqHeaders  map[string][]string
-	ReqBody     []byte
-	RespHeaders map[string][]string
-	RespBody    []byte
-}
-
 // Proxy opens a stream from the session then forwards the stream to it.
 func (t *Tunnel) Proxy(ctx context.Context, ystream net.Conn) error {
 	defer ystream.Close()
@@ -100,7 +88,7 @@ func (t *Tunnel) ProxyWithInspect(ctx context.Context, ystream net.Conn) error {
 // logLoop drains t.eventch, builds HTTPLog entries with server-side timing,
 // and forwards them to the provided send function (which writes to the client
 // log stream). Run this as a goroutine when the tunnel is created.
-func (t *Tunnel) logLoop(ctx context.Context, send func(*HTTPLog) error) {
+func (t *Tunnel) logLoop(ctx context.Context, send func(*proto.HTTPLog) error) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -112,14 +100,12 @@ func (t *Tunnel) logLoop(ctx context.Context, send func(*HTTPLog) error) {
 
 			duration := uint32(time.Since(ev.Start).Microseconds())
 
-			log := &HTTPLog{
-				HTTPLog: proto.NewHTTPLog(
-					ev.Start.Unix(),
-					duration,
-				),
+			log := &proto.HTTPLog{
+				Timestamp:   time.Now().Unix(),
+				Duration:    duration,
 				Method:      ev.Method,
 				Path:        ev.Path,
-				Status:      ev.Status,
+				Status:      int32(ev.Status),
 				RespSize:    ev.RespSize,
 				ReqHeaders:  map[string][]string(ev.ReqHeaders),
 				ReqBody:     ev.ReqBody,
