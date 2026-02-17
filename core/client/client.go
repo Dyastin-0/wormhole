@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/Dyastin-0/wormhole/core/proto"
+	"github.com/Dyastin-0/wormhole/core/tui"
 	"github.com/Dyastin-0/wormhole/core/tui/messages"
 	"github.com/Dyastin-0/wormhole/stream"
 	"github.com/hashicorp/yamux"
@@ -437,32 +438,32 @@ func (c *Client) handleMessages(ctx context.Context, session *yamux.Session) err
 				}(cancelCtx, stream)
 			case proto.TypeMetrics:
 				c.metricsmu.Lock()
-				// if c.metricsch == nil {
-				// 	program, metricsch := tui.Start(fmt.Sprintf("%s:%d → %s", c.domain, c.port, c.targetAddr), c.metrics, c.LogHTTP)
-				// 	go func() {
-				// 		defer close(metricsch)
-				// 		if _, err := program.Run(); err != nil {
-				// 			log.Error().Err(err).Msg("metrics display error")
-				// 		}
-				// 		cancel()
-				// 	}()
-				// 	c.metricsch = metricsch
-				// }
+				if c.metricsch == nil {
+					program, metricsch := tui.Start(fmt.Sprintf("%s:%d → %s", c.domain, c.port, c.targetAddr), c.metrics, c.LogHTTP)
+					go func() {
+						defer close(metricsch)
+						if _, err := program.Run(); err != nil {
+							log.Error().Err(err).Msg("metrics display error")
+						}
+						cancel()
+					}()
+					c.metricsch = metricsch
+				}
 				c.metricsmu.Unlock()
 				go c.handleMetrics(cancelCtx, header, stream)
 			case proto.TypeHTTPLog:
 				c.metricsmu.Lock()
-				// if c.metricsch == nil {
-				// 	program, metricsch := tui.Start(fmt.Sprintf("%s:%d → %s", c.domain, c.port, c.targetAddr), c.metrics, c.LogHTTP)
-				// 	go func() {
-				// 		defer close(metricsch)
-				// 		if _, err := program.Run(); err != nil {
-				// 			log.Error().Err(err).Msg("metrics display error")
-				// 		}
-				// 		cancel()
-				// 	}()
-				// 	c.metricsch = metricsch
-				// }
+				if c.metricsch == nil {
+					program, metricsch := tui.Start(fmt.Sprintf("%s:%d → %s", c.domain, c.port, c.targetAddr), c.metrics, c.LogHTTP)
+					go func() {
+						defer close(metricsch)
+						if _, err := program.Run(); err != nil {
+							log.Error().Err(err).Msg("metrics display error")
+						}
+						cancel()
+					}()
+					c.metricsch = metricsch
+				}
 				c.metricsmu.Unlock()
 				go c.handleHTTPLog(cancelCtx, header, stream)
 			default:
@@ -540,8 +541,6 @@ func (c *Client) handleHTTPLog(ctx context.Context, header *proto.Header, stream
 		log.Error().Err(err).Msg("failed to deserialize http log")
 		return fmt.Errorf("failed to deserialize http log: %w", err)
 	}
-
-	fmt.Printf("%s \n %d \n %s\n", httpLog.Path, httpLog.Status, httpLog.Method)
 
 	c.metricsch <- httpLog
 

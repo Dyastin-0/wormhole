@@ -102,27 +102,23 @@ var (
 
 var (
 	Status1xx = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("39")).
+			Foreground(lipgloss.Color("#00afff")).
 			Width(StatusWidth).
 			Bold(true)
-
 	Status2xx = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("42")).
+			Foreground(lipgloss.Color("#00d700")).
 			Width(StatusWidth).
 			Bold(true)
-
 	Status3xx = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("214")).
+			Foreground(lipgloss.Color("#ffaf00")).
 			Width(StatusWidth).
 			Bold(true)
-
 	Status4xx = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("208")).
+			Foreground(lipgloss.Color("#ff3333")).
 			Width(StatusWidth).
 			Bold(true)
-
 	Status5xx = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("196")).
+			Foreground(lipgloss.Color("#ff0000")).
 			Width(StatusWidth).
 			Bold(true).
 			Italic(true)
