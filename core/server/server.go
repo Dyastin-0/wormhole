@@ -81,7 +81,7 @@ type Server struct {
 	portAllocator *PortAllocator
 	// tlsConfig is used to terminate tunnel connections.
 	tlsConfig *tls.Config
-	// httpMux is an http muxer for serving web assets.
+	// httpMux is a simple http muxer for serving web assets.
 	httpMux *httpMux
 }
 
@@ -240,8 +240,6 @@ func (s *Server) RunObserver(ctx context.Context, addr string) error {
 
 // tunnel forwards an incoming connection to the appropriate client session based on the SNI.
 func (s *Server) tunnel(ctx context.Context, conn net.Conn) error {
-	defer conn.Close()
-
 	ctx, span := s.tracer.Start(ctx, "server.tunnel",
 		trace.WithSpanKind(trace.SpanKindServer),
 	)
@@ -252,6 +250,7 @@ func (s *Server) tunnel(ctx context.Context, conn net.Conn) error {
 	conn, err := stream.TLS(conn)
 	if err != nil {
 		span.SetStatus(codes.Error, "failed to read client hello message")
+		conn.Close()
 		return err
 	}
 
@@ -260,6 +259,7 @@ func (s *Server) tunnel(ctx context.Context, conn net.Conn) error {
 		err = fmt.Errorf("missing sni")
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "missing sni")
+		conn.Close()
 		return err
 	}
 	span.SetAttributes(attribute.String("sni", sni))
@@ -278,6 +278,8 @@ func (s *Server) tunnel(ctx context.Context, conn net.Conn) error {
 
 		if detectedProtocol == stream.ProtoHTTP {
 			s.httpMux.ServeWithFunc(conn, s.notFound)
+		} else {
+			conn.Close()
 		}
 
 		return nil
@@ -324,6 +326,8 @@ func (s *Server) tunnel(ctx context.Context, conn net.Conn) error {
 		s.httpMux.ServeWithFunc(conn, s.forbidden)
 		return err
 	}
+
+	defer conn.Close()
 
 	if !allowTLSPassthrough && isHTTP && tunnel.auth != nil {
 		err = s.httpAuthProxy(ctx, conn, tunnel)
