@@ -7,9 +7,6 @@ import (
 	"net/http"
 )
 
-// HTTPLogFixedSize is the size of the fixed binary fields in bytes.
-const HTTPLogFixedSize = 16 // int64 + uint32 + int32
-
 // HTTPLog represents a single HTTP request/response log entry.
 type HTTPLog struct {
 	// Timestamp is when the request was forwarded, in Unix seconds.
@@ -20,17 +17,14 @@ type HTTPLog struct {
 	Status int32
 	// RespSize is the size of the reponse.
 	RespSize int64
-
 	// Method is the HTTP request method (GET, POST, etc.).
 	Method string
 	// Path is the HTTP request path.
 	Path string
-
 	// ReqHeaders are the HTTP request headers.
 	ReqHeaders http.Header
 	// ReqBody is the request body, capped at maxInspectSize.
 	ReqBody []byte
-
 	// RespHeaders are the HTTP response headers.
 	RespHeaders http.Header
 	// RespBody is the response body, capped at maxInspectSize.
@@ -38,7 +32,6 @@ type HTTPLog struct {
 }
 
 // NewHTTPLog creates a new HTTPLog with the specified timing fields.
-// Use the struct literal for the remaining fields.
 func NewHTTPLog(timestamp int64, duration uint32) *HTTPLog {
 	return &HTTPLog{
 		Timestamp: timestamp,
@@ -48,20 +41,21 @@ func NewHTTPLog(timestamp int64, duration uint32) *HTTPLog {
 
 // SerializeHTTPLog serializes an HTTPLog into a byte slice.
 //
-// Wire ayout:
+// Wire layout:
 //
-//	[8] Timestamp (int64, big-endian)
-//	[4] Duration  (uint32, big-endian)
-//	[4] Status    (int32, big-endian)
-//	[2] len(Method)
-//	[n] Method
-//	[2] len(Path)
-//	[n] Path
-//	[4] len(ReqBody)
-//	[n] ReqBody
-//	[4] len(RespBody)
-//	[n] RespBody
-//	[2] len(ReqHeaders) — number of keys
+//	[8] Timestamp   (int64,  big-endian)
+//	[4] Duration    (uint32, big-endian)
+//	[4] Status      (int32,  big-endian)
+//	[8] RespSize    (int64,  big-endian)
+//	[2] len(Method) (uint16, big-endian)
+//	[n] Method      ([]byte, UTF-8)
+//	[2] len(Path)   (uint16, big-endian)
+//	[n] Path        ([]byte, UTF-8)
+//	[4] len(ReqBody)  (uint32, big-endian)
+//	[n] ReqBody       ([]byte)
+//	[4] len(RespBody) (uint32, big-endian)
+//	[n] RespBody      ([]byte)
+//	[2] len(ReqHeaders)  — number of keys
 //	for each key:
 //	  [2] len(key)
 //	  [n] key

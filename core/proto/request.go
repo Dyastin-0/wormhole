@@ -6,37 +6,38 @@ import (
 	"fmt"
 )
 
+// Request represents a client request to establish a tunnel.
 type Request struct {
-	// Proto specifies the tunnel protocol (e.g., ProtoHTTP, ProtoTCP).
-	Proto uint8
 	// TTL is the desired tunnel time-to-live, ignored when APIKey is not present.
 	TTL uint64
 	// NameLength is the length of the Name field in bytes (must not exceed MaxStringLength).
 	NameLength uint32
-	// Name is the desired subdomain name for the tunnel (e.g., "example" for "example.domain.com").
-	Name string
-	// URLLength is the length of the URL filed in bytes (must not exceed MaxStringLength).
+	// URLLength is the length of the URL field in bytes (must not exceed MaxStringLength).
 	URLLength uint32
-	// URL is the client's CNAME pointed to the tunnel endpoint.
-	URL string
 	// APIKeyLength is the length of the APIKey field in bytes (must not exceed MaxStringLength).
 	APIKeyLength uint32
-	// APIKey is the server-issued JWT token.
-	APIKey string
-	// AuthType is the authentication type for the tunnel.
-	AuthType uint8
 	// UsernameLength is the length of the AuthUsername field in bytes.
 	UsernameLength uint32
-	// AuthUsername is the username for HTTP basic auth.
-	AuthUsername string
 	// PasswordLength is the length of the AuthPassword field in bytes.
 	PasswordLength uint32
+	// TokenLength is the length of the AuthToken field in bytes.
+	TokenLength uint32
+	// Name is the desired subdomain name for the tunnel (e.g., "example" for "example.domain.com").
+	Name string
+	// URL is the client's CNAME pointed to the tunnel endpoint.
+	URL string
+	// APIKey is the server-issued JWT token.
+	APIKey string
+	// AuthUsername is the username for HTTP basic auth.
+	AuthUsername string
 	// AuthPassword is the password for HTTP basic auth.
 	AuthPassword string
-	// PasswordLength is the length of the AuthToken field in bytes.
-	TokenLength uint32
 	// AuthToken is the bearer token for bearer token auth.
 	AuthToken string
+	// Proto specifies the tunnel protocol (e.g., ProtoHTTP, ProtoTCP).
+	Proto uint8
+	// AuthType is the authentication type for the tunnel.
+	AuthType uint8
 }
 
 // NewRequest creates a new Request with the specified protocol and subdomain name.
@@ -54,6 +55,24 @@ func NewRequest(proto uint8, name string, url string, ttl uint64, apiKey string)
 }
 
 // SerializeRequest serializes a Request to a byte slice using a pooled buffer.
+//
+// Wire layout:
+//
+// [1] Proto          (uint8,  big-endian)
+// [8] TTL            (uint64, big-endian)
+// [4] NameLength     (uint32, big-endian)
+// [n] Name           ([]byte, UTF-8)
+// [4] URLLength      (uint32, big-endian)
+// [n] URL            ([]byte, UTF-8)
+// [4] APIKeyLength   (uint32, big-endian)
+// [n] APIKey         ([]byte, UTF-8)
+// [1] AuthType       (uint8,  big-endian)
+// [4] UsernameLength (uint32, big-endian)
+// [n] AuthUsername   ([]byte, UTF-8)
+// [4] PasswordLength (uint32, big-endian)
+// [n] AuthPassword   ([]byte, UTF-8)
+// [4] TokenLength    (uint32, big-endian)
+// [n] AuthToken      ([]byte, UTF-8)
 func SerializeRequest(req *Request) ([]byte, error) {
 	req.NameLength = uint32(len(req.Name))
 	req.APIKeyLength = uint32(len(req.APIKey))

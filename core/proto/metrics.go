@@ -35,6 +35,15 @@ func NewMetrics(ingress, egress, uptime, connectionCount uint64, activeConnectio
 }
 
 // SerializeMetrics serializes Metrics into byte slice using a pooled buffer.
+//
+// Wire format:
+//
+//	[8] Ingress 						(uint64, big-endian)
+//	[8] Egress 							(uint64, big-endian)
+//	[8] Uptime 							(uint64, big-endian)
+//	[8] Connection count		(uint64, big-endian)
+//	[4] Active connections	(uint32, big-endian)
+//	[4] RTT 								(uint32, big-endian)
 func SerializeMetrics(metrics *Metrics) ([]byte, error) {
 	bufPtr := metricsBufferPool.Get().(*[]byte)
 	defer metricsBufferPool.Put(bufPtr)
