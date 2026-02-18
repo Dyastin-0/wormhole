@@ -327,12 +327,12 @@ func (s *Server) tunnel(ctx context.Context, conn net.Conn) error {
 		return err
 	}
 
-	defer conn.Close()
-
 	if !allowTLSPassthrough && isHTTP && tunnel.auth != nil {
 		err = s.httpAuthProxy(ctx, conn, tunnel)
 		return err
 	}
+
+	defer conn.Close()
 
 	if !allowTLSPassthrough && isHTTP && tunnel.eventch != nil {
 		err = tunnel.ProxyWithInspect(ctx, conn)
@@ -895,7 +895,6 @@ func (s *Server) handleTCPTunnel(ctx context.Context, tunnel *Tunnel) {
 }
 
 func (s *Server) tunnelTCP(ctx context.Context, conn net.Conn, tunnel *Tunnel) {
-	defer conn.Close()
 	ctx, span := s.tracer.Start(ctx, "server.tunnelTCP",
 
 		trace.WithAttributes(attribute.String("domain", tunnel.domain)),
@@ -913,6 +912,8 @@ func (s *Server) tunnelTCP(ctx context.Context, conn net.Conn, tunnel *Tunnel) {
 		s.httpAuthProxy(ctx, conn, tunnel)
 		return
 	}
+
+	defer conn.Close()
 
 	if tunnel.allowHTTP && proto == stream.ProtoHTTP {
 		err := tunnel.ProxyWithInspect(ctx, conn)
