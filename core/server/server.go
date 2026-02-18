@@ -384,9 +384,9 @@ func (s *Server) httpAuthProxy(ctx context.Context, conn net.Conn, tunnel *Tunne
 		span.SetAttributes(attribute.Int("http.status_code", http.StatusUnauthorized))
 		switch tunnel.auth.Method() {
 		case auth.MethodBasic:
-			s.httpMux.ServeWithFunc(conn, s.unauthorizedBasic(tunnel.auth.Realm()))
+			s.httpMux.ServeWithFunc(httpConn, s.unauthorizedBasic(tunnel.auth.Realm()))
 		case auth.MethodBearer:
-			s.httpMux.ServeWithFunc(conn, s.unauthorizedBearer(tunnel.auth.Realm()))
+			s.httpMux.ServeWithFunc(httpConn, s.unauthorizedBearer(tunnel.auth.Realm()))
 		}
 		if tunnel.eventch != nil {
 			select {
