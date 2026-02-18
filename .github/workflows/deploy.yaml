@@ -3,6 +3,7 @@ on:
   push:
     branches: [master]
     paths:
+      - ".github/**"
       - "core/**"
       - "wormhole.go"
       - "metrics/**"
@@ -12,7 +13,9 @@ on:
       - "go.sum"
 
 jobs:
-  test: runs-on: ubuntu-latest steps:
+  test:
+    runs-on: ubuntu-latest
+    steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
