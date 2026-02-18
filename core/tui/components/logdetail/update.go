@@ -231,7 +231,20 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 
 		case key.Matches(msg, m.keys.Tab):
 			m.activeTab = (m.activeTab + 1) % 2
+			m.headerSearchMatches = nil
+			m.bodySearchMatches = nil
+			m.headerCurrentMatch = 0
+			m.bodyCurrentMatch = 0
+			m.searchActive = false
+			m.headerYOffset = 0
+			m.headerXOffset = 0
+			m.textYOffset = 0
+			m.hexYOffset = 0
+			m.xOffset = 0
 			m.loadContent()
+			m.calculateBodyHeight()
+			m.calculateBodyWidth()
+			m.calculateHeaderHeight()
 			return m, nil
 
 		case key.Matches(msg, m.keys.Focus):

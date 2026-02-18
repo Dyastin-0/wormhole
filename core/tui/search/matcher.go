@@ -74,6 +74,10 @@ func FindMatches(content, query string, lineOffsets []int, normalCase bool) []Ma
 }
 
 func GetLineOffsets(content string) ([]int, int) {
+	if content == "" {
+		return []int{}, 0
+	}
+
 	estimatedLines := len(content)/80 + 100
 	offsets := make([]int, 0, estimatedLines)
 	offsets = append(offsets, 0)

@@ -49,7 +49,6 @@ func (m Model) renderMetadata(title string) string {
 		),
 		m.formatDetailLine(
 			"Size",
-			// RespBody length is the closest equivalent to the old response.Size
 			styles.LogSize.Render(formatters.FormatBytes(uint64(len(m.log.RespBody)))),
 		),
 		m.formatDetailLine(
@@ -64,7 +63,6 @@ func (m Model) renderMetadata(title string) string {
 	return lipgloss.JoinVertical(lipgloss.Left, metaLines...)
 }
 
-// loadContent pulls body and header content from proto.HTTPLog directly.
 func (m *Model) loadContent() {
 	if m.log == nil {
 		return
@@ -104,7 +102,6 @@ func (m *Model) loadContent() {
 }
 
 func (m Model) renderBodyColumn() string {
-	// Content-Type comes from RespHeaders or ReqHeaders depending on active tab.
 	var contentType string
 	if m.activeTab == tabRequestBody {
 		contentType = m.log.ReqHeaders.Get("Content-Type")
@@ -200,8 +197,6 @@ func (m Model) getBodySize() int {
 	return len(m.log.ReqBody)
 }
 
-// MergeHeaders converts http.Header (map[string][]string) into a sorted,
-// human-readable string for display in the header panel.
 func MergeHeaders(headers map[string][]string) string {
 	if len(headers) == 0 {
 		return ""
@@ -222,8 +217,6 @@ func MergeHeaders(headers map[string][]string) string {
 
 	return strings.TrimSuffix(sb.String(), "\n")
 }
-
-// --- unchanged rendering helpers below, kept for completeness ---
 
 func (m Model) renderHeaderColumn() string {
 	var title string
@@ -276,30 +269,28 @@ func (m Model) renderHeaderColumn() string {
 	if m.wrapHeaders {
 		totalRows = len(m.headerVisualLines)
 	}
-
-	end := min(totalRows, m.headerYOffset+m.headerViewHeight)
+	currentRowEnd := min(totalRows, m.headerYOffset+m.headerViewHeight)
 	visible := m.headerYOffset + 1
-	if m.maxHeaderLineLength <= 0 {
+	if len(m.headerLineOffsets) <= 0 {
 		visible = 0
 	}
-
-	headerScrollInfo := lipgloss.JoinHorizontal(
-		lipgloss.Left,
-		styles.HelpKey.Render("Rows"),
-		styles.Footer.Render(fmt.Sprintf(" %d-%d of %d", visible, end, totalRows)),
+	headerScrollInfo := lipgloss.JoinHorizontal(lipgloss.Left,
+		styles.HelpKey.Render("Text rows"),
+		styles.Footer.Render(fmt.Sprintf(" %d-%d of %d", visible, currentRowEnd, totalRows)),
 	)
 
 	if !m.wrapHeaders {
-		end = min(m.maxHeaderLineLength, m.headerXOffset+m.headerViewWidth)
-		visible = m.headerXOffset + 1
-		if len(m.lineOffsets) <= 0 {
-			visible = 0
+		colEnd := min(m.maxHeaderLineLength, m.headerXOffset+m.headerViewWidth)
+		colVisible := m.headerXOffset + 1
+		if m.maxHeaderLineLength <= 0 {
+			colVisible = 0
+			colEnd = 0
 		}
 		headerScrollInfo = lipgloss.JoinHorizontal(lipgloss.Left,
 			headerScrollInfo,
 			m.help.Styles.ShortSeparator.Render(m.help.ShortSeparator),
 			styles.HelpKey.Render("Cols"),
-			styles.Footer.Render(fmt.Sprintf(" %d-%d of %d", visible, end, m.maxHeaderLineLength)),
+			styles.Footer.Render(fmt.Sprintf(" %d-%d of %d", colVisible, colEnd, m.maxHeaderLineLength)),
 		)
 	}
 
