@@ -357,8 +357,6 @@ func (s *Server) tunnel(ctx context.Context, conn net.Conn) error {
 }
 
 func (s *Server) httpAuthProxy(ctx context.Context, conn net.Conn, tunnel *Tunnel) error {
-	defer conn.Close()
-
 	ctx, span := s.tracer.Start(ctx, "server.httpAuthProxy",
 		trace.WithSpanKind(trace.SpanKindServer),
 	)
@@ -368,6 +366,7 @@ func (s *Server) httpAuthProxy(ctx context.Context, conn net.Conn, tunnel *Tunne
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "failed to read http request")
+		conn.Close()
 		return fmt.Errorf("failed to read http request: %w", err)
 	}
 
@@ -397,6 +396,8 @@ func (s *Server) httpAuthProxy(ctx context.Context, conn net.Conn, tunnel *Tunne
 		}
 		return err
 	}
+
+	defer conn.Close()
 
 	span.SetAttributes(attribute.Bool("authenticated", true))
 
