@@ -81,6 +81,8 @@ type Server struct {
 	portAllocator *PortAllocator
 	// tlsConfig is used to terminate tunnel connections.
 	tlsConfig *tls.Config
+	// httpMux is an http muxer for serving web assets.
+	httpMux *httpMux
 }
 
 // New creates a new Server with the specified configuration options.
@@ -89,6 +91,12 @@ func New(opts ...OptFunc) (*Server, error) {
 		observer: &observer.NoopObserver{},
 		tracer:   noop.NewTracerProvider().Tracer("wormhole-server"),
 	}
+
+	mux := newHTTPMux()
+	mux.Handle("/", s.home)
+	mux.Handle("/favicon.svg", s.faviconHandler)
+
+	s.httpMux = mux
 
 	for _, opt := range opts {
 		opt(s)
@@ -159,6 +167,7 @@ func (s *Server) RunTunneler(ctx context.Context) error {
 	// should be handled. if this listener is behind a reverse proxy (you'll need a tcp/tls proxy)
 	// you need to somehow route that CNAME here. a clever hack is to
 	// route domains that is not registered on your reverse proxy to a default.
+	// Or simply expose this via port 443 (s.serveAddr) and then serve s.addr to any port (you'll need to open the port).
 	ln, err := net.Listen("tcp", s.serveAddr)
 	if err != nil {
 		span.RecordError(err)
@@ -268,7 +277,7 @@ func (s *Server) tunnel(ctx context.Context, conn net.Conn) error {
 		detectedProtocol, conn = stream.Conn(conn)
 
 		if detectedProtocol == stream.ProtoHTTP {
-			s.writeNotFound(conn, sni)
+			s.httpMux.ServeWithFunc(conn, s.notFound)
 		}
 
 		return nil
@@ -312,7 +321,7 @@ func (s *Server) tunnel(ctx context.Context, conn net.Conn) error {
 		err = fmt.Errorf("http not allowed on tcp tunnel")
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "http forbidden on tcp tunnel")
-		s.writeForbidden(conn, sni)
+		s.httpMux.ServeWithFunc(conn, s.forbidden)
 		return err
 	}
 
@@ -501,8 +510,6 @@ func (s *Server) handleConnections(ctx context.Context, ln net.Listener) error {
 
 // handleMessages processes messages from a client connection using a yamux session.
 func (s *Server) handleMessages(ctx context.Context, conn net.Conn) error {
-	defer conn.Close()
-
 	ctx, span := s.tracer.Start(ctx, "server.handleMessages",
 		trace.WithSpanKind(trace.SpanKindServer),
 	)
@@ -513,10 +520,13 @@ func (s *Server) handleMessages(ctx context.Context, conn net.Conn) error {
 	span.SetAttributes(attribute.String("detected_protocol", string(detectedProtocol)))
 
 	if detectedProtocol == stream.ProtoHTTP {
-		s.writeHomePage(conn)
-		span.SetStatus(codes.Ok, "served homepage")
+		s.httpMux.Serve(conn)
+		span.SetStatus(codes.Ok, "web")
 		return nil
 	}
+
+	// Let httpMux close the conn, if it falls there.
+	defer conn.Close()
 
 	yamuxConfig := yamux.DefaultConfig()
 	yamuxConfig.EnableKeepAlive = false

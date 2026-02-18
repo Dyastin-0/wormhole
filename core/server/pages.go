@@ -2,7 +2,7 @@ package server
 
 import (
 	"fmt"
-	"net"
+	"net/http"
 	"strings"
 
 	"github.com/Dyastin-0/wormhole/core/proto"
@@ -107,7 +107,7 @@ h1 {
   padding: 12px 16px;
   font-size: 13px;
   color: var(--text);
-  user-select: all; 
+  user-select: all;
   cursor: text;
   word-break: break-all;
   position: relative;
@@ -117,7 +117,7 @@ h1 {
   content: "$";
   color: var(--subtext);
   margin-right: 8px;
-  user-select: none; 
+  user-select: none;
 }
 
 .footer {
@@ -144,7 +144,7 @@ a:hover {
 .status-badge {
   display: inline-block;
   padding: 2px 8px;
-	color: var(--accent);
+  color: var(--accent);
   font-size: 11px;
   font-weight: 600;
   border: 1px solid var(--border);
@@ -154,11 +154,29 @@ a:hover {
 </style>
 `
 
-func (s *Server) writeHomePage(conn net.Conn) {
+const favicon = `
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <defs>
+    <clipPath id="c">
+      <circle cx="16" cy="16" r="15"/>
+    </clipPath>
+  </defs>
+  <circle cx="16" cy="16" r="15" fill="#0a0a0a"/>
+  <g clip-path="url(#c)">
+    <ellipse cx="13" cy="16" rx="12" ry="14" fill="none" stroke="#F07178" stroke-width="4"/>
+    <ellipse cx="16" cy="16" rx="8"  ry="10" fill="none" stroke="#F07178" stroke-width="3.5"/>
+    <ellipse cx="18" cy="16" rx="4.5" ry="6" fill="none" stroke="#F07178" stroke-width="3"/>
+    <ellipse cx="20" cy="16" rx="2"  ry="2.5" fill="none" stroke="#F07178" stroke-width="2"/>
+    <circle  cx="20" cy="16" r="1"  fill="#F07178"/>
+  </g>
+</svg>`
+
+func (s *Server) home(w http.ResponseWriter, r *http.Request) {
 	html := fmt.Sprintf(`<!DOCTYPE html>
 <html>
 <head>
 <title>Wormhole</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 %s
 </head>
@@ -182,33 +200,41 @@ func (s *Server) writeHomePage(conn net.Conn) {
 
   <div class="footer">
     <span>v%s</span>
-    <a href="https://github.com/Dyastin-0/wormhole">Documentation</a>
+    <a target="_blank" href="https://github.com/Dyastin-0/wormhole">Documentation</a>
   </div>
 </div>
 </body>
 </html>`, baseCSS, proto.VERSION)
 
-	writeHTTP(conn, 200, html)
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	fmt.Fprint(w, html)
 }
 
-func (s *Server) writeForbidden(conn net.Conn, sni string) {
+func (s *Server) faviconHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "image/svg+xml")
+	fmt.Fprint(w, favicon)
+}
+
+func (s *Server) forbidden(w http.ResponseWriter, r *http.Request) {
+	sni := r.Host
 	name := strings.Split(sni, ".")[0]
 	html := fmt.Sprintf(`<!DOCTYPE html>
 <html>
 <head>
 <title>403 Forbidden</title>
+<link rel="icon" type="image/svg+xml" href="https://%s/favicon.svg">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 %s
 </head>
 <body>
 <div class="container">
   <span class="brand">Wormhole /// Gateway</span>
-  
+
   <div class="header" style="border-bottom: none; padding-bottom: 0;">
     <h1>Protocol Mismatch</h1>
     <div class="description">
-       You are trying to access a TCP tunnel via HTTP.<br>
-       The gateway cannot proxy this request.
+      You are trying to access a TCP tunnel via HTTP.<br>
+      The gateway cannot proxy this request.
     </div>
   </div>
 
@@ -224,21 +250,25 @@ func (s *Server) writeForbidden(conn net.Conn, sni string) {
 
   <div class="footer">
     <span>v%s</span>
-    <a href="https://github.com/Dyastin-0/wormhole">Documentation</a>
+    <a target="_blank" href="https://github.com/Dyastin-0/wormhole">Documentation</a>
   </div>
 </div>
 </body>
-</html>`, baseCSS, sni, name, proto.VERSION)
+</html>`, s.domain, baseCSS, sni, name, proto.VERSION)
 
-	writeHTTP(conn, 403, html)
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusForbidden)
+	fmt.Fprint(w, html)
 }
 
-func (s *Server) writeNotFound(conn net.Conn, sni string) {
+func (s *Server) notFound(w http.ResponseWriter, r *http.Request) {
+	sni := r.Host
 	name := strings.Split(sni, ".")[0]
 	html := fmt.Sprintf(`<!DOCTYPE html>
 <html>
 <head>
 <title>404 Not Found</title>
+<link rel="icon" type="image/svg+xml" href="https://%s/favicon.svg">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 %s
 </head>
@@ -249,7 +279,7 @@ func (s *Server) writeNotFound(conn net.Conn, sni string) {
   <div class="header" style="border-bottom: none; padding-bottom: 0;">
     <h1>Tunnel Not Active</h1>
     <div class="description">
-       No active session found for this endpoint.
+      No active session found for this endpoint.
     </div>
   </div>
 
@@ -265,28 +295,13 @@ func (s *Server) writeNotFound(conn net.Conn, sni string) {
 
   <div class="footer">
     <span>v%s</span>
-    <a href="https://github.com/Dyastin-0/wormhole">Documentation</a>
+    <a target="_blank" href="https://github.com/Dyastin-0/wormhole">Documentation</a>
   </div>
 </div>
 </body>
-</html>`, baseCSS, sni, name, proto.VERSION)
+</html>`, s.domain, baseCSS, sni, name, proto.VERSION)
 
-	writeHTTP(conn, 404, html)
-}
-
-func writeHTTP(conn net.Conn, status int, body string) {
-	statusText := map[int]string{
-		200: "OK",
-		403: "Forbidden",
-		404: "Not Found",
-	}[status]
-
-	resp := fmt.Sprintf(
-		"HTTP/1.1 %d %s\r\n"+
-			"Content-Type: text/html; charset=utf-8\r\n"+
-			"Content-Length: %d\r\n"+
-			"Connection: close\r\n\r\n%s",
-		status, statusText, len(body), body,
-	)
-	conn.Write([]byte(resp))
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusNotFound)
+	fmt.Fprint(w, html)
 }
