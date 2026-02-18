@@ -368,7 +368,6 @@ func (s *Server) httpAuthProxy(ctx context.Context, conn net.Conn, tunnel *Tunne
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "failed to read http request")
-		s.sendUnauthorized(conn, tunnel.auth)
 		return fmt.Errorf("failed to read http request: %w", err)
 	}
 
@@ -384,7 +383,12 @@ func (s *Server) httpAuthProxy(ctx context.Context, conn net.Conn, tunnel *Tunne
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "authentication failed")
 		span.SetAttributes(attribute.Int("http.status_code", http.StatusUnauthorized))
-		s.sendUnauthorized(conn, tunnel.auth)
+		switch tunnel.auth.Method() {
+		case auth.MethodBasic:
+			s.httpMux.ServeWithFunc(conn, s.unauthorizedBasic(tunnel.auth.Realm()))
+		case auth.MethodBearer:
+			s.httpMux.ServeWithFunc(conn, s.unauthorizedBearer(tunnel.auth.Realm()))
+		}
 		if tunnel.eventch != nil {
 			select {
 			case tunnel.eventch <- stream.NewHTTPEventWithoutcontext(req.Method, req.URL.Path, http.StatusUnauthorized):
@@ -478,11 +482,6 @@ func (s *Server) sendHTTPLog(stream net.Conn, httpLog *proto.HTTPLog) error {
 	}
 
 	return nil
-}
-
-// sendUnauthorized sends the authentication challenge from the underlying authenticator.
-func (s *Server) sendUnauthorized(conn net.Conn, authenticator auth.Authenticator) {
-	authenticator.SendChallenge(conn)
 }
 
 // handleConnections accepts incoming client control connections and processes them concurrently.

@@ -305,3 +305,90 @@ func (s *Server) notFound(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotFound)
 	fmt.Fprint(w, html)
 }
+
+func (s *Server) unauthorizedBasic(realm string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		html := fmt.Sprintf(`<!DOCTYPE html>
+<html>
+<head>
+<title>401 Unauthorized</title>
+<link rel="icon" type="image/svg+xml" href="https://%s/favicon.svg">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+%s
+</head>
+<body>
+<div class="container">
+  <span class="brand">Wormhole /// Gateway</span>
+
+  <div class="header" style="border-bottom: none; padding-bottom: 0;">
+    <h1>Authentication Required</h1>
+    <div class="description">
+      This tunnel is private. Please enter your credentials to proceed.
+    </div>
+  </div>
+
+  <div class="section">
+    <span class="label">Security Realm</span>
+    <div class="code" style="user-select: none;">%s</div>
+  </div>
+
+  <div class="footer">
+    <span>v%s</span>
+    <a target="_blank" href="https://github.com/Dyastin-0/wormhole">Documentation</a>
+  </div>
+</div>
+</body>
+</html>`, s.domain, baseCSS, realm, proto.VERSION)
+
+		w.Header().Set("WWW-Authenticate", fmt.Sprintf("Basic realm=\"%s\"", realm))
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusUnauthorized)
+		fmt.Fprint(w, html)
+	}
+}
+
+func (s *Server) unauthorizedBearer(realm string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		html := fmt.Sprintf(`<!DOCTYPE html>
+<html>
+<head>
+<title>401 Unauthorized</title>
+<link rel="icon" type="image/svg+xml" href="https://%s/favicon.svg">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+%s
+</head>
+<body>
+<div class="container">
+  <span class="brand">Wormhole /// Gateway</span>
+
+  <div class="header" style="border-bottom: none; padding-bottom: 0;">
+    <h1>Bearer Token Required</h1>
+    <div class="description">
+      This tunnel requires a valid Bearer token to access.
+    </div>
+  </div>
+
+  <div class="section">
+    <span class="label">Required Header</span>
+    <div class="code">Authorization: Bearer &lt;your-token&gt;</div>
+  </div>
+
+  <div class="section">
+    <span class="label">Security Realm</span>
+    <div class="code" style="user-select: none; opacity: 0.7;">%s</div>
+  </div>
+
+  <div class="footer">
+    <span>v%s</span>
+    <a target="_blank" href="https://github.com/Dyastin-0/wormhole">Documentation</a>
+  </div>
+</div>
+</body>
+</html>`, s.domain, baseCSS, realm, proto.VERSION)
+
+		w.Header().Set("WWW-Authenticate", fmt.Sprintf("Bearer realm=\"%s\"", realm))
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusUnauthorized)
+		fmt.Fprint(w, html)
+	}
+}
