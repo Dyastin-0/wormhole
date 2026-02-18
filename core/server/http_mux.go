@@ -20,9 +20,13 @@ func (m *httpMux) Handle(path string, handler http.HandlerFunc) {
 }
 
 func (m *httpMux) Serve(conn net.Conn) error {
-	return http.Serve(stream.NewConnListener(conn), m.mux)
+	server := &http.Server{Handler: m.mux}
+	server.SetKeepAlivesEnabled(false)
+	return server.Serve(stream.NewConnListener(conn))
 }
 
 func (m *httpMux) ServeWithFunc(conn net.Conn, handler http.HandlerFunc) error {
-	return http.Serve(stream.NewConnListener(conn), handler)
+	server := &http.Server{Handler: handler}
+	server.SetKeepAlivesEnabled(false)
+	return server.Serve(stream.NewConnListener(conn))
 }
