@@ -3,7 +3,6 @@ package formatters
 
 import (
 	"fmt"
-	"io"
 	"net/http"
 	"sort"
 	"strings"
@@ -13,8 +12,6 @@ import (
 	"github.com/Dyastin-0/wormhole/stream"
 	"github.com/charmbracelet/lipgloss"
 )
-
-const maxBodySize = 1 * 1024 * 1024
 
 func FormatBytes(bytes uint64) string {
 	const unit = 1024
@@ -170,34 +167,6 @@ func SortAndRenderHeaders(headers http.Header) string {
 		sb.WriteString(row + "\n")
 	}
 	return sb.String()
-}
-
-func ReadResponseBody(resp *stream.Response) ([]byte, error) {
-	if resp == nil || resp.Body == nil {
-		return nil, nil
-	}
-
-	bodyBytes, err := io.ReadAll(io.LimitReader(resp.Body, maxBodySize))
-	if err != nil {
-		return nil, err
-	}
-	resp.Body.Close()
-
-	return bodyBytes, nil
-}
-
-func ReadRequestBody(req *http.Request) ([]byte, error) {
-	if req == nil || req.Body == nil {
-		return nil, nil
-	}
-
-	body, err := io.ReadAll(io.LimitReader(req.Body, maxBodySize))
-	if err != nil {
-		return nil, err
-	}
-	req.Body.Close()
-
-	return body, nil
 }
 
 func FormatPercent(label string, pct float64) string {
