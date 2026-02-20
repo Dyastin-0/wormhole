@@ -15,7 +15,7 @@ import (
 
 const (
 	maxInspectSize  = 1 * 1024 * 1024
-	requestIDHeader = "X-Wormhole-Request-ID"
+	requestIDHeader = "X-Wormhole-Request-Id"
 )
 
 // HTTPEvent is emitted by StreamHTTPWithContext for each completed request/response pair.
@@ -36,7 +36,7 @@ type HTTPEvent struct {
 // pendingReq holds the server-side state for an in-flight request, keyed by
 // position in the FIFO pipeline. HTTP/1.1 responses are always returned in
 // the same order as requests, so a channel acts as an ordered queue.
-type pendingReq struct {
+type pendingRequest struct {
 	id         string
 	start      time.Time
 	method     string
@@ -45,16 +45,12 @@ type pendingReq struct {
 	reqBody    []byte
 }
 
-// Request wraps http.Request with a start time.
-type Request struct {
-	*http.Request
-	start time.Time
-}
-
-// Response wraps http.Request with a size.
-type Response struct {
-	*http.Response
-	Size int64
+type responseMeta struct {
+	id      string
+	status  int
+	size    int64
+	headers http.Header
+	body    []byte
 }
 
 // CountWriter count bytes as it writes.
@@ -75,14 +71,14 @@ type LimitedTeeReader struct {
 	N int64
 }
 
-func NewHTTPEventWithoutcontext(method, path string, status int) HTTPEvent {
-	return HTTPEvent{
-		ID:     uuid.NewString(),
-		Start:  time.Now(),
-		Method: method,
-		Path:   path,
-		Status: status,
+func (l *LimitedTeeReader) Read(p []byte) (n int, err error) {
+	n, err = l.R.Read(p)
+	if n > 0 && l.N > 0 {
+		toCopy := min(int64(n), l.N)
+		l.W.Write(p[:toCopy])
+		l.N -= toCopy
 	}
+	return n, err
 }
 
 // Stream handles bidirectional streaming between src and dst.
@@ -143,20 +139,10 @@ func StreamWithContext(ctx context.Context, src, dst net.Conn) error {
 	}
 }
 
-func (l *LimitedTeeReader) Read(p []byte) (n int, err error) {
-	n, err = l.R.Read(p)
-	if n > 0 && l.N > 0 {
-		toCopy := min(int64(n), l.N)
-		l.W.Write(p[:toCopy])
-		l.N -= toCopy
-	}
-	return n, err
-}
-
 // StreamHTTPWithContext proxies HTTP/1.1 traffic between src (downstream client)
 // and dst (upstream backend), injects a unique request ID header, captures
 // headers and bodies for inspection, and emits a correlated HTTPEvent per
-// request/response pair. eventch may be nil if inspection is not needed.
+// request/response pair.
 func StreamHTTPWithContext(
 	ctx context.Context,
 	src, dst net.Conn,
@@ -165,20 +151,50 @@ func StreamHTTPWithContext(
 ) error {
 	brSrc := bufio.NewReader(src)
 	brDst := bufio.NewReader(dst)
-
-	bcSrc := &BuffConn{Conn: src, r: brSrc}
-	bcDst := &BuffConn{Conn: dst, r: brDst}
+	bwSrc := bufio.NewWriter(src)
+	bwDst := bufio.NewWriter(dst)
 
 	defer src.Close()
 	defer dst.Close()
 
-	// pendingCh acts as the FIFO queue between the request and response goroutines.
-	pendingCh := make(chan pendingReq, 16)
+	reqMetaCh := make(chan pendingRequest, 1024)
+	respMetaCh := make(chan responseMeta, 1024)
 	errCh := make(chan error, 2)
 	upgradeCh := make(chan struct{})
 
 	go func() {
-		defer close(pendingCh)
+		for {
+			select {
+			case req := <-reqMetaCh:
+				resp := <-respMetaCh
+
+				if eventch != nil {
+					eventID := resp.id
+					if eventID == "" {
+						eventID = req.id
+					}
+
+					eventch <- &HTTPEvent{
+						ID:          eventID,
+						Start:       req.start,
+						Method:      req.method,
+						Path:        req.path,
+						Status:      resp.status,
+						RespSize:    resp.size,
+						ReqHeaders:  req.reqHeaders,
+						ReqBody:     req.reqBody,
+						RespHeaders: resp.headers,
+						RespBody:    resp.body,
+					}
+				}
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
+	go func() {
+		defer close(reqMetaCh)
 		for {
 			req, err := http.ReadRequest(brSrc)
 			if err != nil {
@@ -186,50 +202,38 @@ func StreamHTTPWithContext(
 				return
 			}
 
-			id := uuid.NewString()
-			if server {
-				id = req.Header.Get(requestIDHeader)
+			meta := pendingRequest{
+				id:         req.Header.Get(requestIDHeader),
+				start:      time.Now(),
+				method:     req.Method,
+				path:       req.URL.Path,
+				reqHeaders: req.Header.Clone(),
 			}
-			req.Header.Set(requestIDHeader, id)
 
-			isUpgrade := req.Header.Get("Upgrade") == "websocket"
-			start := time.Now()
-
-			var reqBodyBuf bytes.Buffer
+			var buf bytes.Buffer
 			req.Body = io.NopCloser(&LimitedTeeReader{
 				R: req.Body,
-				W: &reqBodyBuf,
+				W: &buf,
 				N: maxInspectSize,
 			})
 
-			reqHeaders := req.Header.Clone()
-
-			if err := req.Write(dst); err != nil {
+			if err := req.Write(bwDst); err != nil {
 				errCh <- err
 				return
 			}
+			bwDst.Flush()
+			meta.reqBody = buf.Bytes()
 
-			select {
-			case pendingCh <- pendingReq{
-				id:         id,
-				start:      start,
-				method:     req.Method,
-				path:       req.URL.Path,
-				reqHeaders: reqHeaders,
-				reqBody:    reqBodyBuf.Bytes(),
-			}:
-			default:
-				// Drop if consumer is behind; we never block the proxy path.
-			}
+			reqMetaCh <- meta
 
-			if isUpgrade {
+			if req.Header.Get("Upgrade") == "websocket" {
 				return
 			}
 		}
 	}()
 
 	go func() {
-		cw := &CountWriter{w: src}
+		cw := &CountWriter{w: bwSrc}
 		for {
 			resp, err := http.ReadResponse(brDst, nil)
 			if err != nil {
@@ -237,48 +241,40 @@ func StreamHTTPWithContext(
 				return
 			}
 
-			isUpgrade := resp.StatusCode == http.StatusSwitchingProtocols
+			if !server {
+				resp.Header.Set(requestIDHeader, uuid.NewString())
+			}
 
-			var respBodyBuf bytes.Buffer
+			var buf bytes.Buffer
 			resp.Body = io.NopCloser(&LimitedTeeReader{
 				R: resp.Body,
-				W: &respBodyBuf,
+				W: &buf,
 				N: maxInspectSize,
 			})
 
-			respHeaders := resp.Header.Clone()
+			headers := resp.Header.Clone()
 			status := resp.StatusCode
+			id := resp.Header.Get(requestIDHeader)
 
 			cw.count = 0
 			if err := resp.Write(cw); err != nil {
 				errCh <- err
 				return
 			}
+			bwSrc.Flush()
 
-			respSize := cw.count
-
-			if eventch != nil {
-				pending, ok := <-pendingCh
-				if ok {
-					select {
-					case eventch <- &HTTPEvent{
-						ID:          pending.id,
-						Start:       pending.start,
-						Method:      pending.method,
-						Path:        pending.path,
-						Status:      status,
-						RespSize:    respSize,
-						ReqHeaders:  pending.reqHeaders,
-						ReqBody:     pending.reqBody,
-						RespHeaders: respHeaders,
-						RespBody:    respBodyBuf.Bytes(),
-					}:
-					default:
-					}
-				}
+			select {
+			case respMetaCh <- responseMeta{
+				id:      id,
+				status:  status,
+				size:    cw.count,
+				headers: headers,
+				body:    buf.Bytes(),
+			}:
+			default:
 			}
 
-			if isUpgrade {
+			if status == http.StatusSwitchingProtocols {
 				close(upgradeCh)
 				return
 			}
@@ -289,7 +285,7 @@ func StreamHTTPWithContext(
 	case <-ctx.Done():
 		return ctx.Err()
 	case <-upgradeCh:
-		return StreamWithContext(ctx, bcSrc, bcDst)
+		return StreamWithContext(ctx, &BuffConn{src, brSrc}, &BuffConn{dst, brDst})
 	case err := <-errCh:
 		if err == io.EOF {
 			return nil

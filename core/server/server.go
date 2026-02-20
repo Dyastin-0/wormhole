@@ -4,7 +4,6 @@
 package server
 
 import (
-	"bytes"
 	"context"
 	"crypto/tls"
 	"errors"
@@ -387,25 +386,12 @@ func (s *Server) httpAuthProxy(ctx context.Context, conn net.Conn, tunnel *Tunne
 		case auth.MethodBearer:
 			s.httpMux.ServeWithFunc(httpConn, s.unauthorizedBearer(tunnel.auth.Realm()))
 		}
-		if tunnel.eventch != nil {
-			select {
-			case tunnel.eventch <- stream.NewHTTPEventWithoutcontext(req.Method, req.URL.Path, http.StatusUnauthorized):
-			default:
-			}
-		}
 		return err
 	}
 
 	defer conn.Close()
 
 	span.SetAttributes(attribute.Bool("authenticated", true))
-
-	var fullRequest bytes.Buffer
-	if err = req.Write(&fullRequest); err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "failed to serialize request")
-		return fmt.Errorf("failed to serialize request: %w", err)
-	}
 
 	if tunnel.eventch != nil {
 		err = tunnel.ProxyWithInspect(ctx, httpConn)
