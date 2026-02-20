@@ -161,6 +161,7 @@ func StreamHTTPWithContext(
 	ctx context.Context,
 	src, dst net.Conn,
 	eventch chan<- any,
+	server bool,
 ) error {
 	brSrc := bufio.NewReader(src)
 	brDst := bufio.NewReader(dst)
@@ -186,6 +187,9 @@ func StreamHTTPWithContext(
 			}
 
 			id := uuid.NewString()
+			if server {
+				id = req.Header.Get(requestIDHeader)
+			}
 			req.Header.Set(requestIDHeader, id)
 
 			isUpgrade := req.Header.Get("Upgrade") == "websocket"

@@ -374,7 +374,7 @@ func (c *Client) ForwardStream(ctx context.Context, ystream net.Conn) error {
 	}
 
 	if c.LogHTTP {
-		return stream.StreamHTTPWithContext(ctx, ystream, localConn, c.metricsch)
+		return stream.StreamHTTPWithContext(ctx, ystream, localConn, c.metricsch, false)
 	}
 
 	return stream.StreamWithContext(ctx, ystream, localConn)
@@ -400,12 +400,11 @@ func (c *Client) handleMessages(ctx context.Context, session *yamux.Session) err
 			return err
 		}
 
-		go func() {
+		go func(s net.Conn) {
 			buf := make([]byte, proto.HeaderSize)
-			_, err = io.ReadFull(stream, buf)
+			_, err = io.ReadFull(s, buf)
 			if err != nil {
 				if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
-					log.Debug().Err(err).Msg("stream connection closed")
 					stream.Close()
 					return
 				}
@@ -469,7 +468,7 @@ func (c *Client) handleMessages(ctx context.Context, session *yamux.Session) err
 			default:
 				stream.Close()
 			}
-		}()
+		}(stream)
 	}
 }
 

@@ -82,7 +82,7 @@ func (t *Tunnel) ProxyWithInspect(ctx context.Context, ystream net.Conn) error {
 		src = t.metrics.NewProxyConn(ystream)
 	}
 
-	return stream.StreamHTTPWithContext(ctx, src, remoteStream, t.eventch)
+	return stream.StreamHTTPWithContext(ctx, src, remoteStream, t.eventch, true)
 }
 
 // logLoop drains t.eventch, builds HTTPLog entries with server-side timing,
