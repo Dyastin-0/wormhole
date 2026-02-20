@@ -102,7 +102,7 @@ func (t *Tunnel) logLoop(ctx context.Context, send func(*proto.HTTPDurationLog, 
 			case *stream.HTTPEvent:
 				duration := uint64(time.Since(v.Start).Microseconds())
 
-				log := proto.NewHTTPDurationLog("", duration)
+				log := proto.NewHTTPDurationLog(v.ID, duration)
 
 				if err := send(log, v); err != nil {
 					return
