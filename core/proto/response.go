@@ -6,6 +6,21 @@ import (
 	"fmt"
 )
 
+// Constants definition of response status codes.
+const (
+	// StatusOK indicates a successful tunnel creation.
+	StatusOK uint8 = 0x01
+	// StatusInvalidURL indicates that the URL paramater is invalid.
+	StatusInvalidURL uint8 = 0x02
+	// StatusNameTaken indicates the requested subdomain is already in use.
+	StatusNameTaken uint8 = 0x03
+	// StatusUnsupportedProto indicates the requested protocol is not supported.
+	StatusUnsupportedProto uint8 = 0x04
+)
+
+// ResponseSize is the fixed size of a response's non-string fields in bytes.
+const ResponseSize = 15
+
 // Response represents the server's response to a tunnel request.
 type Response struct {
 	// TTLHours specifies the tunnel's lifetime in hours.
@@ -114,4 +129,30 @@ func DeserializeResponse(data []byte) (*Response, error) {
 	}
 
 	return &resp, nil
+}
+
+// validateResponse validates a Response's fields.
+func validateResponse(resp *Response) error {
+	switch resp.Status {
+	case StatusOK, StatusInvalidURL, StatusNameTaken, StatusUnsupportedProto:
+		// OK
+	default:
+		return ErrInvalidStatus
+	}
+
+	if resp.Status == StatusOK {
+		if resp.DomainLength == 0 || len(resp.Domain) == 0 {
+			return ErrEmptyString
+		}
+
+		if resp.DomainLength != uint32(len(resp.Domain)) {
+			return ErrInvalidLength
+		}
+
+		if resp.DomainLength > MaxStringLength {
+			return ErrStringTooLong
+		}
+	}
+
+	return nil
 }

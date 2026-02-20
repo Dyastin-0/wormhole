@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/Dyastin-0/wormhole/core/tui/formatters"
 	"github.com/Dyastin-0/wormhole/core/tui/search"
@@ -32,7 +31,7 @@ func (m Model) renderMetadata(title string) string {
 		m.formatDetailLine(
 			"Timestamp",
 			styles.LogTime.Width(styles.TimeWidth+11).Render(
-				time.Unix(m.log.Timestamp, 0).Format("2006-01-02 15:04:05"),
+				m.log.Start.Format("2006-01-02 15:04:05"),
 			),
 		),
 		m.formatDetailLine(

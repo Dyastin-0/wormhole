@@ -374,7 +374,7 @@ func (c *Client) ForwardStream(ctx context.Context, ystream net.Conn) error {
 	}
 
 	if c.LogHTTP {
-		return stream.StreamWithContext(ctx, ystream, localConn)
+		return stream.StreamHTTPWithContext(ctx, ystream, localConn, c.metricsch)
 	}
 
 	return stream.StreamWithContext(ctx, ystream, localConn)
@@ -536,7 +536,7 @@ func (c *Client) handleHTTPLog(ctx context.Context, header *proto.Header, stream
 		return fmt.Errorf("failed to read http log: %w", err)
 	}
 
-	httpLog, err := proto.DeserializeHTTPLog(buf)
+	httpLog, err := proto.DeserializeHTTPDurationLog(buf)
 	if err != nil {
 		log.Error().Err(err).Msg("failed to deserialize http log")
 		return fmt.Errorf("failed to deserialize http log: %w", err)
@@ -577,7 +577,7 @@ func (c *Client) handleHTTPLog(ctx context.Context, header *proto.Header, stream
 				return fmt.Errorf("failed to read http log: %w", err)
 			}
 
-			httpLog, err := proto.DeserializeHTTPLog(buf)
+			httpLog, err := proto.DeserializeHTTPDurationLog(buf)
 			if err != nil {
 				log.Error().Err(err).Msg("failed to deserialize http log")
 				return fmt.Errorf("failed to deserialize http log: %w", err)

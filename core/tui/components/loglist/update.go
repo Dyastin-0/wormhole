@@ -18,7 +18,10 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		m.visibleHeight = max(minVisibleLogs, msg.Height- /*metrics and footer height*/ 17)
 
 	case messages.HTTPLogMsg:
-		m.addLog(&msg)
+		m.store.AddDuration(msg.HTTPDurationLog)
+
+	case messages.HTTPEventMsg:
+		m.addLog(msg.HTTPEvent)
 
 	case tea.KeyMsg:
 		switch {
@@ -41,7 +44,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			if m.store.Len() > 0 {
 				return m, func() tea.Msg {
 					return messages.LogSelectedMsg{
-						Log: m.store.Get(m.selectedIndex),
+						Log: m.store.GetByIndex(m.selectedIndex),
 					}
 				}
 			}

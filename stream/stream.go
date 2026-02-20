@@ -22,6 +22,7 @@ const (
 type HTTPEvent struct {
 	ID          string
 	Start       time.Time
+	Duration    uint64
 	Method      string
 	Path        string
 	Status      int
@@ -159,7 +160,7 @@ func (l *LimitedTeeReader) Read(p []byte) (n int, err error) {
 func StreamHTTPWithContext(
 	ctx context.Context,
 	src, dst net.Conn,
-	eventch chan<- HTTPEvent,
+	eventch chan<- any,
 ) error {
 	brSrc := bufio.NewReader(src)
 	brDst := bufio.NewReader(dst)
@@ -256,7 +257,7 @@ func StreamHTTPWithContext(
 				pending, ok := <-pendingCh
 				if ok {
 					select {
-					case eventch <- HTTPEvent{
+					case eventch <- &HTTPEvent{
 						ID:          pending.id,
 						Start:       pending.start,
 						Method:      pending.method,

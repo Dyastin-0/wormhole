@@ -21,7 +21,6 @@ import (
 	"github.com/Dyastin-0/wormhole/metrics"
 	"github.com/Dyastin-0/wormhole/observer"
 	"github.com/Dyastin-0/wormhole/stream"
-	streamutil "github.com/Dyastin-0/wormhole/stream"
 	"github.com/hashicorp/yamux"
 	cmap "github.com/orcaman/concurrent-map/v2"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -446,11 +445,11 @@ func (s *Server) streamHTTPLogs(ctx context.Context, tunnel *Tunnel) error {
 
 	span.SetStatus(codes.Ok, "streaming http logs")
 
-	tunnel.logLoop(ctx, func(httpLog *proto.HTTPLog) error {
+	tunnel.logLoop(ctx, func(httpLog *proto.HTTPDurationLog, event *stream.HTTPEvent) error {
 		s.observer.RecordHTTPRequest(
 			tunnel.domain,
-			httpLog.Method,
-			fmt.Sprint(httpLog.Status),
+			event.Method,
+			fmt.Sprint(event.Status),
 			time.Duration(httpLog.Duration),
 		)
 		return s.sendHTTPLog(logStream, httpLog)
@@ -460,8 +459,8 @@ func (s *Server) streamHTTPLogs(ctx context.Context, tunnel *Tunnel) error {
 }
 
 // sendHTTPLog sends an HTTP log entry to the client.
-func (s *Server) sendHTTPLog(stream net.Conn, httpLog *proto.HTTPLog) error {
-	serialized, err := proto.SerializeHTTPLog(httpLog)
+func (s *Server) sendHTTPLog(stream net.Conn, httpLog *proto.HTTPDurationLog) error {
+	serialized, err := proto.SerializeHTTPDurationLog(httpLog)
 	if err != nil {
 		return fmt.Errorf("failed to serialize http log: %w", err)
 	}
@@ -735,7 +734,7 @@ func (s *Server) handleRequest(ctx context.Context, stream net.Conn, session *ya
 	span.SetAttributes(attribute.Bool("tls_passthrough", tunnel.allowTLSPassthrough))
 
 	if header.HasFlag(proto.FlagHTTPLog) {
-		tunnel.eventch = make(chan streamutil.HTTPEvent, 100)
+		tunnel.eventch = make(chan any, 100)
 		go func(ctx context.Context, tunnel *Tunnel) {
 			er := s.streamHTTPLogs(ctx, tunnel)
 			if er != nil {

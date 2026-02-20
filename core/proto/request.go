@@ -6,6 +6,19 @@ import (
 	"fmt"
 )
 
+// Constants definition of supported protocols for tunneling.
+const (
+	// ProtoHTTP indicates an HTTP-based tunnel.
+	ProtoHTTP uint8 = 0x01
+	// ProtoTCP indicates a TCP-based tunnel.
+	ProtoTCP uint8 = 0x02
+	// ProtoTLS indicates a TLS wrapped TCP tunnel.
+	ProtoTLS uint8 = 0x03
+)
+
+// RequestSize is the fixed size of a request's non-string fields in bytes.
+const RequestSize = 34
+
 // Request represents a client request to establish a tunnel.
 type Request struct {
 	// TTL is the desired tunnel time-to-live, ignored when APIKey is not present.
@@ -328,4 +341,17 @@ func validateRequest(req *Request) error {
 	}
 
 	return nil
+}
+
+func ProtoString(proto uint8) string {
+	if proto == ProtoHTTP {
+		return "http"
+	}
+	if proto == ProtoTCP {
+		return "tcp"
+	}
+	if proto == ProtoTLS {
+		return "tls"
+	}
+	return ""
 }

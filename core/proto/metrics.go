@@ -6,6 +6,9 @@ import (
 	"fmt"
 )
 
+// MetricsSize is the fixed size of a metrics' fields in bytes.
+const MetricsSize = 40
+
 // Metrics represents the tunnel's incoming and outgoing bytes metrics.
 type Metrics struct {
 	// Ingress represents the incoming bytes.

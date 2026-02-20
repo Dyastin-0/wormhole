@@ -4,8 +4,8 @@ package loglist
 import (
 	"time"
 
-	"github.com/Dyastin-0/wormhole/core/tui/messages"
 	"github.com/Dyastin-0/wormhole/core/tui/store"
+	"github.com/Dyastin-0/wormhole/stream"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -43,12 +43,12 @@ func (m Model) Keys() KeyMap {
 	return m.keys
 }
 
-func (m Model) GetSelected() *messages.HTTPLogMsg {
-	return m.store.Get(m.selectedIndex)
+func (m Model) GetSelected() *stream.HTTPEvent {
+	return m.store.GetByIndex(m.selectedIndex)
 }
 
-func (m *Model) addLog(log *messages.HTTPLogMsg) {
-	m.store.Add(log)
+func (m *Model) addLog(event *stream.HTTPEvent) {
+	m.store.AddEvent(event)
 
 	if m.selectedIndex == m.store.Len()-2 {
 		m.selectedIndex = m.store.Len() - 1

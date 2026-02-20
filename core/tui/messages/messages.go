@@ -3,6 +3,7 @@ package messages
 
 import (
 	"github.com/Dyastin-0/wormhole/core/proto"
+	"github.com/Dyastin-0/wormhole/stream"
 )
 
 type MetricsMsg struct {
@@ -15,15 +16,19 @@ type MetricsMsg struct {
 }
 
 type HTTPLogMsg struct {
-	*proto.HTTPLog
+	*proto.HTTPDurationLog
+}
+
+type HTTPEventMsg struct {
+	*stream.HTTPEvent
 }
 
 type SetLogMsg struct {
-	Log *HTTPLogMsg
+	Log *stream.HTTPEvent
 }
 
 type LogSelectedMsg struct {
-	Log *HTTPLogMsg
+	Log *stream.HTTPEvent
 }
 
 type ViewModeChangeMsg struct {

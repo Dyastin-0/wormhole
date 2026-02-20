@@ -5,85 +5,12 @@ import (
 	"sync"
 )
 
-// Constants definition of message types for the Wormhole protocol.
-const (
-	// TypeRequest indicates a client request to establish a tunnel.
-	TypeRequest uint8 = 0x01
-	// TypeResponse indicates a server response to a tunnel request.
-	TypeResponse uint8 = 0x02
-	// TypeAccess indicates an incoming connection to an established tunnel.
-	TypeAccess uint8 = 0x03
-	// TypeMetrics indicates an incoming tunnel metrics stream.
-	TypeMetrics = 0x05
-	// TypeEnd indicates that a tunnel reached its end.
-	TypeEnd uint8 = 0x06
-	// TypePing indicates an incoming ping stream, all subsequent ping will be handled by it.
-	TypePing uint8 = 0x07
-	//  TypePong indicates an incoming pong message.
-	TypePong uint8 = 0x08
-	// TypeHTTPLog indicates an incoming http log stream, all subsequent logs will be handled by it.
-	TypeHTTPLog uint8 = 0x09
-	// TypeError indicates an error response from the server.
-	TypeError uint8 = 0xFF
-)
-
-// Constants definition for HTTP authentication types.
-const (
-	// AuthTypeNone indicates no authentication.
-	AuthTypeNone uint8 = 0x01
-	// AuthTypeBasic implements a HTTP basic authentication.
-	AuthTypeBasic uint8 = 0x02
-	// AuthTypeBearer implements a bearer token authentication.
-	AuthTypeBearer uint8 = 0x03
-)
-
-const (
-	// FlagMetrics indicates that the client wants to stream the tunnel metrics.
-	FlagMetrics = 0x01
-	// FlagAllowHTTP indicates that the client explicitly allows HTTP requests regardless of protocol.
-	FlagAllowHTTP = 0x02
-	// FlagHTTPLog indicates that the client wants to receive HTTP request logs.
-	FlagHTTPLog = 0x04
-	// FlagTLSPassthrough indicates that the client wants to terminate TLS on its end.
-	FlagTLSPassthrough = 0x08
-)
-
 // Constants definition for protocol limits and sizes.
 const (
 	// MaxPayloadSize is the maximum allowed payload size for messages (1 MB).
 	MaxPayloadSize = 1024 * 1024
 	// MaxStringLength is the maximum length for string fields like names or domains (4 KB).
 	MaxStringLength = 4096
-	// HeaderSize is the fixed size of a protocol header in bytes.
-	HeaderSize = 12
-	// RequestSize is the fixed size of a request's non-string fields in bytes .
-	RequestSize = 34
-	// ResponseSize is the fixed size of a response's non-string fields in bytes.
-	ResponseSize = 15
-	// MetricsSize is the fixed size of a metrics' fields in bytes.
-	MetricsSize = 40
-)
-
-// Constants definition of supported protocols for tunneling.
-const (
-	// ProtoHTTP indicates an HTTP-based tunnel.
-	ProtoHTTP uint8 = 0x01
-	// ProtoTCP indicates a TCP-based tunnel.
-	ProtoTCP uint8 = 0x02
-	// ProtoTLS indicates a TLS wrapped TCP tunnel.
-	ProtoTLS uint8 = 0x03
-)
-
-// Constants definition of response status codes.
-const (
-	// StatusOK indicates a successful tunnel creation.
-	StatusOK uint8 = 0x01
-	// StatusInvalidURL indicates that the URL paramater is invalid.
-	StatusInvalidURL uint8 = 0x02
-	// StatusNameTaken indicates the requested subdomain is already in use.
-	StatusNameTaken uint8 = 0x03
-	// StatusUnsupportedProto indicates the requested protocol is not supported.
-	StatusUnsupportedProto uint8 = 0x04
 )
 
 // Constants definition of the protocol version.

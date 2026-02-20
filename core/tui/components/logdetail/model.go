@@ -4,9 +4,9 @@ package logdetail
 import (
 	"time"
 
-	"github.com/Dyastin-0/wormhole/core/tui/messages"
 	"github.com/Dyastin-0/wormhole/core/tui/search"
 	"github.com/Dyastin-0/wormhole/core/tui/styles"
+	"github.com/Dyastin-0/wormhole/stream"
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -14,7 +14,7 @@ import (
 )
 
 type Model struct {
-	log          *messages.HTTPLogMsg
+	log          *stream.HTTPEvent
 	activeTab    tab
 	focusedPanel focusedPanel
 

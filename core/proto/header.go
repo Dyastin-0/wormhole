@@ -7,6 +7,52 @@ import (
 	"fmt"
 )
 
+// Constants definition of message types for the Wormhole protocol.
+const (
+	// TypeRequest indicates a client request to establish a tunnel.
+	TypeRequest uint8 = 0x01
+	// TypeResponse indicates a server response to a tunnel request.
+	TypeResponse uint8 = 0x02
+	// TypeAccess indicates an incoming connection to an established tunnel.
+	TypeAccess uint8 = 0x03
+	// TypeMetrics indicates an incoming tunnel metrics stream.
+	TypeMetrics = 0x05
+	// TypeEnd indicates that a tunnel reached its end.
+	TypeEnd uint8 = 0x06
+	// TypePing indicates an incoming ping stream, all subsequent ping will be handled by it.
+	TypePing uint8 = 0x07
+	//  TypePong indicates an incoming pong message.
+	TypePong uint8 = 0x08
+	// TypeHTTPLog indicates an incoming http log stream, all subsequent logs will be handled by it.
+	TypeHTTPLog uint8 = 0x09
+	// TypeError indicates an error response from the server.
+	TypeError uint8 = 0xFF
+)
+
+// Constants definition for HTTP authentication types.
+const (
+	// AuthTypeNone indicates no authentication.
+	AuthTypeNone uint8 = 0x01
+	// AuthTypeBasic implements a HTTP basic authentication.
+	AuthTypeBasic uint8 = 0x02
+	// AuthTypeBearer implements a bearer token authentication.
+	AuthTypeBearer uint8 = 0x03
+)
+
+// HeaderSize is the fixed size of a protocol header in bytes.
+const HeaderSize = 12
+
+const (
+	// FlagMetrics indicates that the client wants to stream the tunnel metrics.
+	FlagMetrics = 0x01
+	// FlagAllowHTTP indicates that the client explicitly allows HTTP requests regardless of protocol.
+	FlagAllowHTTP = 0x02
+	// FlagHTTPLog indicates that the client wants to receive HTTP request logs.
+	FlagHTTPLog = 0x04
+	// FlagTLSPassthrough indicates that the client wants to terminate TLS on its end.
+	FlagTLSPassthrough = 0x08
+)
+
 // Header represents a Wormhole protocol message header.
 type Header struct {
 	// Length specifies the payload length in bytes (must not exceed MaxPayloadSize).
@@ -129,32 +175,6 @@ func validateHeader(header *Header) error {
 	return nil
 }
 
-// validateResponse validates a Response's fields.
-func validateResponse(resp *Response) error {
-	switch resp.Status {
-	case StatusOK, StatusInvalidURL, StatusNameTaken, StatusUnsupportedProto:
-		// OK
-	default:
-		return ErrInvalidStatus
-	}
-
-	if resp.Status == StatusOK {
-		if resp.DomainLength == 0 || len(resp.Domain) == 0 {
-			return ErrEmptyString
-		}
-
-		if resp.DomainLength != uint32(len(resp.Domain)) {
-			return ErrInvalidLength
-		}
-
-		if resp.DomainLength > MaxStringLength {
-			return ErrStringTooLong
-		}
-	}
-
-	return nil
-}
-
 // IsValidType checks if a message type is valid.
 func IsValidType(msgType uint8) bool {
 	switch msgType {
@@ -163,27 +183,4 @@ func IsValidType(msgType uint8) bool {
 	default:
 		return false
 	}
-}
-
-// CalculateTunnelRequestSize calculates the total size of a serialized Request, including its header.
-func CalculateTunnelRequestSize(req *Request) uint64 {
-	return uint64(HeaderSize) + uint64(RequestSize) + uint64(len(req.Name))
-}
-
-// CalculateTunnelResponseSize calculates the total size of a serialized Response, including its header.
-func CalculateTunnelResponseSize(resp *Response) uint64 {
-	return uint64(HeaderSize) + uint64(ResponseSize) + uint64(len(resp.Domain))
-}
-
-func ProtoString(proto uint8) string {
-	if proto == ProtoHTTP {
-		return "http"
-	}
-	if proto == ProtoTCP {
-		return "tcp"
-	}
-	if proto == ProtoTLS {
-		return "tls"
-	}
-	return ""
 }

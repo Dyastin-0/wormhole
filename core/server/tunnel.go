@@ -24,7 +24,7 @@ type Tunnel struct {
 	allowTLSPassthrough bool
 	// eventch receives a correlated HTTPEvent for each completed request/response
 	// pair. Replaces the old httpLogch+requestch split. Nil if HTTP logging is off.
-	eventch       chan stream.HTTPEvent
+	eventch       chan any
 	domain        string
 	createdAt     time.Time
 	port          int
@@ -88,7 +88,7 @@ func (t *Tunnel) ProxyWithInspect(ctx context.Context, ystream net.Conn) error {
 // logLoop drains t.eventch, builds HTTPLog entries with server-side timing,
 // and forwards them to the provided send function (which writes to the client
 // log stream). Run this as a goroutine when the tunnel is created.
-func (t *Tunnel) logLoop(ctx context.Context, send func(*proto.HTTPLog) error) {
+func (t *Tunnel) logLoop(ctx context.Context, send func(*proto.HTTPDurationLog, *stream.HTTPEvent) error) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -98,24 +98,18 @@ func (t *Tunnel) logLoop(ctx context.Context, send func(*proto.HTTPLog) error) {
 				return
 			}
 
-			duration := uint32(time.Since(ev.Start).Microseconds())
+			switch v := ev.(type) {
+			case *stream.HTTPEvent:
+				duration := uint64(time.Since(v.Start).Microseconds())
 
-			log := &proto.HTTPLog{
-				Timestamp:   time.Now().Unix(),
-				Duration:    duration,
-				Method:      ev.Method,
-				Path:        ev.Path,
-				Status:      int32(ev.Status),
-				RespSize:    ev.RespSize,
-				ReqHeaders:  map[string][]string(ev.ReqHeaders),
-				ReqBody:     ev.ReqBody,
-				RespHeaders: map[string][]string(ev.RespHeaders),
-				RespBody:    ev.RespBody,
+				log := proto.NewHTTPDurationLog("", duration)
+
+				if err := send(log, v); err != nil {
+					return
+				}
+			default:
 			}
 
-			if err := send(log); err != nil {
-				return
-			}
 		}
 	}
 }

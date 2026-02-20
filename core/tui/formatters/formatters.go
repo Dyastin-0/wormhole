@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Dyastin-0/wormhole/core/tui/messages"
 	"github.com/Dyastin-0/wormhole/core/tui/styles"
 	"github.com/Dyastin-0/wormhole/stream"
 	"github.com/charmbracelet/lipgloss"
@@ -57,8 +56,8 @@ func FormatMetricLine(label, value, rate string) string {
 	return lipgloss.JoinHorizontal(lipgloss.Left, l, v)
 }
 
-func FormatHTTPLog(log *messages.HTTPLogMsg) string {
-	timestamp := time.Unix(log.Timestamp, 0).Format("15:04:05")
+func FormatHTTPLog(log *stream.HTTPEvent) string {
+	timestamp := log.Start.Format("15:04:05")
 	timeStr := styles.LogTime.Render(timestamp)
 	methodStr := styles.LogMethod.Render(log.Method)
 
@@ -91,8 +90,8 @@ func FormatHTTPLog(log *messages.HTTPLogMsg) string {
 	)
 }
 
-func FormatHTTPLogSelected(log *messages.HTTPLogMsg) string {
-	timestamp := time.Unix(log.Timestamp, 0).Format("15:04:05")
+func FormatHTTPLogSelected(log *stream.HTTPEvent) string {
+	timestamp := log.Start.Format("15:04:05")
 
 	var sizeStr string
 	if log.RespSize > 0 {
@@ -125,7 +124,7 @@ func FormatHTTPLogSelected(log *messages.HTTPLogMsg) string {
 	)
 }
 
-func FormatStatusCode(code int32, selected bool) string {
+func FormatStatusCode(code int, selected bool) string {
 	var style lipgloss.Style
 
 	switch {
