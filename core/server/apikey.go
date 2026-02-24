@@ -1,7 +1,6 @@
 package server
 
 import (
-	"crypto/rand"
 	"errors"
 	"fmt"
 	"time"
@@ -83,14 +82,4 @@ func (i *APIKeyIssuer) Validate(tokenString string) (*APIKeyClaims, error) {
 	}
 
 	return claims, nil
-}
-
-// generateSecret generates a cryptographically secure random secret.
-func generateSecret(length int) ([]byte, error) {
-	secret := make([]byte, length)
-	_, err := rand.Read(secret)
-	if err != nil {
-		return nil, err
-	}
-	return secret, nil
 }

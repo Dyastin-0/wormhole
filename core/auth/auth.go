@@ -16,7 +16,7 @@ type Authenticator interface {
 	Authenticate(req *http.Request) bool
 	// Realm returns the realm.
 	Realm() string
-	// Method returns the authenticaion method.
+	// Method returns the authentication method.
 	Method() string
 }
 
