@@ -24,4 +24,4 @@ Wormhole uses [yamux](https://github.com/hashicorp/yamux) to tunnel multiple inb
 
 ---
 
-You can read a [here](https://dyastin.dev/post/how-to-use-the-wormhole-cli) on how to use the CLI.
+You can read [here](https://dyastin.dev/post/how-to-use-the-wormhole-cli) on how to use the CLI.
