@@ -409,7 +409,7 @@ func start(ctx context.Context, cmd *cli.Command) error {
 				}
 			}()
 
-			newObserver, errr := observer.NewOTelObserver(ctx, mp)
+			newObserver, errr := observer.NewOTelObserver(mp)
 			if errr != nil {
 				return errr
 			}

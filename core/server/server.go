@@ -308,9 +308,9 @@ func (s *Server) tunnel(ctx context.Context, conn net.Conn) error {
 		attribute.Bool("has_auth", tunnel.auth != nil),
 	)
 
-	s.observer.RecordConnectionStart(tunnel.domain, protoStr)
+	s.observer.RecordConnectionStart(ctx, tunnel.domain, protoStr)
 	defer func() {
-		s.observer.RecordConnectionEnd(sni, protoStr, time.Since(start))
+		s.observer.RecordConnectionEnd(ctx, sni, protoStr, time.Since(start))
 	}()
 
 	allowHTTP := tunnel.allowHTTP || tunnel.proto == proto.ProtoHTTP
@@ -433,6 +433,7 @@ func (s *Server) streamHTTPLogs(ctx context.Context, tunnel *Tunnel) error {
 
 	tunnel.logLoop(ctx, func(httpLog *proto.HTTPDurationLog, event *stream.HTTPEvent) error {
 		s.observer.RecordHTTPRequest(
+			ctx,
 			tunnel.domain,
 			event.Method,
 			fmt.Sprint(event.Status),
@@ -779,7 +780,7 @@ func (s *Server) handleRequest(ctx context.Context, stream net.Conn, session *ya
 	}
 
 	protoStr := proto.ProtoString(req.Proto)
-	s.observer.RecordTunnelCreated(protoStr)
+	s.observer.RecordTunnelCreated(ctx, protoStr)
 
 	resp := proto.NewResponse(proto.StatusOK, uint64(tunnel.ttl), domain)
 	if isTCP && tunnel.port > 0 {
@@ -802,7 +803,7 @@ func (s *Server) handleRequest(ctx context.Context, stream net.Conn, session *ya
 		} else {
 			s.tunnels.Remove(domain)
 		}
-		s.observer.RecordTunnelClosed(protoStr, "error", 0)
+		s.observer.RecordTunnelClosed(ctx, protoStr, "error", 0)
 		return err
 	}
 
@@ -839,7 +840,7 @@ func (s *Server) handleRequest(ctx context.Context, stream net.Conn, session *ya
 
 	duration := time.Since(tunnel.createdAt)
 	span.SetAttributes(attribute.Int64("tunnel_duration_seconds", int64(duration.Seconds())))
-	s.observer.RecordTunnelClosed(protoStr, closeReason, duration)
+	s.observer.RecordTunnelClosed(ctx, protoStr, closeReason, duration)
 
 	return nil
 }
@@ -1010,7 +1011,7 @@ func (s *Server) streamMetrics(ctx context.Context, tunnel *Tunnel) error {
 			egressDelta := tunnel.metrics.GetEgressBytesDelta()
 
 			if ingressDelta > 0 || egressDelta > 0 {
-				s.observer.RecordTraffic(tunnel.domain, ingressDelta, egressDelta)
+				s.observer.RecordTraffic(ctx, tunnel.domain, ingressDelta, egressDelta)
 			}
 
 			if err := s.sendMetrics(stream, tunnel); err != nil {
@@ -1130,7 +1131,7 @@ func (s *Server) handlePingStream(ctx context.Context, tunnel *Tunnel) error {
 			}
 
 			tunnel.metrics.SetRTT(uint32(rtt.Microseconds()))
-			s.observer.UpdateRTT(tunnel.domain, uint32(rtt.Microseconds()))
+			s.observer.UpdateRTT(ctx, tunnel.domain, uint32(rtt.Microseconds()))
 
 			span.SetAttributes(attribute.Int64("rtt_microseconds", rtt.Microseconds()))
 		}

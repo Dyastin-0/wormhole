@@ -11,8 +11,6 @@ import (
 
 // OTelObserver implements Observer with OpenTelemetry metrics.
 type OTelObserver struct {
-	ctx context.Context
-
 	// Tunnel lifecycle metrics.
 	tunnelsActive  metric.Int64UpDownCounter
 	tunnelsCreated metric.Int64Counter
@@ -37,7 +35,7 @@ type OTelObserver struct {
 }
 
 // NewOTelObserver creates a new OpenTelemetry-based observer.
-func NewOTelObserver(ctx context.Context, mp metric.MeterProvider) (*OTelObserver, error) {
+func NewOTelObserver(mp metric.MeterProvider) (*OTelObserver, error) {
 	meter := mp.Meter("wormhole")
 
 	tunnelsActive, err := meter.Int64UpDownCounter(
@@ -145,7 +143,6 @@ func NewOTelObserver(ctx context.Context, mp metric.MeterProvider) (*OTelObserve
 	}
 
 	return &OTelObserver{
-		ctx:                 ctx,
 		tunnelsActive:       tunnelsActive,
 		tunnelsCreated:      tunnelsCreated,
 		tunnelsClosed:       tunnelsClosed,
@@ -161,70 +158,71 @@ func NewOTelObserver(ctx context.Context, mp metric.MeterProvider) (*OTelObserve
 	}, nil
 }
 
-func (o *OTelObserver) RecordTunnelCreated(protocol string) {
-	o.tunnelsActive.Add(o.ctx, 1)
-	o.tunnelsCreated.Add(o.ctx, 1, metric.WithAttributes(
+func (o *OTelObserver) RecordTunnelCreated(ctx context.Context, protocol string) {
+	o.tunnelsActive.Add(ctx, 1)
+	o.tunnelsCreated.Add(ctx, 1, metric.WithAttributes(
 		attribute.String("protocol", protocol),
 	))
 }
 
-func (o *OTelObserver) RecordTunnelClosed(protocol, reason string, duration time.Duration) {
-	o.tunnelsActive.Add(o.ctx, -1)
-	o.tunnelsClosed.Add(o.ctx, 1, metric.WithAttributes(
+func (o *OTelObserver) RecordTunnelClosed(ctx context.Context, protocol, reason string, duration time.Duration) {
+	o.tunnelsActive.Add(ctx, -1)
+	o.tunnelsClosed.Add(ctx, 1, metric.WithAttributes(
 		attribute.String("reason", reason),
 	))
-	o.tunnelDuration.Record(o.ctx, duration.Seconds(), metric.WithAttributes(
+	o.tunnelDuration.Record(ctx, duration.Seconds(), metric.WithAttributes(
 		attribute.String("protocol", protocol),
 	))
 }
 
-func (o *OTelObserver) RecordConnectionStart(domain, protocol string) {
-	o.connectionsTotal.Add(o.ctx, 1, metric.WithAttributes(
+func (o *OTelObserver) RecordConnectionStart(ctx context.Context, domain, protocol string) {
+	o.connectionsTotal.Add(ctx, 1, metric.WithAttributes(
 		attribute.String("domain", domain),
 		attribute.String("protocol", protocol),
 	))
-	o.connectionsActive.Add(o.ctx, 1, metric.WithAttributes(
+	o.connectionsActive.Add(ctx, 1, metric.WithAttributes(
 		attribute.String("domain", domain),
 	))
 }
 
-func (o *OTelObserver) RecordConnectionEnd(domain, protocol string, duration time.Duration) {
-	o.connectionsActive.Add(o.ctx, -1, metric.WithAttributes(
+func (o *OTelObserver) RecordConnectionEnd(ctx context.Context, domain, protocol string, duration time.Duration) {
+	o.connectionsActive.Add(ctx, -1, metric.WithAttributes(
 		attribute.String("domain", domain),
 	))
-	o.connectionDuration.Record(o.ctx, duration.Seconds(), metric.WithAttributes(
+	o.connectionDuration.Record(ctx, duration.Seconds(), metric.WithAttributes(
 		attribute.String("domain", domain),
 		attribute.String("protocol", protocol),
 	))
 }
 
-func (o *OTelObserver) RecordTraffic(domain string, ingress, egress uint64) {
+func (o *OTelObserver) RecordTraffic(ctx context.Context, domain string, ingress, egress uint64) {
 	attrs := metric.WithAttributes(attribute.String("domain", domain))
 
 	if ingress > 0 {
-		o.bytesIngress.Add(o.ctx, int64(ingress), attrs)
+		o.bytesIngress.Add(ctx, int64(ingress), attrs)
 	}
 	if egress > 0 {
-		o.bytesEgress.Add(o.ctx, int64(egress), attrs)
+		o.bytesEgress.Add(ctx, int64(egress), attrs)
 	}
 }
 
-func (o *OTelObserver) RecordHTTPRequest(domain, method, statusCode string, duration time.Duration) {
+func (o *OTelObserver) RecordHTTPRequest(ctx context.Context, domain, method, statusCode string, duration time.Duration) {
 	attrs := metric.WithAttributes(
 		attribute.String("domain", domain),
 		attribute.String("method", method),
 		attribute.String("status_code", statusCode),
 	)
-	o.httpRequestsTotal.Add(o.ctx, 1, attrs)
+	o.httpRequestsTotal.Add(ctx, 1, attrs)
 
-	o.httpRequestDuration.Record(o.ctx, duration.Seconds(), metric.WithAttributes(
+	o.httpRequestDuration.Record(ctx, duration.Seconds(), metric.WithAttributes(
 		attribute.String("domain", domain),
 		attribute.String("method", method),
 	))
 }
 
-func (o *OTelObserver) UpdateRTT(domain string, rttMicroseconds uint32) {
-	o.rtt.Record(o.ctx, int64(rttMicroseconds), metric.WithAttributes(
+func (o *OTelObserver) UpdateRTT(ctx context.Context, domain string, rttMicroseconds uint32) {
+	o.rtt.Record(ctx, int64(rttMicroseconds), metric.WithAttributes(
 		attribute.String("domain", domain),
 	))
 }
+
