@@ -195,7 +195,7 @@ func (s *Server) home(w http.ResponseWriter, r *http.Request) {
 
   <div class="section">
     <span class="label">Usage</span>
-    <div class="code">wormhole http --target :3000</div>
+    <div class="code">wormhole http -t :3000 -n app</div>
   </div>
 
   <div class="footer">
