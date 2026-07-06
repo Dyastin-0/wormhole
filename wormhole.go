@@ -54,7 +54,7 @@ type Config struct {
 	CollectorAddress   string `yaml:"collectorAddress"`
 	AllowTCP           bool   `yaml:"allowTCP"`
 	CloudflareAPIToken string `yaml:"cloudflareAPIToken"`
-	ACMEEmail          string `yaml:"ACMEEmail"`
+	ACMEEmail          string `yaml:"acmeEmail"`
 }
 
 func loadConfig(path string) (*Config, error) {
