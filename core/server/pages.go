@@ -195,7 +195,7 @@ func (s *Server) home(w http.ResponseWriter, r *http.Request) {
 
   <div class="section">
     <span class="label">Usage</span>
-    <div class="code">wormhole http -t :3000 -n app</div>
+    <div class="code">wormhole http  --name app --target-address :3000</div>
   </div>
 
   <div class="footer">
@@ -290,7 +290,7 @@ func (s *Server) notFound(w http.ResponseWriter, r *http.Request) {
 
   <div class="section">
     <span class="label">To Claim This Domain</span>
-    <div class="code">wormhole http --name %s --target :3000</div>
+    <div class="code">wormhole http --name %s --target-address :3000</div>
   </div>
 
   <div class="footer">
