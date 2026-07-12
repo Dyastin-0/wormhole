@@ -1,6 +1,7 @@
 package observer
 
 import (
+	"context"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -99,28 +100,28 @@ func NewPrometheusObserver(registry prometheus.Registerer) *PrometheusObserver {
 	}
 }
 
-func (p *PrometheusObserver) RecordTunnelCreated(protocol string) {
+func (p *PrometheusObserver) RecordTunnelCreated(ctx context.Context, protocol string) {
 	p.tunnelsActive.Inc()
 	p.tunnelsCreated.WithLabelValues(protocol).Inc()
 }
 
-func (p *PrometheusObserver) RecordTunnelClosed(protocol, reason string, duration time.Duration) {
+func (p *PrometheusObserver) RecordTunnelClosed(ctx context.Context, protocol, reason string, duration time.Duration) {
 	p.tunnelsActive.Dec()
 	p.tunnelsClosed.WithLabelValues(reason).Inc()
 	p.tunnelDuration.WithLabelValues(protocol).Observe(duration.Seconds())
 }
 
-func (p *PrometheusObserver) RecordConnectionStart(domain, protocol string) {
+func (p *PrometheusObserver) RecordConnectionStart(ctx context.Context, domain, protocol string) {
 	p.connectionsTotal.WithLabelValues(domain, protocol).Inc()
 	p.connectionsActive.WithLabelValues(domain).Inc()
 }
 
-func (p *PrometheusObserver) RecordConnectionEnd(domain, protocol string, duration time.Duration) {
+func (p *PrometheusObserver) RecordConnectionEnd(ctx context.Context, domain, protocol string, duration time.Duration) {
 	p.connectionsActive.WithLabelValues(domain).Dec()
 	p.connectionDuration.WithLabelValues(domain, protocol).Observe(duration.Seconds())
 }
 
-func (p *PrometheusObserver) RecordTraffic(domain string, ingress, egress uint64) {
+func (p *PrometheusObserver) RecordTraffic(ctx context.Context, domain string, ingress, egress uint64) {
 	if ingress > 0 {
 		p.bytesIngress.WithLabelValues(domain).Add(float64(ingress))
 	}
@@ -129,11 +130,12 @@ func (p *PrometheusObserver) RecordTraffic(domain string, ingress, egress uint64
 	}
 }
 
-func (p *PrometheusObserver) RecordHTTPRequest(domain, method, statusCode string, duration time.Duration) {
+func (p *PrometheusObserver) RecordHTTPRequest(ctx context.Context, domain, method, statusCode string, duration time.Duration) {
 	p.httpRequestsTotal.WithLabelValues(domain, method, statusCode).Inc()
 	p.httpRequestDuration.WithLabelValues(domain, method).Observe(duration.Seconds())
 }
 
-func (p *PrometheusObserver) UpdateRTT(domain string, rttMicroseconds uint32) {
+func (p *PrometheusObserver) UpdateRTT(ctx context.Context, domain string, rttMicroseconds uint32) {
 	p.rtt.WithLabelValues(domain).Set(float64(rttMicroseconds))
 }
+

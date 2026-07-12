@@ -19,7 +19,7 @@ import (
 	"github.com/Dyastin-0/wormhole/observer"
 	"github.com/caddyserver/certmagic"
 	"github.com/common-nighthawk/go-figure"
-	"github.com/mholt/acmez/v3"
+	"github.com/libdns/cloudflare"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/urfave/cli/v3"
 	"go.opentelemetry.io/otel/sdk/metric"
@@ -39,20 +39,22 @@ var (
 const DefaultConfigPath = "/etc/wormhole/config.yaml"
 
 type Config struct {
-	Secret           string `yaml:"secret"`
-	Domain           string `yaml:"domain"`
-	Address          string `yaml:"address"`
-	ServeAddress     string `yaml:"serveAddress"`
-	PprofAddress     string `yaml:"pprofAddress"`
-	WithPprof        bool   `yaml:"withPprof"`
-	ObserverAddress  string `yaml:"observerAddress"`
-	WithObserver     bool   `yaml:"withObserver"`
-	Observer         string `yaml:"observer"`
-	WithPromExporter bool   `yaml:"withPromExporter"`
-	WithTracer       bool   `yaml:"withTracer"`
-	TempoAddress     string `yaml:"tempoAddress"`
-	CollectorAddress string `yaml:"collectorAddress"`
-	AllowTCP         bool   `yaml:"allowTCP"`
+	Secret             string `yaml:"secret"`
+	Domain             string `yaml:"domain"`
+	Address            string `yaml:"address"`
+	ServeAddress       string `yaml:"serveAddress"`
+	PprofAddress       string `yaml:"pprofAddress"`
+	WithPprof          bool   `yaml:"withPprof"`
+	ObserverAddress    string `yaml:"observerAddress"`
+	WithObserver       bool   `yaml:"withObserver"`
+	Observer           string `yaml:"observer"`
+	WithPromExporter   bool   `yaml:"withPromExporter"`
+	WithTracer         bool   `yaml:"withTracer"`
+	TempoAddress       string `yaml:"tempoAddress"`
+	CollectorAddress   string `yaml:"collectorAddress"`
+	AllowTCP           bool   `yaml:"allowTCP"`
+	CloudflareAPIToken string `yaml:"cloudflareAPIToken"`
+	ACMEEmail          string `yaml:"acmeEmail"`
 }
 
 func loadConfig(path string) (*Config, error) {
@@ -254,6 +256,17 @@ func start(ctx context.Context, cmd *cli.Command) error {
 		cfg = &Config{}
 	}
 
+	// ACME
+	cfAPIToken, err := getValue(cfg.CloudflareAPIToken, os.Getenv("CLOUDFLARE_API_TOKEN"), cmd.String("cloudflare-api-token"), 0, "cloudflare-api-token")
+	if err != nil {
+		return err
+	}
+
+	email, err := getValue(cfg.ACMEEmail, os.Getenv("ACME_EMAIL"), cmd.String("acme-email"), 0, "acme-email")
+	if err != nil {
+		return err
+	}
+
 	// wormhole addresses
 	addr, err := getValue(cfg.Address, os.Getenv("ADDRESS"), cmd.String("address"), 0, "address")
 	if err != nil {
@@ -348,14 +361,29 @@ func start(ctx context.Context, cmd *cli.Command) error {
 		return err
 	}
 
+	provider := &cloudflare.Provider{
+		APIToken: cfAPIToken,
+	}
+
+	certmagic.DefaultACME.Email = email
+	certmagic.DefaultACME.Agreed = true
+	certmagic.DefaultACME.DisableHTTPChallenge = true
+	certmagic.DefaultACME.DisableTLSALPNChallenge = true
+	certmagic.DefaultACME.CA = certmagic.LetsEncryptProductionCA
+	certmagic.DefaultACME.DNS01Solver = &certmagic.DNS01Solver{
+		DNSManager: certmagic.DNSManager{
+			DNSProvider: provider,
+		},
+	}
+
 	magic := certmagic.NewDefault()
-	err = magic.ManageAsync(ctx, []string{domain, fmt.Sprintf("*.%s", domain)})
+	err = magic.ManageAsync(ctx, []string{"*.wormhole.dyastin.dev"})
 	if err != nil {
 		return err
 	}
 
 	tlsConfig := magic.TLSConfig()
-	tlsConfig.NextProtos = []string{"http/1.1", acmez.ACMETLS1Protocol}
+	tlsConfig.NextProtos = []string{"http/1.1", "h2"}
 
 	serverOpts := []wserver.OptFunc{
 		wserver.WithAddr(addr),
@@ -409,7 +437,7 @@ func start(ctx context.Context, cmd *cli.Command) error {
 				}
 			}()
 
-			newObserver, errr := observer.NewOTelObserver(ctx, mp)
+			newObserver, errr := observer.NewOTelObserver(mp)
 			if errr != nil {
 				return errr
 			}
@@ -656,6 +684,17 @@ func addAuthOptions(opts *[]wclient.OptFunc, authType, authUser, authPass, authT
 func baseClientFlags(flags ...cli.Flag) []cli.Flag {
 	return append(
 		flags,
+		&cli.StringFlag{
+			Name:     "cloudflare-api-token",
+			Aliases:  []string{"cf"},
+			Usage:    "set cloudflare api token for dns-01 challenges",
+			Required: true,
+		},
+		&cli.StringFlag{
+			Name:    "acme-email",
+			Aliases: []string{"acmem"},
+			Usage:   "set acme email",
+		},
 		&cli.StringFlag{
 			Name:     "name",
 			Aliases:  []string{"n"},

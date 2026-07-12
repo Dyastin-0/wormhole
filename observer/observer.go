@@ -2,25 +2,27 @@
 package observer
 
 import (
+	"context"
 	"time"
 )
 
 // Observer defines the interface for observability operations.
 type Observer interface {
 	// Tunnel lifecycle.
-	RecordTunnelCreated(protocol string)
-	RecordTunnelClosed(protocol, reason string, duration time.Duration)
+	RecordTunnelCreated(ctx context.Context, protocol string)
+	RecordTunnelClosed(ctx context.Context, protocol, reason string, duration time.Duration)
 
 	// Connection metrics per tunnel.
-	RecordConnectionStart(domain, protocol string)
-	RecordConnectionEnd(domain, protocol string, duration time.Duration)
+	RecordConnectionStart(ctx context.Context, domain, protocol string)
+	RecordConnectionEnd(ctx context.Context, domain, protocol string, duration time.Duration)
 
 	// Traffic metrics per tunnel.
-	RecordTraffic(domain string, ingress, egress uint64)
+	RecordTraffic(ctx context.Context, domain string, ingress, egress uint64)
 
 	// HTTP metrics per tunnel.
-	RecordHTTPRequest(domain, method, statusCode string, duration time.Duration)
+	RecordHTTPRequest(ctx context.Context, domain, method, statusCode string, duration time.Duration)
 
 	// Performance per tunnel.
-	UpdateRTT(domain string, rttMicroseconds uint32)
+	UpdateRTT(ctx context.Context, domain string, rttMicroseconds uint32)
 }
+
