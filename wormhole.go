@@ -377,7 +377,7 @@ func start(ctx context.Context, cmd *cli.Command) error {
 	}
 
 	magic := certmagic.NewDefault()
-	err = magic.ManageAsync(ctx, []string{"*.wormhole.dyastin.dev"})
+	err = magic.ManageAsync(ctx, []string{"*." + domain})
 	if err != nil {
 		return err
 	}
@@ -698,7 +698,7 @@ func baseClientFlags(flags ...cli.Flag) []cli.Flag {
 		&cli.StringFlag{
 			Name:     "name",
 			Aliases:  []string{"n"},
-			Usage:    "set your wormhole tunnel's domain (https://{name}.wormhole.dyastin.dev)",
+			Usage:    "set your wormhole tunnel's domain (https://{name}.wormhole.justineparalejas.dev)",
 			Required: true,
 		},
 		&cli.StringFlag{
@@ -711,7 +711,7 @@ func baseClientFlags(flags ...cli.Flag) []cli.Flag {
 			Name:    "address",
 			Aliases: []string{"a"},
 			Usage:   "set the wormhole server address",
-			Value:   "wormhole.dyastin.dev:443",
+			Value:   "wormhole.justineparalejas.dev:443",
 		},
 		&cli.StringFlag{
 			Name:    "api-key",
