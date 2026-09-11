@@ -685,17 +685,6 @@ func baseClientFlags(flags ...cli.Flag) []cli.Flag {
 	return append(
 		flags,
 		&cli.StringFlag{
-			Name:     "cloudflare-api-token",
-			Aliases:  []string{"cf"},
-			Usage:    "set cloudflare api token for dns-01 challenges",
-			Required: true,
-		},
-		&cli.StringFlag{
-			Name:    "acme-email",
-			Aliases: []string{"acmem"},
-			Usage:   "set acme email",
-		},
-		&cli.StringFlag{
 			Name:     "name",
 			Aliases:  []string{"n"},
 			Usage:    "set your wormhole tunnel's domain (https://{name}.wormhole.justineparalejas.dev)",
